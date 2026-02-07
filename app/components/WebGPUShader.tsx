@@ -165,7 +165,7 @@ export default function WebGPUShader() {
         });
 
         // Render loop
-        let startTime = Date.now();
+        const startTime = Date.now();
         const render = () => {
           const elapsed = (Date.now() - startTime) / 1000;
           
