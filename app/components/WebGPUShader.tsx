@@ -70,8 +70,8 @@ export default function WebGPUShader() {
             
             // Create breathing effect with radial gradient
             let dist = length(coord);
-            let breath = sin(time * 0.5) * 0.5 + 0.5; // Breathing cycle
-            let radius = 0.3 + breath * 0.3;
+            let breathPhase = sin(time * 0.5) * 0.5 + 0.5; // Breathing cycle (0-1)
+            let radius = 0.3 + breathPhase * 0.3;
             
             // Smooth circle with breathing
             let circle = smoothstep(radius + 0.1, radius, dist);
@@ -91,10 +91,10 @@ export default function WebGPUShader() {
             );
             
             // Mix colors based on distance and breathing
-            let finalColor = mix(color1, color2, dist * breath);
+            let finalColor = mix(color1, color2, dist * breathPhase);
             
             // Add glow effect
-            let glow = exp(-dist * 2.0) * breath * 0.5;
+            let glow = exp(-dist * 2.0) * breathPhase * 0.5;
             
             return vec4<f32>(finalColor * circle + glow, circle);
           }
