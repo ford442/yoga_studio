@@ -2,10 +2,28 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+// Vertex shader for full-screen quad
+const VERTEX_SHADER = `
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+  var output: VertexOutput;
+  // Full-screen triangle strip (2 triangles = 6 vertices)
+  let x = f32(vertex_index % 2u) * 2.0 - 1.0; // 0 -> -1, 1 -> 1
+  let y = f32(vertex_index / 2u) * 2.0 - 1.0; // 0,1 -> -1, 2,3 -> 1
+  output.position = vec4<f32>(x, y, 0.0, 1.0);
+  return output;
+}
+`;
+
 export default function WebGPUShader() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     let animationId: number;
@@ -17,14 +35,26 @@ export default function WebGPUShader() {
       // Check WebGPU support
       if (!navigator.gpu) {
         setSupported(false);
+        setLoading(false);
         setError('WebGPU is not supported in this browser. Please use Chrome or Edge with WebGPU enabled.');
         return;
       }
 
       try {
+        // Load the fixed WGSL shader
+        const response = await fetch('/yoga-fixed.wgsl');
+        if (!response.ok) {
+          throw new Error(`Failed to load shader: ${response.status} ${response.statusText}`);
+        }
+        const fragmentShaderCode = await response.text();
+
+        // Combine vertex and fragment shaders
+        const fullShaderCode = VERTEX_SHADER + '\n' + fragmentShaderCode;
+
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) {
           setError('Failed to get GPU adapter');
+          setLoading(false);
           return;
         }
 
@@ -34,6 +64,7 @@ export default function WebGPUShader() {
 
         if (!context) {
           setError('Failed to get WebGPU context');
+          setLoading(false);
           return;
         }
 
@@ -43,70 +74,17 @@ export default function WebGPUShader() {
           format: presentationFormat,
         });
 
-        // WGSL Shader Code - Breathing Visualization
-        const shaderCode = `
-          struct VertexOutput {
-            @builtin(position) position: vec4<f32>,
-            @location(0) uv: vec2<f32>,
-          }
-
-          @vertex
-          fn vertex_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-            var output: VertexOutput;
-            let x = f32((vertex_index & 1u) * 2u) - 1.0;
-            let y = f32((vertex_index & 2u)) - 1.0;
-            output.position = vec4<f32>(x, y, 0.0, 1.0);
-            output.uv = vec2<f32>((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
-            return output;
-          }
-
-          @group(0) @binding(0) var<uniform> time: f32;
-
-          @fragment
-          fn fragment_main(input: VertexOutput) -> @location(0) vec4<f32> {
-            let uv = input.uv * 2.0 - 1.0;
-            let aspect = 1.0;
-            let coord = vec2<f32>(uv.x * aspect, uv.y);
-            
-            // Create breathing effect with radial gradient
-            let dist = length(coord);
-            let breathPhase = sin(time * 0.5) * 0.5 + 0.5; // Breathing cycle (0-1)
-            let radius = 0.3 + breathPhase * 0.3;
-            
-            // Smooth circle with breathing
-            let circle = smoothstep(radius + 0.1, radius, dist);
-            
-            // Color gradient based on breathing phase
-            let hue = time * 0.1;
-            let color1 = vec3<f32>(
-              0.5 + 0.5 * sin(hue),
-              0.5 + 0.5 * sin(hue + 2.094),
-              0.5 + 0.5 * sin(hue + 4.189)
-            );
-            
-            let color2 = vec3<f32>(
-              0.3 + 0.3 * sin(hue + 1.0),
-              0.3 + 0.3 * sin(hue + 3.094),
-              0.3 + 0.3 * sin(hue + 5.189)
-            );
-            
-            // Mix colors based on distance and breathing
-            let finalColor = mix(color1, color2, dist * breathPhase);
-            
-            // Add glow effect
-            let glow = exp(-dist * 2.0) * breathPhase * 0.5;
-            
-            return vec4<f32>(finalColor * circle + glow, circle);
-          }
-        `;
-
         const shaderModule = device.createShaderModule({
-          code: shaderCode,
+          code: fullShaderCode,
         });
 
-        // Create uniform buffer for time
+        // Uniform buffer layout:
+        // binding(0): iTime (f32) - offset 0
+        // binding(1): iResolution (vec3<f32>) - offset 16 (aligned to vec3)
+        // binding(2): iFrame (f32) - offset 32 (aligned)
+        const uniformBufferSize = 48;
         const uniformBuffer = device.createBuffer({
-          size: 4, // One f32
+          size: uniformBufferSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -117,16 +95,25 @@ export default function WebGPUShader() {
               visibility: GPUShaderStage.FRAGMENT,
               buffer: { type: 'uniform' },
             },
+            {
+              binding: 1,
+              visibility: GPUShaderStage.FRAGMENT,
+              buffer: { type: 'uniform' },
+            },
+            {
+              binding: 2,
+              visibility: GPUShaderStage.FRAGMENT,
+              buffer: { type: 'uniform' },
+            },
           ],
         });
 
         const bindGroup = device.createBindGroup({
           layout: bindGroupLayout,
           entries: [
-            {
-              binding: 0,
-              resource: { buffer: uniformBuffer },
-            },
+            { binding: 0, resource: { buffer: uniformBuffer, offset: 0, size: 4 } },
+            { binding: 1, resource: { buffer: uniformBuffer, offset: 16, size: 12 } },
+            { binding: 2, resource: { buffer: uniformBuffer, offset: 32, size: 4 } },
           ],
         });
 
@@ -138,43 +125,38 @@ export default function WebGPUShader() {
           layout: pipelineLayout,
           vertex: {
             module: shaderModule,
-            entryPoint: 'vertex_main',
+            entryPoint: 'vs_main',
           },
           fragment: {
             module: shaderModule,
-            entryPoint: 'fragment_main',
+            entryPoint: 'main',
             targets: [
               {
                 format: presentationFormat,
-                blend: {
-                  color: {
-                    srcFactor: 'src-alpha',
-                    dstFactor: 'one-minus-src-alpha',
-                  },
-                  alpha: {
-                    srcFactor: 'one',
-                    dstFactor: 'one-minus-src-alpha',
-                  },
-                },
               },
             ],
           },
           primitive: {
-            topology: 'triangle-strip',
+            topology: 'triangle-list',
           },
         });
 
         // Render loop
         const startTime = Date.now();
+        let frameCount = 0;
+        
         const render = () => {
           const elapsed = (Date.now() - startTime) / 1000;
-          
-          // Update time uniform
+          frameCount++;
+
+          // Update uniforms
+          device!.queue.writeBuffer(uniformBuffer, 0, new Float32Array([elapsed]));
           device!.queue.writeBuffer(
             uniformBuffer,
-            0,
-            new Float32Array([elapsed])
+            16,
+            new Float32Array([canvas.width, canvas.height, 1.0])
           );
+          device!.queue.writeBuffer(uniformBuffer, 32, new Float32Array([frameCount]));
 
           const commandEncoder = device!.createCommandEncoder();
           const textureView = context.getCurrentTexture().createView();
@@ -183,7 +165,7 @@ export default function WebGPUShader() {
             colorAttachments: [
               {
                 view: textureView,
-                clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 },
+                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
                 loadOp: 'clear',
                 storeOp: 'store',
               },
@@ -192,15 +174,17 @@ export default function WebGPUShader() {
 
           renderPass.setPipeline(pipeline);
           renderPass.setBindGroup(0, bindGroup);
-          renderPass.draw(4);
+          renderPass.draw(6);  // Full-screen quad (2 triangles = 6 vertices)
           renderPass.end();
 
           device!.queue.submit([commandEncoder.finish()]);
           animationId = requestAnimationFrame(render);
         };
 
+        setLoading(false);
         render();
       } catch (err) {
+        setLoading(false);
         setError(`Error initializing WebGPU: ${err}`);
         console.error(err);
       }
@@ -239,12 +223,19 @@ export default function WebGPUShader() {
   }
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={800}
-      height={600}
-      className="rounded-lg shadow-2xl border-4 border-purple-500"
-      style={{ maxWidth: '100%', height: 'auto' }}
-    />
+    <div className="relative">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 rounded-lg">
+          <div className="text-white text-xl">Loading Yoga Studio...</div>
+        </div>
+      )}
+      <canvas
+        ref={canvasRef}
+        width={800}
+        height={600}
+        className="rounded-lg shadow-2xl border-4 border-purple-500"
+        style={{ maxWidth: '100%', height: 'auto' }}
+      />
+    </div>
   );
 }
