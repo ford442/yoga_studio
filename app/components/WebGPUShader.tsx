@@ -42,7 +42,7 @@ export default function WebGPUShader() {
 
       try {
         // Load the fixed WGSL shader
-        const response = await fetch('/yoga-fixed.wgsl');
+        const response = await fetch('./yoga-fixed.wgsl');
         if (!response.ok) {
           throw new Error(`Failed to load shader: ${response.status} ${response.statusText}`);
         }
