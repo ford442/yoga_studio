@@ -80,9 +80,9 @@ export default function WebGPUShader() {
 
         // Uniform buffer layout:
         // binding(0): iTime (f32) - offset 0
-        // binding(1): iResolution (vec3<f32>) - offset 16 (aligned to vec3)
-        // binding(2): iFrame (f32) - offset 32 (aligned)
-        const uniformBufferSize = 48;
+        // binding(1): iResolution (vec3<f32>) - offset 256 (aligned to 256 bytes)
+        // binding(2): iFrame (f32) - offset 512 (aligned to 256 bytes)
+        const uniformBufferSize = 1024;
         const uniformBuffer = device.createBuffer({
           size: uniformBufferSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -112,8 +112,8 @@ export default function WebGPUShader() {
           layout: bindGroupLayout,
           entries: [
             { binding: 0, resource: { buffer: uniformBuffer, offset: 0, size: 4 } },
-            { binding: 1, resource: { buffer: uniformBuffer, offset: 16, size: 12 } },
-            { binding: 2, resource: { buffer: uniformBuffer, offset: 32, size: 4 } },
+            { binding: 1, resource: { buffer: uniformBuffer, offset: 256, size: 12 } },
+            { binding: 2, resource: { buffer: uniformBuffer, offset: 512, size: 4 } },
           ],
         });
 
@@ -153,10 +153,10 @@ export default function WebGPUShader() {
           device!.queue.writeBuffer(uniformBuffer, 0, new Float32Array([elapsed]));
           device!.queue.writeBuffer(
             uniformBuffer,
-            16,
+            256,
             new Float32Array([canvas.width, canvas.height, 1.0])
           );
-          device!.queue.writeBuffer(uniformBuffer, 32, new Float32Array([frameCount]));
+          device!.queue.writeBuffer(uniformBuffer, 512, new Float32Array([frameCount]));
 
           const commandEncoder = device!.createCommandEncoder();
           const textureView = context.getCurrentTexture().createView();
