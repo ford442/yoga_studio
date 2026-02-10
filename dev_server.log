@@ -1,0 +1,15 @@
+
+> yoga_studio@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+
+✓ Starting...
+✓ Ready in 1094ms
+○ Compiling /_not-found/page ...
+ GET / 404 in 4.4s (compile: 4.1s, render: 325ms)
+ GET / 200 in 748ms (compile: 632ms, render: 116ms)
+ GET / 200 in 53ms (compile: 4ms, render: 49ms)
+ GET / 200 in 58ms (compile: 5ms, render: 53ms)
