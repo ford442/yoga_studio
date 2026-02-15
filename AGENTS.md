@@ -1,18 +1,18 @@
 # Yoga Studio - Sacred Breath Timer
 
-An AI coding agent guide for this Next.js React application featuring WebGPU-powered breathing visualization.
+An AI coding agent guide for this Next.js React application featuring WebGPU-powered breathing visualization with yoga posture guidance and chakra awareness.
 
 ---
 
 ## Project Overview
 
-**Yoga Studio** is a single-page web application that demonstrates modern WebGPU capabilities through an immersive breathing visualization. It renders a pulsing, color-shifting circle using a custom WGSL (WebGPU Shading Language) shader synchronized to a calming breathing rhythm.
+**Yoga Studio** is a comprehensive yoga sadhana (spiritual practice) tool that combines:
+- Precise breath timing with 4-phase pranayama cycles
+- Visual posture guidance with animated stick figures
+- Chakra awareness synchronized to breath phases
+- WebGPU-powered visualization with energy channel graphics
 
-### Key Features
-- WebGPU hardware-accelerated graphics with custom WGSL shader
-- Smooth, rhythmic breathing animation (pulsing circle effect)
-- Responsive UI built with Tailwind CSS
-- Graceful degradation for browsers without WebGPU support
+The application transforms a simple breath timer into a complete practice guide suitable for Kundalini, Hatha, and standing breathwork traditions.
 
 ---
 
@@ -27,17 +27,6 @@ An AI coding agent guide for this Next.js React application featuring WebGPU-pow
 | Graphics API | WebGPU | - |
 | Build Output | Static Export | - |
 
-### Important Dependencies
-
-**Runtime:**
-- `next` - React framework with App Router
-- `react`, `react-dom` - UI library
-
-**Development:**
-- `@tailwindcss/postcss` - Tailwind CSS PostCSS plugin (v4 style)
-- `@webgpu/types` - TypeScript definitions for WebGPU API
-- `eslint`, `eslint-config-next` - Linting
-
 ---
 
 ## Project Structure
@@ -46,13 +35,19 @@ An AI coding agent guide for this Next.js React application featuring WebGPU-pow
 .
 ├── app/                          # Next.js App Router
 │   ├── components/
-│   │   └── WebGPUShader.tsx      # Main WebGPU visualization component
+│   │   ├── WebGPUShader.tsx      # WebGPU visualization with chakra highlighting
+│   │   ├── BreathTimer.tsx       # Timer UI with chakra display
+│   │   └── PostureGuide.tsx      # SVG stick figure posture guide
+│   ├── hooks/
+│   │   └── useBreathTimer.ts     # Breath timing + chakra mapping logic
 │   ├── favicon.ico
 │   ├── globals.css               # Global styles with Tailwind v4
 │   ├── layout.tsx                # Root layout component
-│   └── page.tsx                  # Home page (main entry)
+│   └── page.tsx                  # Home page with all components
 ├── public/                       # Static assets
-│   └── yoga.glsl                 # GLSL shader reference (not used at runtime)
+│   ├── yoga.glsl                 # Original GLSL shader reference
+│   ├── yoga-regular.wgsl         # WGSL shader reference
+│   └── yoga-fixed.wgsl           # Fixed WGSL shader reference
 ├── deploy.py                     # SFTP deployment script
 ├── webgpu.d.ts                   # WebGPU type declarations
 ├── next.config.ts                # Next.js configuration (static export)
@@ -61,52 +56,158 @@ An AI coding agent guide for this Next.js React application featuring WebGPU-pow
 └── postcss.config.mjs            # PostCSS with Tailwind v4
 ```
 
-### Code Organization
+---
 
-**Single-page architecture:** The application has one main page (`app/page.tsx`) that renders the `WebGPUShader` component.
+## Breath Timing System
 
-**Component structure:**
-- `WebGPUShader` is a client component (`'use client'`) that handles all WebGPU initialization, shader compilation, and rendering loop
-- The WGSL shader code is embedded as a string within the component (lines 47-101 in WebGPUShader.tsx)
+### 4-Phase Pranayama Cycle
+
+```
+┌──────────────┬──────────────┬──────────────┬──────────────┐
+│   INHALE     │  HOLD IN     │   EXHALE     │  HOLD OUT    │
+│   (0-25%)    │   (25-50%)   │   (50-75%)   │   (75-100%)  │
+├──────────────┼──────────────┼──────────────┼──────────────┤
+│ Breath in    │ Hold breath  │ Breath out   │ Hold empty   │
+│ Raise arms   │ Flex/Engage  │ Lower arms   │ Relax        │
+│ Anahata      │ Manipura     │ Muladhara    │ Sahasrara    │
+│ (Heart)      │ (Solar Plex) │ (Root)       │ (Crown)      │
+│ Cyan         │ Yellow       │ Purple       │ Green        │
+└──────────────┴──────────────┴──────────────┴──────────────┘
+```
+
+### Strength Levels
+
+| Level | Initial | After 16 cycles | After 31 cycles | After 61 cycles |
+|-------|---------|-----------------|-----------------|-----------------|
+| Light | 5s | 7s | - | - |
+| Medium | 7s | 8s | - | - |
+| Strong | 7s | 8s | 10s | - |
+
+---
+
+## Chakra System
+
+### The Seven Chakras
+
+| # | Name | Sanskrit | Color | Location | Element | Phase Association |
+|---|------|----------|-------|----------|---------|-------------------|
+| 1 | Muladhara | मूलाधार | Red (#ef4444) | Base of spine | Earth | Exhale (grounding) |
+| 2 | Svadhisthana | स्वाधिष्ठान | Orange (#f97316) | Lower abdomen | Water | - |
+| 3 | Manipura | मणिपूर | Yellow (#eab308) | Solar plexus | Fire | Hold-in (power) |
+| 4 | Anahata | अनाहत | Green (#22c55e) | Heart center | Air | Inhale (opening) |
+| 5 | Vishuddha | विशुद्ध | Cyan (#06b6d4) | Throat | Ether | Inhale secondary |
+| 6 | Ajna | आज्ञा | Indigo (#6366f1) | Between eyebrows | Light | - |
+| 7 | Sahasrara | सहस्रार | Violet (#a855f7) | Crown of head | Cosmic | Hold-out (liberation) |
+
+### Phase-Chakra Mapping
+
+```typescript
+PHASE_CHAKRAS: Record<BreathPhase, { primary: ChakraName; secondary?: ChakraName; significance: string }>
+
+inhale:   { primary: 'Anahata', secondary: 'Vishuddha', significance: 'Opening the heart, receiving prana' }
+hold-in:  { primary: 'Manipura', significance: 'Building internal fire, charging solar plexus' }
+exhale:   { primary: 'Muladhara', significance: 'Grounding, releasing into earth element' }
+hold-out: { primary: 'Sahasrara', significance: 'Open to cosmic consciousness, shunya (void)' }
+```
+
+---
+
+## Yoga Knowledge Integration
+
+### Posture Guide (PostureGuide.tsx)
+
+**Animated SVG stick figures** display for each breath phase:
+- **Inhale**: Arms rising overhead (Urdhva Hastasana)
+- **Hold-in**: Arms extended with subtle tension, core engaged
+- **Exhale**: Arms gracefully lowering
+- **Hold-out**: Neutral standing (Tadasana), complete relaxation
+
+**Features:**
+- Phase-appropriate arm positions with CSS animations
+- Chakra indicators along the spine (7 glowing dots)
+- Active chakra pulse animation
+- Sanskrit names and detailed instructions
+- Bandha (energy lock) guidance
+- Drishti (gaze) recommendations
+
+### Educational Content
+
+The bottom section provides:
+1. **Practice Guidelines** - Step-by-step instructions
+2. **Pranayama Wisdom** - Concepts explained:
+   - Kumbhaka (breath retention)
+   - Bandhas (Mula, Uddiyana, Jalandhara)
+   - Nadis (Ida, Pingala, Sushumna)
+3. **Current Phase Info** - Real-time context for the active phase
+
+---
+
+## WebGPU Shader Architecture
+
+### Uniform Buffer (32 bytes)
+
+```wgsl
+struct Uniforms {
+  resolution: vec2<f32>,      // Canvas size
+  time: f32,                  // Continuous animation time
+  breathProgress: f32,        // 0.0-1.0 within breath cycle
+  breathPhase: f32,           // 0=inhale, 1=hold-in, 2=exhale, 3=hold-out
+  cycleNumber: f32,           // Current breath cycle
+  isRunning: f32,             // 1.0 running, 0.0 paused
+  activeChakra: f32,          // 0-6 representing the 7 chakras
+  secondaryChakra: f32,       // -1 if none, otherwise 0-6
+};
+```
+
+### Visual Features
+
+1. **Kaleidoscope Pattern** - Animated raymarched geometry
+2. **Breath Synchronization** - Pattern scales/pulses with breathProgress
+3. **Phase Colors** - Cyan/Yellow/Purple/Green based on breathPhase
+4. **Chakra Visualization** - All 7 chakras displayed along central channel (sushumna)
+   - Active chakra glows brightly with pulse animation
+   - Secondary chakra shows moderate glow
+   - Inactive chakras show subtle base glow
+5. **Breath Ring Overlay** - Expanding/contracting ring showing breath state
+
+### Chakra Colors in Shader
+
+```wgsl
+// 0=Root(red), 1=Sacral(orange), 2=Solar(yellow), 3=Heart(green)
+// 4=Throat(cyan), 5=ThirdEye(indigo), 6=Crown(violet)
+fn getChakraColor(chakraIndex: f32) -> vec3<f32> {
+  if (chakraIndex < 0.5) { return vec3<f32>(0.93, 0.27, 0.27); }  // Red
+  if (chakraIndex < 1.5) { return vec3<f32>(0.98, 0.45, 0.09); }  // Orange
+  if (chakraIndex < 2.5) { return vec3<f32>(0.92, 0.72, 0.03); }  // Yellow
+  if (chakraIndex < 3.5) { return vec3<f32>(0.13, 0.77, 0.37); }  // Green
+  if (chakraIndex < 4.5) { return vec3<f32>(0.02, 0.71, 0.83); }  // Cyan
+  if (chakraIndex < 5.5) { return vec3<f32>(0.39, 0.40, 0.95); }  // Indigo
+  return vec3<f32>(0.66, 0.33, 0.97);                             // Violet
+}
+```
 
 ---
 
 ## Build and Development Commands
 
-All commands use npm:
-
 ```bash
 # Install dependencies
 npm install
 
-# Start development server (hot reload)
+# Start development server
 npm run dev
 # → http://localhost:3000
 
-# Build for production (static export)
+# Build for production
 npm run build
 # → Output goes to `out/` directory
 
-# Start production server (requires build first)
+# Start production server
 npm start
 
 # Run ESLint
 npm run lint
 ```
-
-### Build Configuration
-
-The project is configured for **static export**:
-
-```typescript
-// next.config.ts
-{
-  output: 'export',
-  basePath: '/yoga',  // Assets prefixed with /yoga
-}
-```
-
-This generates a static site in the `out/` directory suitable for deployment to any static hosting.
 
 ---
 
@@ -119,149 +220,104 @@ This generates a static site in the `out/` directory suitable for deployment to 
 - **Module resolution:** bundler
 - **Path aliases:** `@/*` maps to `./*`
 
-### Styling Conventions
+### Component Patterns
 
-**Tailwind CSS v4** is used with the new `@import` syntax:
+- Functional components with TypeScript
+- Client components marked with `'use client'`
+- Custom hooks for complex logic (useBreathTimer)
+- Props interfaces defined inline
+
+### Tailwind CSS v4
 
 ```css
 /* globals.css */
 @import "tailwindcss";
 ```
 
-- Utility-first approach with Tailwind classes
-- CSS variables for theming in `globals.css`
-- Dark mode support via `prefers-color-scheme` media query
-
-### Component Patterns
-
-- Use functional components with TypeScript
-- Client components explicitly marked with `'use client'`
-- React hooks for state management (no external state library)
-
-### ESLint Rules
-
-Uses `eslint-config-next` with TypeScript support:
-- Core web vitals rules enabled
-- TypeScript-specific rules enabled
-- Ignores: `.next/`, `out/`, `build/`, `next-env.d.ts`
+- Utility-first approach
+- Glassmorphism effects: `backdrop-blur`, `bg-white/10`
+- Chakra colors mapped to Tailwind classes
 
 ---
 
-## WebGPU Implementation Details
+## Testing Checklist
 
-### Browser Compatibility
+### Manual Testing
 
-**Supported browsers:**
-- Chrome/Edge 113+ (stable)
-- Opera 99+
-- Safari Technology Preview
+1. **Breath Timer**
+   - [ ] Timer starts automatically
+   - [ ] Phases progress correctly
+   - [ ] Cycle count increments
+   - [ ] Pause/Resume works
+   - [ ] Reset returns to cycle 0
 
-**Detection:** The app checks `navigator.gpu` and displays a fallback UI if WebGPU is unavailable.
+2. **Posture Guide**
+   - [ ] Stick figure changes pose per phase
+   - [ ] Chakra glows pulse on active chakra
+   - [ ] Sanskrit names display correctly
+   - [ ] Bandha/drishti info updates per phase
 
-### Shader Architecture
+3. **Chakra Display**
+   - [ ] Active chakra color matches phase
+   - [ ] Secondary chakra shows when applicable
+   - [ ] Chakra significance text updates
 
-The WGSL shader creates a breathing visualization with:
-- **Vertex shader:** Simple full-screen triangle strip (4 vertices)
-- **Fragment shader:** 
-  - Radial gradient with distance-based coloring
-  - Sine-wave breathing animation (`sin(time * 0.5)`)
-  - Smooth color transitions using hue rotation
-  - Glow effect via exponential falloff
+4. **WebGPU Shader**
+   - [ ] Chakra visualization renders
+   - [ ] Active chakra glows brighter
+   - [ ] Colors shift with breath phases
+   - [ ] Fallback message shows in non-WebGPU browsers
 
-### Rendering Pipeline
-
-1. Request GPU adapter and device
-2. Configure canvas context with preferred format
-3. Create shader module from WGSL code
-4. Set up uniform buffer for time variable
-5. Create render pipeline with blend modes for transparency
-6. Render loop updates time uniform and submits commands
-
----
-
-## Testing Instructions
-
-**No automated tests are configured** in this project.
-
-### Manual Testing Checklist
-
-1. **WebGPU support detection:**
-   - Test in Chrome/Edge 113+ - should show animated circle
-   - Test in Firefox/Safari (without WebGPU) - should show "WebGPU Not Supported" message
-
-2. **Visual verification:**
-   - Circle should pulse smoothly (expand/contract cycle ~12 seconds)
-   - Colors should shift gradually over time
-   - Background gradient should be visible
-
-3. **Responsiveness:**
-   - Canvas should scale within its container (`max-width: 100%`)
-   - Layout should center on all screen sizes
+5. **Educational Content**
+   - [ ] All three info cards display
+   - [ ] Current phase info updates in real-time
+   - [ ] Responsive layout works on mobile
 
 ---
 
 ## Deployment Process
 
-### Static Export Deployment
-
-The project uses a custom Python deployment script:
-
 ```bash
-# 1. Build the static site
+# Build the static site
 npm run build
 
-# 2. Deploy via SFTP
+# Deploy via SFTP
 python deploy.py
 ```
 
-**Deploy script details (`deploy.py`):**
-- Uploads the `out/` directory via SFTP to `test.1ink.us/yoga`
-- Requires `paramiko` library (`pip install paramiko`)
-- Uses hardcoded credentials (note: contains plaintext password)
-- Recursively creates directories and uploads files
-
-### Manual Deployment
-
-The `out/` directory contains the complete static site:
-- Copy contents to any static web server
-- Ensure assets are served from `/yoga` base path (configured in `next.config.ts`)
+The `out/` directory contains the complete static site ready for any static hosting.
 
 ---
 
-## Security Considerations
+## Architecture Decisions
 
-### Known Issues
+### Why Separate Yoga Logic from Shader?
 
-**⚠️ Critical:** The `deploy.py` script contains hardcoded plaintext credentials:
-- Password is visible in the source code (line 45)
-- Should use environment variables or secure credential storage
+**Original approach:** All text and posture info rendered in shader
+**New approach:** React manages yoga knowledge, shader focuses on visuals
 
-### Browser Security
+**Benefits:**
+- Easier to update yoga content without shader recompilation
+- Better accessibility (screen readers can access text)
+- More flexible UI (CSS animations, responsive design)
+- Better performance (shader does less work)
 
-- WebGPU requires secure context (HTTPS or localhost)
-- Shader code is executed on GPU - malformed shaders could cause GPU hangs
-- The shader code in this project is hardcoded (not user-provided), mitigating injection risks
+### Why SVG Stick Figures?
 
-### Build Security
+- **Lightweight** - No external image assets
+- **Scalable** - Looks crisp at any size
+- **Animatable** - CSS animations for arm movements
+- **Accessible** - Semantic SVG elements
+- **Sacred aesthetic** - Minimalist line drawings match yoga tradition
 
-- No sensitive environment variables used in the application
-- No API keys or secrets in the client-side code
+### Chakra Phase Mapping Rationale
 
----
-
-## Common Issues and Solutions
-
-### "WebGPU is not supported" error
-- Use Chrome/Edge 113+ or enable WebGPU flags in browser
-- Ensure HTTPS or localhost for secure context
-
-### Build fails with "out directory not found"
-- Run `npm run build` before `deploy.py`
-- The deploy script expects the `out/` directory to exist
-
-### Shader compilation errors
-- Check browser console for WGSL syntax errors
-- WebGPU shader compilation errors are logged to console by the browser
+| Phase | Chakra | Rationale |
+|-------|--------|-----------|
+| Inhale | Anahata (Heart) | Opening to receive, compassion |
+| Hold-in | Manipura (Solar Plexus) | Building power, transformation |
+| Exhale | Muladhara (Root) | Grounding, releasing to earth |
+| Hold-out | Sahasrara (Crown) | Connection to cosmic consciousness |
 
 ---
 
@@ -269,10 +325,36 @@ The `out/` directory contains the complete static site:
 
 | File | Purpose |
 |------|---------|
-| `app/components/WebGPUShader.tsx` | Main WebGPU component with embedded WGSL shader |
-| `app/page.tsx` | Home page with layout and title |
+| `app/hooks/useBreathTimer.ts` | Breath timing + chakra mapping |
+| `app/components/WebGPUShader.tsx` | WebGPU with chakra visualization |
+| `app/components/BreathTimer.tsx` | Timer UI with chakra display |
+| `app/components/PostureGuide.tsx` | SVG posture guide with stick figures |
+| `app/page.tsx` | Main page integrating all components |
 | `app/layout.tsx` | Root layout with metadata |
 | `app/globals.css` | Tailwind v4 styles |
-| `next.config.ts` | Static export configuration |
-| `webgpu.d.ts` | WebGPU TypeScript types |
-| `deploy.py` | SFTP deployment script |
+
+---
+
+## Future Enhancements
+
+Potential features to consider:
+
+1. **Audio cues** - "So Hum" mantra or bell sounds per phase
+2. **Progress tracking** - Session history, statistics
+3. **More pranayama types** - Nadi Shodhana, Kapalabhati, etc.
+4. **Seated variations** - Postures for chair practice
+5. **Meditation timer** - Silent practice after breathwork
+6. **Export/Share** - Session summaries
+
+---
+
+## Sacred Practice Notes
+
+This tool is designed as a **sadhana support** - a digital companion for traditional yoga practice. Key principles:
+
+- **Respect the tradition** - Accurate Sanskrit, proper technique descriptions
+- **Embodied practice** - Visual posture guidance, not just breath timing
+- **Energy awareness** - Chakra visualization for subtle body experience
+- **Progressive approach** - Three levels matching traditional pranayama progression
+
+The goal is to support practitioners in developing a consistent, informed, and deeply felt pranayama practice.
