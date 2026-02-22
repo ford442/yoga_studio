@@ -2,35 +2,46 @@
 
 import { useState } from 'react';
 import WebGPUShader from './components/WebGPUShader';
-import BreathTimer from './components/BreathTimer';
-import PostureGuide from './components/PostureGuide';
-import { useBreathTimer, PHASE_CHAKRAS } from './hooks/useBreathTimer';
+import { useBreathingTimer, DEFAULT_DURATIONS, type Durations, type Phase } from './hooks/useBreathingTimer';
+
+const PHASE_DISPLAY: Record<Phase, { label: string; color: string; description: string }> = {
+  inhale: { 
+    label: 'INHALE', 
+    color: 'text-cyan-400',
+    description: 'Breathe in deeply through your nose'
+  },
+  hold1: { 
+    label: 'HOLD', 
+    color: 'text-yellow-400',
+    description: 'Hold the breath gently'
+  },
+  exhale: { 
+    label: 'EXHALE', 
+    color: 'text-orange-400',
+    description: 'Breathe out slowly through your mouth'
+  },
+  hold2: { 
+    label: 'HOLD', 
+    color: 'text-emerald-400',
+    description: 'Rest with empty lungs'
+  },
+};
 
 export default function Home() {
-  const [showShader, setShowShader] = useState(true);
+  const [durations, setDurations] = useState<Durations>(DEFAULT_DURATIONS);
+  const timer = useBreathingTimer(durations);
   
-  const { state, actions } = useBreathTimer({
-    strengthLevel: 'light',
-    autoStart: true,
-  });
-
-  const handleTogglePause = () => {
-    if (state.isRunning) {
-      actions.pause();
-    } else {
-      actions.start();
-    }
-  };
+  const phaseInfo = PHASE_DISPLAY[timer.currentPhase];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
       <header className="pt-8 pb-4 px-4 text-center">
         <h1 className="text-5xl font-bold text-white mb-2 drop-shadow-lg">
-          Yoga Studio
+          Sacred Breath
         </h1>
         <p className="text-xl text-purple-200">
-          Sacred Breath Timer
+          Synchronize your breath with the rhythm
         </p>
       </header>
 
@@ -46,32 +57,37 @@ export default function Home() {
                   <span className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
                   Visualization
                 </h2>
-                <button
-                  onClick={() => setShowShader(!showShader)}
-                  className="text-xs px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-purple-200 transition-colors"
-                >
-                  {showShader ? 'Hide' : 'Show'}
-                </button>
               </div>
               
-              {showShader && (
-                <div className="aspect-[4/3] rounded-lg overflow-hidden">
-                  <WebGPUShader 
-                    breathState={state}
-                    width={800}
-                    height={600}
-                  />
+              <div className="aspect-square rounded-lg overflow-hidden relative">
+                <WebGPUShader
+                  breathState={{
+                    phase: timer.currentPhase,
+                    progress: timer.phaseProgress,
+                    isRunning: timer.isRunning,
+                    activeChakra: timer.currentPhase === 'inhale' ? 'Anahata' : 
+                                  timer.currentPhase === 'hold1' ? 'Manipura' :
+                                  timer.currentPhase === 'exhale' ? 'Muladhara' : 'Sahasrara',
+                  }}
+                  width={800}
+                  height={800}
+                />
+                
+                {/* Overlay phase info */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-center bg-black/40 backdrop-blur-sm rounded-2xl px-8 py-6 border border-white/10">
+                    <p className={`text-4xl font-bold ${phaseInfo.color} mb-2`}>
+                      {phaseInfo.label}
+                    </p>
+                    <p className="text-5xl font-light text-white tabular-nums">
+                      {timer.timeLeftInPhase}s
+                    </p>
+                  </div>
                 </div>
-              )}
-              
-              {!showShader && (
-                <div className="aspect-[4/3] rounded-lg bg-black/50 flex items-center justify-center">
-                  <p className="text-purple-300">Visualization hidden</p>
-                </div>
-              )}
+              </div>
               
               <p className="text-xs text-purple-400 mt-3 text-center">
-                WebGPU-powered shader synchronized to your breath rhythm
+                WebGPU-powered breathing visualization
               </p>
             </div>
             
@@ -88,7 +104,7 @@ export default function Home() {
                   <span className="text-xs text-purple-300">Hold - Steady</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-purple-400" />
+                  <span className="w-3 h-3 rounded-full bg-orange-400" />
                   <span className="text-xs text-purple-300">Exhale - Release</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -100,27 +116,147 @@ export default function Home() {
           </div>
           
           {/* Right: Breath Timer Controls */}
-          <div className="bg-black/30 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
-            <h2 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
+          <div className="bg-black/30 backdrop-blur-sm rounded-2xl p-6 border border-white/10 space-y-6">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Breath Timer
+              Breath Controls
             </h2>
             
-            <BreathTimer
-              state={state}
-              onStrengthChange={actions.setStrengthLevel}
-              onTogglePause={handleTogglePause}
-              onReset={actions.reset}
-            />
+            {/* Current Phase Display */}
+            <div className="text-center py-6 bg-black/20 rounded-xl border border-white/5">
+              <p className="text-sm text-purple-300 mb-1">Current Phase</p>
+              <p className={`text-3xl font-bold ${phaseInfo.color}`}>
+                {phaseInfo.label}
+              </p>
+              <p className="text-sm text-purple-200 mt-1">
+                {phaseInfo.description}
+              </p>
+            </div>
             
-            {/* Posture Guide */}
-            <div className="mt-6">
-              <PostureGuide 
-                phase={state.phase}
-                showDetails={true}
-              />
+            {/* Timer Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 text-center">
+                <div className="text-xs text-purple-300 uppercase tracking-wide">Remaining</div>
+                <div className="text-xl font-semibold text-white">
+                  {timer.timeLeftInPhase}s
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 text-center">
+                <div className="text-xs text-purple-300 uppercase tracking-wide">Progress</div>
+                <div className="text-xl font-semibold text-white">
+                  {Math.round(timer.phaseProgress * 100)}%
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 text-center">
+                <div className="text-xs text-purple-300 uppercase tracking-wide">Cycles</div>
+                <div className="text-xl font-semibold text-white">
+                  {timer.cycleCount}
+                </div>
+              </div>
+            </div>
+            
+            {/* Duration Controls */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-purple-200">Phase Durations (seconds)</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-purple-400 block mb-1">Inhale</label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="10"
+                    value={durations.inhale}
+                    onChange={(e) => setDurations({ ...durations, inhale: Number(e.target.value) })}
+                    className="w-full accent-cyan-400"
+                  />
+                  <span className="text-xs text-white">{durations.inhale}s</span>
+                </div>
+                <div>
+                  <label className="text-xs text-purple-400 block mb-1">Hold</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="10"
+                    value={durations.hold1}
+                    onChange={(e) => setDurations({ ...durations, hold1: Number(e.target.value) })}
+                    className="w-full accent-yellow-400"
+                  />
+                  <span className="text-xs text-white">{durations.hold1}s</span>
+                </div>
+                <div>
+                  <label className="text-xs text-purple-400 block mb-1">Exhale</label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="12"
+                    value={durations.exhale}
+                    onChange={(e) => setDurations({ ...durations, exhale: Number(e.target.value) })}
+                    className="w-full accent-orange-400"
+                  />
+                  <span className="text-xs text-white">{durations.exhale}s</span>
+                </div>
+                <div>
+                  <label className="text-xs text-purple-400 block mb-1">Hold Empty</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="8"
+                    value={durations.hold2}
+                    onChange={(e) => setDurations({ ...durations, hold2: Number(e.target.value) })}
+                    className="w-full accent-emerald-400"
+                  />
+                  <span className="text-xs text-white">{durations.hold2}s</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Control Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={timer.isRunning ? timer.pause : timer.start}
+                className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                  timer.isRunning
+                    ? 'bg-amber-500/80 hover:bg-amber-500 text-white'
+                    : 'bg-emerald-500/80 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                {timer.isRunning ? 'Pause' : 'Start Sacred Breath'}
+              </button>
+              <button
+                onClick={timer.reset}
+                className="px-4 py-3 rounded-lg font-medium bg-white/10 hover:bg-white/20 text-purple-200 transition-all duration-200"
+              >
+                Reset
+              </button>
+            </div>
+            
+            {/* Cycle Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs text-purple-300">
+                <span>Cycle Progress</span>
+                <span>{Math.round(timer.globalProgress * 100)}%</span>
+              </div>
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-cyan-400 via-yellow-400 via-orange-400 to-emerald-400 transition-all duration-100 ease-linear"
+                  style={{ width: `${timer.globalProgress * 100}%` }}
+                />
+              </div>
+              
+              {/* Phase indicators */}
+              <div className="flex justify-between pt-1">
+                {(['inhale', 'hold1', 'exhale', 'hold2'] as Phase[]).map((phase) => (
+                  <div 
+                    key={phase}
+                    className={`w-2 h-2 rounded-full transition-colors duration-200 ${
+                      timer.currentPhase === phase ? 'bg-white shadow-lg shadow-white/50' : 'bg-white/20'
+                    }`}
+                    title={PHASE_DISPLAY[phase].label}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -136,11 +272,11 @@ export default function Home() {
               Practice Guidelines
             </h3>
             <ol className="text-xs text-purple-300 space-y-2 list-decimal list-inside">
-              <li>Find a comfortable standing or seated position (Tadasana)</li>
-              <li>Synchronize arm movements with breath phases</li>
-              <li>Engage appropriate bandhas during holds</li>
-              <li>Keep drishti (gaze) soft and steady</li>
-              <li>Start with Light intensity, progress gradually</li>
+              <li>Find a comfortable seated or lying position</li>
+              <li>Follow the expanding/contracting circle with your breath</li>
+              <li>Inhale as the circle expands, exhale as it contracts</li>
+              <li>Keep your breath smooth and continuous</li>
+              <li>Start with shorter durations, increase gradually</li>
               <li>Practice for 5-20 minutes daily</li>
             </ol>
           </div>
@@ -154,10 +290,10 @@ export default function Home() {
               Pranayama Wisdom
             </h3>
             <div className="text-xs text-purple-300 space-y-2">
-              <p><strong className="text-white/70">Kumbhaka</strong> — Breath retention builds prana (life force) and strengthens the nervous system.</p>
-              <p><strong className="text-white/70">Bandhas</strong> — Energy locks that direct prana flow: Mula (root), Uddiyana (navel), Jalandhara (throat).</p>
-              <p><strong className="text-white/70">Nadis</strong> — Subtle energy channels: Ida (moon/left), Pingala (sun/right), Sushumna (central).</p>
-              <p><strong className="text-white/70">This practice</strong> — A moving pranayama to circulate prana through the nadis while opening the heart and shoulders.</p>
+              <p><strong className="text-white/70">Box Breathing</strong> — Equal inhalation, hold, exhalation, and hold creates balance and calm.</p>
+              <p><strong className="text-white/70">4-7-8 Breathing</strong> — Inhale for 4, hold for 7, exhale for 8 to activate the parasympathetic nervous system.</p>
+              <p><strong className="text-white/70">Coherent Breathing</strong> — 5-6 breaths per minute optimizes heart rate variability.</p>
+              <p><strong className="text-white/70">This practice</strong> — Customize your own rhythm to match your body&apos;s natural flow.</p>
             </div>
           </div>
           
@@ -170,14 +306,11 @@ export default function Home() {
               Current Phase Focus
             </h3>
             <div className="text-xs text-purple-300 space-y-2">
-              <p><strong className="text-white/70">Phase:</strong> <span className="capitalize">{state.phase.replace('-', ' ')}</span></p>
-              <p><strong className="text-white/70">Primary Chakra:</strong> {state.activeChakra} ({PHASE_CHAKRAS[state.phase].significance})</p>
-              {state.secondaryChakra && (
-                <p><strong className="text-white/70">Secondary:</strong> {state.secondaryChakra}</p>
-              )}
-              <p><strong className="text-white/70">Cycle:</strong> {state.cycle + 1}</p>
+              <p><strong className="text-white/70">Phase:</strong> <span className={phaseInfo.color}>{phaseInfo.label}</span></p>
+              <p><strong className="text-white/70">Progress:</strong> {Math.round(timer.phaseProgress * 100)}% complete</p>
+              <p><strong className="text-white/70">Cycles completed:</strong> {timer.cycleCount}</p>
               <div className="pt-2 border-t border-white/10 mt-2">
-                <p className="italic text-white/50">&ldquo;{PHASE_CHAKRAS[state.phase].significance}&rdquo;</p>
+                <p className="italic text-white/50">&ldquo;{phaseInfo.description}&rdquo;</p>
               </div>
             </div>
           </div>
@@ -186,7 +319,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="py-8 text-center text-xs text-purple-400">
-        <p>Sacred Breath Timer • Synchronize your breath with the rhythm</p>
+        <p>Sacred Breath Timer • Find your rhythm</p>
       </footer>
     </div>
   );
