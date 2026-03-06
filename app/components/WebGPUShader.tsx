@@ -31,7 +31,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   // Load shader from file
   const loadShader = async (): Promise<string> => {
     try {
-      const response = await fetch('/yoga-fixed.wgsl');
+      const response = await fetch('./yoga-fixed.wgsl');
       if (!response.ok) throw new Error('Failed to load shader');
       return await response.text();
     } catch (e) {
