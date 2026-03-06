@@ -1,16 +1,17 @@
-@group(0) @binding(1) var<uniform> iResolution: vec3<f32>;
-@group(0) @binding(2) var<uniform> iFrame: f32;
+// Sacred Breath Yoga Visuals - Clean WGSL Shader
+// All UI/text rendering removed - handled by React overlay
 
-// NEW BREATH UNIFORMS — this is what React will control
 struct BreathUniforms {
-  time: f32,           // replaces old iTime
-  phase: u32,          // 0=inhale, 1=hold1, 2=exhale, 3=hold2
-  phaseProgress: f32,  // 0.0 → 1.0 through current phase
+  time: f32,
+  phase: u32,           // 0=inhale, 1=hold1, 2=exhale, 3=hold2
+  phaseProgress: f32,   // 0.0 → 1.0
   cycle: u32,
-  strengthLevel: u32,
-  intensity: f32,      // pulse on inhale, calm on exhale
+  strengthLevel: u32,   // 0=light, 1=medium, 2=strong
+  intensity: f32,
 };
+
 @group(0) @binding(0) var<uniform> u_breath: BreathUniforms;
+@group(0) @binding(1) var<uniform> iResolution: vec3<f32>;
 
 const PI = 3.14159265359;
 const TAU = 6.28318530718;
@@ -68,7 +69,7 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
   return min(a, b) - h * h * k * 0.25;
 }
 
-fn rot2(a: f32) -> mat2x2<f32> {
+fn rotate2d(a: f32) -> mat2x2<f32> {
   let s = sin(a);
   let c = cos(a);
   return mat2x2<f32>(c, s, -s, c);
@@ -112,24 +113,24 @@ fn rings(uv: vec2<f32>, t: f32) -> vec3<f32> {
   // Breathing factor based on phase
   var breathe = 0.0;
   if (u_breath.phase == 0u) {
-    breathe = u_breath.phaseProgress * 0.15;
+    breathe = u_breath.phaseProgress * 0.15; // inhale - expand
   } else if (u_breath.phase == 1u) {
-    breathe = 0.15;
+    breathe = 0.15; // hold - full
   } else if (u_breath.phase == 2u) {
-    breathe = 0.15 * (1.0 - u_breath.phaseProgress);
+    breathe = 0.15 * (1.0 - u_breath.phaseProgress); // exhale - contract
   }
   
   // Outer hexagon ring
   let hexUV = kalei(uv, 6.0);
   let hexRot = t * 0.05;
-  let hexR = rot2(hexRot) * hexUV;
+  let hexR = rotate2d(hexRot) * hexUV;
   let hexD = abs(length(hexR) - (0.75 + breathe)) - 0.015;
   col += exp(-abs(hexD) * 40.0) * phaseColor * 0.5;
   
   // Triangle ring (rotates opposite)
   let triUV = kalei(uv, 3.0);
   let triRot = -t * 0.08;
-  let triR = rot2(triRot) * triUV;
+  let triR = rotate2d(triRot) * triUV;
   let triD = abs(length(triR) - (0.55 + breathe * 0.8)) - 0.012;
   col += exp(-abs(triD) * 45.0) * vec3<f32>(1.0, 0.8, 0.2) * 0.4;
   
@@ -175,6 +176,7 @@ fn lotus(uv: vec2<f32>, t: f32) -> vec3<f32> {
 fn chakras(uv: vec2<f32>, t: f32) -> vec3<f32> {
   var col = vec3<f32>(0.0);
   
+  // Chakra positions along the spine
   let positions = array<f32, 7>(-0.4, -0.25, -0.1, 0.05, 0.2, 0.35, 0.5);
   let sizes = array<f32, 7>(0.045, 0.04, 0.05, 0.045, 0.04, 0.035, 0.055);
   
@@ -182,8 +184,10 @@ fn chakras(uv: vec2<f32>, t: f32) -> vec3<f32> {
     let pos = vec2<f32>(0.0, positions[i]);
     let d = sdCircle(uv - pos, sizes[i]);
     
+    // Base glow
     let glow = exp(-abs(d) * 25.0);
     
+    // Active chakra pulse
     var pulse = 1.0;
     let activeChakra = select(3u, select(2u, select(0u, 6u, u_breath.phase == 3u), u_breath.phase == 2u), u_breath.phase == 1u);
     if (i == activeChakra) {
@@ -192,12 +196,14 @@ fn chakras(uv: vec2<f32>, t: f32) -> vec3<f32> {
     
     col += glow * CHAKRA_COLORS[i] * 0.8 * pulse;
     
+    // Extra glow for active chakra
     if (i == activeChakra) {
       let activeGlow = exp(-length(uv - pos) * 8.0);
       col += activeGlow * CHAKRA_COLORS[i] * 0.4;
     }
   }
   
+  // Sushumna nadi (central channel)
   if (uv.y > -0.5 && uv.y < 0.6) {
     let nadiD = abs(uv.x) - 0.005;
     col += exp(-abs(nadiD) * 50.0) * vec3<f32>(0.9, 0.95, 1.0) * 0.25;
@@ -210,45 +216,53 @@ fn chakras(uv: vec2<f32>, t: f32) -> vec3<f32> {
 fn figure(uv: vec2<f32>, t: f32) -> vec3<f32> {
   var col = vec3<f32>(0.0);
   
+  // Body proportions
   let headPos = vec2<f32>(0.0, 0.3);
   let chestPos = vec2<f32>(0.0, 0.1);
   let hipsPos = vec2<f32>(0.0, -0.1);
   
+  // Calculate arm positions based on breath phase
   var leftHand = vec2<f32>(-0.25, -0.05);
   var rightHand = vec2<f32>(0.25, -0.05);
   
-  if (u_breath.phase == 0u) {
+  if (u_breath.phase == 0u) { // inhale - arms rising
     let rise = u_breath.phaseProgress;
     leftHand = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.2, 0.5), rise);
     rightHand = mix(vec2<f32>(0.25, -0.05), vec2<f32>(0.2, 0.5), rise);
-  } else if (u_breath.phase == 1u) {
+  } else if (u_breath.phase == 1u) { // hold1 - arms overhead
     leftHand = vec2<f32>(-0.2, 0.5);
     rightHand = vec2<f32>(0.2, 0.5);
-  } else if (u_breath.phase == 2u) {
+  } else if (u_breath.phase == 2u) { // exhale - arms lowering
     let lower = u_breath.phaseProgress;
     leftHand = mix(vec2<f32>(-0.2, 0.5), vec2<f32>(-0.25, -0.05), lower);
     rightHand = mix(vec2<f32>(0.2, 0.5), vec2<f32>(0.25, -0.05), lower);
   }
+  // hold2 - arms at sides (default)
   
+  // Head
   let headD = sdCircle(uv - headPos, 0.055);
   col += exp(-abs(headD) * 35.0) * vec3<f32>(0.9, 0.9, 1.0) * 0.5;
   
+  // Torso (connected shapes)
   let chestD = sdCircle(uv - chestPos, 0.075);
   let hipsD = sdCircle(uv - hipsPos, 0.065);
   let torsoD = smin(chestD, hipsD, 0.08);
   col += exp(-abs(torsoD) * 30.0) * vec3<f32>(0.85, 0.88, 1.0) * 0.4;
   
+  // Arms
   let leftArmD = sdSegment(uv, chestPos + vec2<f32>(-0.055, 0.04), leftHand) - 0.022;
   let rightArmD = sdSegment(uv, chestPos + vec2<f32>(0.055, 0.04), rightHand) - 0.022;
   col += exp(-abs(leftArmD) * 35.0) * vec3<f32>(0.85, 0.9, 1.0) * 0.45;
   col += exp(-abs(rightArmD) * 35.0) * vec3<f32>(0.85, 0.9, 1.0) * 0.45;
   
+  // Hands with phase color
   let phaseColor = PHASE_COLORS[u_breath.phase];
   let leftHandD = sdCircle(uv - leftHand, 0.025);
   let rightHandD = sdCircle(uv - rightHand, 0.025);
   col += exp(-abs(leftHandD) * 45.0) * phaseColor * 0.6;
   col += exp(-abs(rightHandD) * 45.0) * phaseColor * 0.6;
   
+  // Legs (static standing)
   let leftLegD = sdSegment(uv, hipsPos, vec2<f32>(-0.12, -0.45)) - 0.028;
   let rightLegD = sdSegment(uv, hipsPos, vec2<f32>(0.12, -0.45)) - 0.028;
   col += exp(-abs(leftLegD) * 35.0) * vec3<f32>(0.8, 0.85, 1.0) * 0.4;
@@ -264,16 +278,19 @@ fn progressRing(uv: vec2<f32>) -> vec3<f32> {
   let r = length(uv);
   let a = atan2(uv.y, uv.x);
   
+  // Base ring
   let ringD = abs(r - 0.65) - 0.015;
   let phaseColor = PHASE_COLORS[u_breath.phase];
   
+  // Progress arc
   let normalizedAngle = (a + PI) / TAU;
   let progressAngle = u_breath.phaseProgress;
   let inArc = select(0.0, 1.0, normalizedAngle < progressAngle);
   
   col += exp(-abs(ringD) * 50.0) * phaseColor * 0.8 * inArc;
-  col += exp(-abs(ringD) * 20.0) * phaseColor * 0.2;
+  col += exp(-abs(ringD) * 20.0) * phaseColor * 0.2; // dim base ring
   
+  // Glow at progress point
   let progressPos = vec2<f32>(cos(progressAngle * TAU - PI), sin(progressAngle * TAU - PI)) * 0.65;
   let glowD = length(uv - progressPos);
   col += exp(-glowD * 30.0) * phaseColor * 0.8;
