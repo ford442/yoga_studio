@@ -1,0 +1,290 @@
+# 🎯 SWARM CAPTAIN (Orchestrator Prompt)
+# WGSL Shader Optimization Swarm for Breathing Meditation Shader
+
+repository:
+  project: yoga_studio (Next.js + WebGPU)
+  target_file: public/shaders/breath-swarm-merged.wgsl
+  output_dir: /workspaces/codepit/projects/yoga_studio/swarm-outputs
+
+uniforms:
+  struct: BreathUniforms
+  fields:
+    time: f32
+    phase: u32          # 0-3 (inhale, hold1, exhale, hold2)
+    phaseProgress: f32  # 0→1 within phase
+    cycle: u32
+    strengthLevel: u32  # 0-10
+    intensity: f32      # 0.0-1.0
+
+swarm_protocol:
+  parallel_agents: 5
+  execution_mode: isolated
+  output_format: "/swarm-outputs/task-{1-5}.wgsl"
+  
+agents:
+  - id: 1
+    name: "Animation Specialist"
+    role: "Organic Animation Specialist"
+    scope: "map() function + helper rotation utilities"
+    focus: "Arm/torso breathing animation"
+    
+  - id: 2
+    name: "Energy Systems Engineer"
+    role: "Energy Systems Engineer"
+    scope: "chakras() function + color integration in mainImage()"
+    focus: "Chakra pulse/flow wave propagation"
+    
+  - id: 3
+    name: "Geometry Specialist"
+    role: "Procedural Geometry Specialist"
+    scope: "rings(), kalei(), and map() mesh layers"
+    focus: "Rings/mesh breathing animation"
+    
+  - id: 4
+    name: "Color Grading Specialist"
+    role: "Color Science & Grading Specialist"
+    scope: "End of mainImage() (post-processing/color grading stage)"
+    focus: "Phase-based color harmony"
+    
+  - id: 5
+    name: "Performance Auditor"
+    role: "WebGPU Performance Auditor"
+    scope: "Global audit, no function rewrites (diffs/patches only)"
+    focus: "Mobile WebGPU optimizations"
+
+merge_strategy:
+  order:
+    - base: original shader
+    - step_1: "Agent 5 patches (optimizations to base functions)"
+    - step_2: "Agent 1 (map() arm animation)"
+    - step_3: "Agent 3 (map() geometry pulse - merge with Agent 1)"
+    - step_4: "Agent 2 (chakras() function + mainImage() color addition)"
+    - step_5: "Agent 4 (mainImage() end-of-pipeline grading)"
+  
+  conflict_resolution:
+    - "Agent 1 & 3 both modify map(): Combine rotation logic first, then scale/pulse"
+    - "Agent 2 & 4 both modify mainImage(): Agent 2 adds chakra col, Agent 4 grades final result (order matters: grade last)"
+    - "Agent 5 patches apply to all functions before feature additions"
+
+quality_gates:
+  - "Compiles without warnings (Tint/WGSL validator)"
+  - "Maintains 60fps on mid-tier mobile (Mali-G76/Adreno 610 equivalent)"
+  - "Visual regression test: Breathing cycle completes 0→1→2→3→0 smoothly"
+  - "Uniform interface unchanged (React integration preserved)"
+
+---
+
+# 📋 AGENT 1: Organic Animation Specialist
+
+mission: |
+  Implement realistic arm raising/lowering synchronized with breath phases in a stylized human figure.
+
+shared_context: |
+  - Figure constructed from sdPill smooth unions (body capsule, head sphere, arm segments, leg capsules)
+  - Uniforms available: u_breath.time, u_breath.phase (0=inhale,1=hold1,2=exhale,3=hold2), u_breath.phaseProgress (0→1), u_breath.cycle, u_breath.strengthLevel, u_breath.intensity
+  - Current arm structure: shoulder joint → upper arm pill → elbow → forearm pill → hand
+  - Existing helper: rot2(angle) for 2D rotation matrices
+
+requirements:
+  arm_rotation:
+    inhale: "Arms rotate from relaxed sides (≈15° from body) to raised position (≈60-80° outward)"
+    hold1: "Maintain raised position with micro-sway (sin(time)*0.5° * intensity)"
+    exhale: "Lower back to sides with slight forward curve (natural gravity feel)"
+    hold2: "Fully relaxed, subtle breathing idle motion"
+  
+  joint_naturalism:
+    - "Apply rot2() at shoulder for primary rotation"
+    - "Add secondary elbow bend (5-15°) during inhale peak to avoid rigidity"
+    - "Use smoothstep(0.0, 1.0, phaseProgress) for phase transitions"
+  
+  torso_integration:
+    - "Scale chest capsule: 1.0 + 0.03 * intensity * sin(phaseProgress * PI) during inhale/hold1"
+    - "Lift shoulders 0.02-0.05 units on inhale using translate"
+    - "Shoulder lift should follow arm rotation naturally"
+  
+  intensity_modulation:
+    - "Base motion amplitude * u_breath.intensity (0.0-1.0)"
+    - "strengthLevel (0-10) adds subtle noise/irregularity to motion"
+
+performance_constraints:
+  - "No loops inside map()"
+  - "Precompute rotation matrices outside distance evaluations if possible"
+  - "Max 4 sin/cos calls per map() invocation for animation"
+
+output_format:
+  - "Complete rewritten map() function (vec4 map(vec3 p))"
+  - "Any new helper functions (mat2 rot2, smooth unions, etc.)"
+  - "Brief technical explanation of rotation hierarchy"
+  - "Flag any potential conflicts with other map() modifications"
+
+---
+
+# 📋 AGENT 2: Energy Systems Engineer
+
+mission: |
+  Create wave-propagating chakra activation synchronized with breath phases.
+
+shared_context: |
+  - Current chakras(): Returns vec3 color from 7 chakras with positions in offs[] array (root to crown)
+  - Current animation: anim = 0.1 + 0.9 * sin(-4.0 * tt + 2.0 * PI * float(i) / 7.0)
+  - Chakra positions: offs[0] (root) at y≈-0.8 to offs[6] (crown) at y≈1.2
+  - Uniforms: u_breath.phase, u_breath.phaseProgress, u_breath.intensity, u_breath.time
+
+requirements:
+  wave_propagation:
+    inhale: "Activation wave starts at root (i=0) and travels upward to crown (i=6). Use delay = float(i) * 0.15. Brightness: 0.3 → 1.0 as wave passes, then sustain."
+    hold1: "All chakras at peak brightness with gentle pulse (sin(time*2.0)*0.1)"
+    exhale: "Top-down release wave (crown to root), brightness fades 1.0 → 0.4"
+    hold2: "Minimal glow (0.2 base), resting state"
+  
+  phase_based_hue_shift:
+    inhale: "Shift toward warm gold/amber (+0.05 hue offset)"
+    exhale: "Shift toward cool cyan/blue (-0.08 hue offset)"
+    interpolation: "Use smooth interpolation via phaseProgress"
+  
+  energy_flow:
+    - "Add vertical glow gradient between chakras during inhale (beam-like connection)"
+    - "Intensity *= (1.0 + 0.4 * u_breath.intensity) for final multiplier"
+  
+  performance:
+    - "Keep chakra count at 7 (no iteration increase)"
+    - "Use cheap sin approximations if possible (x - x³/6.0 for small angles)"
+
+output_format:
+  - "Rewritten chakras(vec3 p, float tt) -> vec3 function"
+  - "Modified mainImage() integration line: show exact col += chakras(...) placement"
+  - "New helper function for hue shifting if implemented"
+  - "Visual description of expected effect (2-3 sentences)"
+
+---
+
+# 📋 AGENT 3: Procedural Geometry Specialist
+
+mission: |
+  Add cohesive radial breathing animation to sacred geometry elements.
+
+shared_context: |
+  - rings(): Generates concentric sacred geometry (hexRing, triRing, ring helpers)
+  - kalei(): Contains distortion loop with repeat() patterns
+  - Mesh layers in map(): Background geometric structures using repeat() and pModPolar
+  - Uniforms: u_breath.phaseProgress (0-1), u_breath.intensity, u_breath.time
+
+requirements:
+  ring_respiration:
+    - "Global scale factor: 1.0 + 0.06 * sin(phaseProgress * TAU + offset) * intensity"
+    - "Layer offsets: Inner rings (offset 0.0), Mid (offset 0.5), Outer (offset 1.0)"
+    - "Inhale = expansion, Exhale = contraction"
+    - "Add rotation twist during inhale: rotate rings by phaseProgress * 0.1 * intensity"
+  
+  kaleidoscope_pulse:
+    - "In kalei(): Add radial displacement dr = 0.02 * sin(phaseProgress * PI) * intensity"
+    - "Apply to input position p before repeat operations"
+    - "Hold phases: Add micro-oscillation (sin(time*8.0) * 0.005 * intensity)"
+  
+  mesh_breathing:
+    - "In map() background layers: Scale repeat grids by 1.0 + 0.02 * breathFactor"
+    - "breathFactor = sin(phaseProgress * TAU) * intensity * 0.5"
+  
+  mobile_optimization:
+    - "Precompute TAU multipliers outside loops"
+    - "Limit kalei() iterations if possible (suggest max 3-4)"
+    - "Use smoothstep for transitions instead of conditional branches"
+
+output_format:
+  - "Modified rings() function with breathing parameters"
+  - "Updated kalei() signature if changed"
+  - "Mesh breathing modifications in map() (clearly commented section)"
+  - "Example usage snippet for mainImage() integration"
+
+---
+
+# 📋 AGENT 4: Color Science & Grading Specialist
+
+mission: |
+  Implement phase-based color grading system for meditative breathing states.
+
+shared_context: |
+  - Current mainImage() ending: col combines background, stars, chakras, vignette, gamma correction
+  - Available uniforms: u_breath.phase (0-3), u_breath.phaseProgress, u_breath.intensity, u_breath.strengthLevel
+  - Current vignette: pow(1.0 - length(uv), 2.0) or similar
+  - Gamma: pow(col, vec3(1.0/2.2))
+
+requirements:
+  phase_color_palette:
+    struct:
+      name: BreathPalette
+      fields:
+        - tint: vec3      # Multiplicative color
+        - hueShift: float # Hue rotation (-0.1 to +0.1)
+        - satMod: float   # Saturation multiplier
+        - contrast: float # Contrast adjustment
+    phases:
+      inhale:  { tint: [1.1, 0.95, 0.8], hueShift: +0.03, satMod: 1.2, contrast: 1.0 }
+      hold1:   { tint: [1.0, 1.0, 1.0], hueShift: 0.0, satMod: 1.1, contrast: 1.1 }
+      exhale:  { tint: [0.9, 1.0, 1.05], hueShift: -0.05, satMod: 0.9, contrast: 1.0 }
+      hold2:   { tint: [1.0, 1.0, 1.0], hueShift: 0.0, satMod: 0.85, contrast: 0.95 }
+  
+  smooth_blending:
+    - "Use mix() between phases based on phaseProgress"
+    - "For phase N: mix(palette[N], palette[(N+1)%4], smoothstep(0.0, 1.0, phaseProgress))"
+  
+  intensity_scaling:
+    - "Vignette strength *= (0.8 + 0.4 * u_breath.intensity)"
+    - "strengthLevel (0-10): Subtle saturation boost (strengthLevel * 0.02)"
+  
+  hdr_safety:
+    - "Clamp final RGB to avoid washout (max 2.0 before gamma)"
+    - "Maintain gamma correctness: apply grading in linear space, gamma last"
+
+output_format:
+  - "New function: vec3 applyBreathGrade(vec3 linearCol, BreathUniforms br)"
+  - "Integration point in mainImage(): show exact line placement"
+  - "Constant palette definitions"
+  - "Optional: Cheap bloom approximation using blurred mip levels"
+
+---
+
+# 📋 AGENT 5: WebGPU Performance Auditor
+
+mission: |
+  Audit shader for mobile WebGPU performance bottlenecks and provide optimization patches.
+
+shared_context: |
+  - Target: Runs on Android/iOS browsers via WebGPU
+  - Current architecture: Raymarch-style with map() → trace() → shade()
+  - Heavy functions: kalei() (loop), chakras() (7 iterations), rings() (multiple SDF ops)
+  - Uniforms accessed frequently: u_breath.time, phase, etc.
+
+audit_checklist:
+  trigonometric_reduction:
+    - "Count sin/cos calls in hot paths (map, trace loops)"
+    - "Suggestion: Precompute sin(time), cos(time) at frame start"
+    - "Identify redundant angle calculations"
+  
+  loop_optimization:
+    - "kalei() iterations: Current count? Suggest reduction or early-out"
+    - "chakras() loop: Unroll if possible (7 is small enough)"
+  
+  branch_reduction:
+    - "Replace if/else on u_breath.phase with mix() or array indexing"
+    - "Use select() WGSL builtin instead of ternary"
+  
+  uniform_packing:
+    - "BreathUniforms analysis: Pack phase/cycle/strengthLevel into u32 bitfield?"
+    - "Suggest alignment improvements for uniform buffer"
+  
+  sdf_optimizations:
+    - "Check for expensive smooth-min operations"
+    - "Suggest cheaper alternatives: linear blends for distant objects"
+
+deliverable_format:
+  - "Bullet list: 5-8 concrete changes with code snippets"
+  - "Impact rating: [HIGH], [MEDIUM], or [LOW] for each"
+  - "Estimated cycle savings"
+  - "Compatibility notes"
+  - "Final recommendation: Top 3 changes to implement immediately"
+
+constraints:
+  - "DO NOT rewrite entire shader"
+  - "DO NOT change visual style/appearance"
+  - "DO NOT break existing uniform interface"
