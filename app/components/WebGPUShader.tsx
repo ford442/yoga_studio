@@ -17,6 +17,12 @@ export interface WebGPUShaderRef {
   }) => void;
 }
 
+// Uniform buffer layout (40 bytes = 10 × f32):
+//   [0] time  [1] phase  [2] phaseProgress  [3] cycle
+//   [4] strengthLevel  [5] intensity
+//   [6] sin_time  [7] cos_time  [8] sin_fast  [9] cos_fast
+const UNIFORM_FLOATS = 10;
+
 const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthLevel }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const uniformBufferRef = useRef<GPUBuffer | null>(null);
@@ -31,11 +37,11 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   // Load shader from file
   const loadShader = async (): Promise<string> => {
     try {
-      const response = await fetch('./yoga-regular.wgsl');
+      const response = await fetch('./yoga-breath.wgsl');
       if (!response.ok) throw new Error('Failed to load shader');
       return await response.text();
     } catch (e) {
-      console.warn('Could not load yoga-fixed.wgsl, using fallback');
+      console.warn('Could not load yoga-breath.wgsl, using fallback');
       return fallbackShader;
     }
   };
@@ -111,21 +117,21 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
       pipelineRef.current = pipeline;
 
-      // Create uniform buffer (6 floats = 24 bytes)
+      // Create uniform buffer (10 floats = 40 bytes)
       const uniformBuffer = device.createBuffer({
-        size: 6 * 4,
+        size: UNIFORM_FLOATS * 4,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       uniformBufferRef.current = uniformBuffer;
 
-      // Create resolution buffer (vec3<f32> padded to 16 bytes)
+      // Create resolution buffer (vec4<f32> = 16 bytes)
       const resolutionBuffer = device.createBuffer({
         size: 16,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       resolutionBufferRef.current = resolutionBuffer;
 
-      // Create bind group
+      // Create bind group (binding 0 = uniforms, binding 1 = resolution)
       const bindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
@@ -145,7 +151,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     }
   }, []);
 
-  // Update uniforms
+  // Update uniforms — writes 10 floats including precomputed trig
   const updateUniforms = useCallback((data: {
     time: number;
     phase: number;
@@ -155,13 +161,18 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     intensity: number;
   }) => {
     if (!uniformBufferRef.current || !deviceRef.current) return;
+    const t = data.time;
     const array = new Float32Array([
-      data.time,
+      t,
       data.phase,
       data.phaseProgress,
       data.cycle,
       data.strengthLevel,
       data.intensity,
+      Math.sin(t),
+      Math.cos(t),
+      Math.sin(t * 4.0),
+      Math.cos(t * 4.0),
     ]);
     deviceRef.current.queue.writeBuffer(uniformBufferRef.current, 0, array);
   }, []);
@@ -271,16 +282,20 @@ WebGPUShader.displayName = 'WebGPUShader';
 // Fallback inline shader
 const fallbackShader = `
 struct BreathUniforms {
-  time: f32,
-  phase: u32,
+  time:          f32,
+  phase:         u32,
   phaseProgress: f32,
-  cycle: u32,
+  cycle:         u32,
   strengthLevel: u32,
-  intensity: f32,
+  intensity:     f32,
+  sin_time:      f32,
+  cos_time:      f32,
+  sin_fast:      f32,
+  cos_fast:      f32,
 };
 
 @group(0) @binding(0) var<uniform> u_breath: BreathUniforms;
-@group(0) @binding(1) var<uniform> iResolution: vec3<f32>;
+@group(0) @binding(1) var<uniform> iResolution: vec4<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vid: u32) -> @builtin(position) vec4<f32> {
