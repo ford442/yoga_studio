@@ -5,17 +5,15 @@
 
 struct BreathUniforms {
   time:           f32,
-  phase:          u32,      // 0=inhale, 1=hold1, 2=exhale, 3=hold2
+  phase:          f32,      // 0=inhale, 1=hold1, 2=exhale, 3=hold2 (written as Float32Array from JS)
   phaseProgress:  f32,
-  cycle:          u32,
-  strengthLevel:  u32,
+  cycle:          f32,
+  strengthLevel:  f32,
   intensity:      f32,
 };
 
 @group(0) @binding(0) var<uniform> u_breath: BreathUniforms;
-@group(0) @binding(1) var videoSampler: sampler;
-@group(0) @binding(2) var videoOUT: texture_2d<f32>;
-@group(0) @binding(3) var<uniform> iResolution: vec2<f32>;
+@group(0) @binding(1) var<uniform> iResolution: vec2<f32>;
 
 // ============================================================================
 // CONSTANTS
@@ -59,7 +57,7 @@ fn opSmoothUnion(d1: f32, d2: f32, k: f32) -> f32 {
 fn getArmAngle() -> f32 {
   let p = u_breath.phaseProgress;
   let i = u_breath.intensity;
-  switch(u_breath.phase) {
+  switch(u32(u_breath.phase)) {
     case 0u: { return mix(0.0, PI*1.02, 1.0-pow(1.0-p,2.5)) * i; }
     case 1u: { return PI + sin(u_breath.time*3.0)*0.03*i + sin(u_breath.time*0.5)*0.02; }
     case 2u: { return mix(PI, -0.1, p*p*(3.0-2.0*p)) * i; }
@@ -71,7 +69,7 @@ fn getArmAngle() -> f32 {
 fn getBreathScale() -> vec2<f32> {
   let p = u_breath.phaseProgress;
   let i = u_breath.intensity;
-  switch(u_breath.phase) {
+  switch(u32(u_breath.phase)) {
     case 0u: { let s = 1.0 + p*0.08*i; return vec2<f32>(s,s); }
     case 1u: { let s = 1.08 + sin(u_breath.time*3.0)*0.01*i; return vec2<f32>(s,s); }
     case 2u: { let s = 1.08 - p*0.08*i; return vec2<f32>(s,s); }
@@ -101,7 +99,7 @@ fn map(p_in: vec3<f32>) -> f32 {
   var armR = p - vec3<f32>(0.5,1.5,0.0);
   armL.yz = rot2(armAngle) * armL.yz;
   armR.yz = rot2(armAngle) * armR.yz;
-  let sweep = select(0.0, sin(armAngle*0.5)*0.3, u_breath.phase == 0u);
+  let sweep = select(0.0, sin(armAngle*0.5)*0.3, u32(u_breath.phase) == 0u);
   armL.x += sweep; armR.x -= sweep;
 
   let armL3d = sdPill(armL, vec3<f32>(0.0,0.0,0.0), vec3<f32>(0.0,-1.2,0.0), 0.1);
@@ -122,12 +120,13 @@ fn map(p_in: vec3<f32>) -> f32 {
 fn chakras(uv: vec2<f32>) -> vec3<f32> {
   var col = vec3<f32>(0.0);
   let phase = u_breath.phase;
+  let phaseU = u32(phase);
   let progress = u_breath.phaseProgress;
   let intensity = u_breath.intensity;
   let t = u_breath.time;
   
   var waveOffset: f32 = 0.0;
-  switch(phase) {
+  switch(phaseU) {
     case 0u: { waveOffset = progress * 7.0; }
     case 1u: { waveOffset = 7.0; }
     case 2u: { waveOffset = 7.0 - progress * 7.0; }
@@ -136,7 +135,7 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
   }
   
   var phaseTint = vec3<f32>(0.0);
-  switch(phase) {
+  switch(phaseU) {
     case 0u: { phaseTint = INHALE_COLOR * progress * 0.3; }
     case 1u: { phaseTint = HOLD1_COLOR * 0.2; }
     case 2u: { phaseTint = EXHALE_COLOR * progress * 0.3; }
@@ -157,10 +156,10 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
     ccol = mix(ccol, phaseTint + vec3<f32>(0.5), 0.3);
     
     var active: f32 = 0.0;
-    if phase == 0u && (i == 3 || i == 4) { active = 1.0; }
-    if phase == 1u && i == 2 { active = 1.0; }
-    if phase == 2u && i == 0 { active = 1.0; }
-    if phase == 3u && i == 6 { active = 1.0; }
+    if phaseU == 0u && (i == 3 || i == 4) { active = 1.0; }
+    if phaseU == 1u && i == 2 { active = 1.0; }
+    if phaseU == 2u && i == 0 { active = 1.0; }
+    if phaseU == 3u && i == 6 { active = 1.0; }
     
     let pulse = 0.8 + 0.2 * sin(t * 3.0 + fi * 0.8);
     let size = 0.03 + 0.015 * waveGlow + 0.01 * active;
@@ -168,7 +167,7 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
     
     col += ccol * glow * intensity;
     
-    if phase == 0u && uv.y > y && uv.y < y + 0.3 {
+    if phaseU == 0u && uv.y > y && uv.y < y + 0.3 {
       let flow = exp(-abs(uv.x) * 20.0) * progress * (1.0 - (uv.y - y) / 0.3);
       col += ccol * flow * 0.3 * intensity;
     }
@@ -177,7 +176,7 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
   col += vec3<f32>(1.0, 0.9, 0.7) * exp(-abs(uv.x) * 15.0) * 0.2 * intensity;
   
   let baseGlow = 0.3;
-  let breathPulse = 0.7 + 0.3 * sin(t * 2.0 + f32(phase) * PI * 0.5);
+  let breathPulse = 0.7 + 0.3 * sin(t * 2.0 + phase * PI * 0.5);
   return col * (baseGlow + intensity * breathPulse);
 }
 
@@ -189,9 +188,9 @@ fn ring(uv: vec2<f32>, r: f32, w: f32) -> f32 {
   return smoothstep(w, 0.0, d);
 }
 
-fn dHex(p: vec2<f32>, r: f32) -> f32 {
+fn dHex(p_in: vec2<f32>, r: f32) -> f32 {
   let k = vec3<f32>(-0.866025404, 0.5, 0.577350269);
-  p = abs(p);
+  var p = abs(p_in);
   p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
   p -= vec2<f32>(clamp(p.x, -k.z * r, k.z * r), r);
   return length(p) * sign(p.y);
@@ -218,7 +217,7 @@ fn ringExpansion(idx: i32) -> f32 {
   let i = u_breath.intensity;
   let t = u_breath.time;
   var exp: f32 = 0.0;
-  switch(u_breath.phase) {
+  switch(u32(u_breath.phase)) {
     case 0u: { exp = p * 0.3 * i; }
     case 1u: { exp = 0.3 * i + sin(t * 4.0 + f32(idx)) * 0.02 * i; }
     case 2u: { exp = (1.0 - p) * 0.3 * i; }
@@ -245,7 +244,7 @@ fn rings(uv_in: vec2<f32>) -> vec3<f32> {
   let e4 = ringExpansion(3);
   col += vec3<f32>(0.8, 0.6, 0.4) * triRing(uv * rot2(-t * 0.3), 0.3 + e4 * 0.6) * 0.4;
   
-  if u_breath.phase == 1u || u_breath.phase == 3u {
+  if u32(u_breath.phase) == 1u || u32(u_breath.phase) == 3u {
     let pulse = 0.15 + 0.05 * sin(u_breath.time * 3.0) * u_breath.intensity;
     let micro = sin(u_breath.time * 6.0) * 0.01 * u_breath.intensity;
     col += vec3<f32>(1.0, 0.9, 0.7) * ring(uv, pulse + micro, 0.008) * 0.8;
@@ -269,34 +268,17 @@ fn mapStars(uv: vec2<f32>) -> vec3<f32> {
   return col;
 }
 
-fn sampleVideo(uv: vec2<f32>) -> vec3<f32> {
-  let tc = uv * 0.5 + 0.5;
-  let vcol = textureSample(videoOUT, videoSampler, tc).rgb;
-  let i = u_breath.intensity;
-  let p = u_breath.phaseProgress;
-  var bright = 1.0;
-  switch(u_breath.phase) {
-    case 0u: { bright = 1.0 + p * 0.1 * i; }
-    case 1u: { bright = 1.1 + sin(u_breath.time * 4.0) * 0.02 * i; }
-    case 2u: { bright = 1.1 - p * 0.1 * i; }
-    default: { bright = 1.0; }
-  }
-  let gray = dot(vcol, vec3<f32>(0.299, 0.587, 0.114));
-  let sat = 1.0 + i * 0.2 + select(0.0, 0.1 * sin(u_breath.time * 3.0), u_breath.phase == 1u);
-  return mix(vec3<f32>(gray), vcol * bright, sat);
-}
-
 fn getBreathColorGrade(col: vec3<f32>) -> vec3<f32> {
   let phase = u_breath.phase;
   let p = u_breath.phaseProgress;
   let i = u_breath.intensity;
-  let s = f32(u_breath.strengthLevel);
+  let s = u_breath.strengthLevel;
   
   var tint = vec3<f32>(1.0);
   var sat = 1.0;
   var con = 1.0;
   
-  switch(phase) {
+  switch(u32(phase)) {
     case 0u: { tint = mix(vec3<f32>(1.0), INHALE_COLOR, p * 0.3); sat = 1.0 + p * 0.1; con = 1.0 + p * 0.05; }
     case 1u: { tint = mix(INHALE_COLOR, HOLD1_COLOR, p * 0.25); sat = 1.1; con = 1.05; }
     case 2u: { tint = mix(HOLD1_COLOR, EXHALE_COLOR, p * 0.35); sat = 1.0 - p * 0.05; con = 1.0 + p * 0.05; }
@@ -352,7 +334,7 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>) -> vec3<f32> {
   let spec = pow(max(dot(reflect(-l, n), -rd), 0.0), 16.0);
   
   var fc = vec3<f32>(0.7, 0.75, 0.8);
-  switch(u_breath.phase) {
+  switch(u32(u_breath.phase)) {
     case 0u: { fc = mix(fc, INHALE_COLOR, 0.2); }
     case 1u: { fc = mix(fc, HOLD1_COLOR, 0.25); }
     case 2u: { fc = mix(fc, EXHALE_COLOR, 0.2); }
@@ -373,7 +355,7 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   var col = vec3<f32>(0.02, 0.03, 0.05);
   
   // Phase background tint
-  switch(u_breath.phase) {
+  switch(u32(u_breath.phase)) {
     case 0u: { col = mix(col, INHALE_COLOR * 0.1, u_breath.phaseProgress); }
     case 1u: { col = mix(INHALE_COLOR * 0.1, HOLD1_COLOR * 0.15, u_breath.phaseProgress); }
     case 2u: { col = mix(HOLD1_COLOR * 0.15, EXHALE_COLOR * 0.1, u_breath.phaseProgress); }
@@ -392,11 +374,10 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   let figCol = shade(ro, rd);
   col = mix(col, figCol, smoothstep(0.02, 0.0, map(hit.xyz)));
   
-  col = mix(col, sampleVideo(uv), 0.3 * u_breath.intensity);
   col = getBreathColorGrade(col);
   
   // Global sacred pulse
-  col *= 0.92 + 0.08 * sin(u_breath.time * 1.8 + f32(u_breath.phase) * 1.57);
+  col *= 0.92 + 0.08 * sin(u_breath.time * 1.8 + u_breath.phase * 1.57);
   
   col = applyVignette(col, uv / (resolution.x / resolution.y));
   col = applyGamma(col);
@@ -404,8 +385,17 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   *(fragColor) = vec4<f32>(col, 1.0);
 }
 
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> @builtin(position) vec4<f32> {
+  let pos = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
+    vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0)
+  );
+  return vec4<f32>(pos[vid], 0.0, 1.0);
+}
+
 @fragment
-fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
   var col: vec4<f32>;
   mainImage(&col, fragCoord.xy);
   return col;
