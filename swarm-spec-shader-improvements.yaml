@@ -1,0 +1,493 @@
+# 🎯 SWARM SPEC: Advanced Shader Improvements Pipeline
+# Integrates the complex GLSL features into the WGSL shader with iterative enhancements
+
+repository:
+  project: yoga_studio (Next.js + WebGPU)
+  base_shader: public/yoga.glsl              # Original complex GLSL reference
+  current_wgsl: public/yoga-regular.wgsl     # Current working WGSL
+  target_file: public/shaders/breath-swarm-next.wgsl
+  output_dir: /workspaces/codepit/projects/yoga_studio/swarm-outputs
+
+uniforms:
+  struct: BreathUniforms
+  fields:
+    time: f32
+    phase: f32           # 0-3 (inhale, hold1, exhale, hold2)
+    phaseProgress: f32   # 0→1 within phase
+    cycle: f32
+    strengthLevel: f32   # 0-10
+    intensity: f32       # 0.0-1.0
+
+swarm_protocol:
+  execution_mode: pipeline
+  planner_agents: 1
+  worker_agents: 3
+  output_format: "/swarm-outputs/improvement-{phase}-{agent}.wgsl"
+  
+  phases:
+    - phase: 1
+      name: "feature_planning"
+      agent: "ShaderArchitect"
+      deliverable: "improvement_plan.json"
+    - phase: 2
+      name: "parallel_implementation"
+      agents: ["GeometrySpecialist", "EffectSpecialist", "UISpecialist"]
+      deliverable: "partial_implementations/"
+    - phase: 3
+      name: "integration"
+      agent: "IntegrationEngineer"
+      deliverable: "breath-swarm-next.wgsl"
+
+---
+
+# 📋 PLANNER AGENT: ShaderArchitect
+
+mission: |
+  Analyze the original GLSL shader (~990 lines) and the current WGSL implementation (~400 lines).
+  Identify the most impactful features from GLSL that are missing in WGSL, then create
+  a prioritized implementation plan for the 3 worker agents.
+
+analysis_context:
+  original_glsl_features:
+    raymarching: |
+      Full SDF raymarcher with 32 iterations, fog, distance field marching.
+      Features: kalei() function, starPattern(), rings(), chakras()
+    text_rendering: |
+      SDF text system with 10x4 bit-packed glyph data (uvec4 char_numbers[10])
+      Full alphabet a-z, numbers 0-9, punctuation
+      Renders "breathe in/out", "hold breath", "raise/lower arms", "flex/relax"
+      Positioned in 3D space via text() + fField() SDF
+    figure_geometry: |
+      Complete human figure: head sphere, torso pill, legs pills, arms pills
+      Smooth unions between all body parts
+      Animated arm raising/lowering via shoulder angle
+    star_background: |
+      Log-polar star pattern with hexagonal symmetry
+      Animated rotation and pulsing
+      Connected by lines forming sacred geometry
+    progress_indicator: |
+      Circular progress dial with gradient (red→yellow)
+      Shows breath phase progress
+      Numbers rendering for time and cycle count
+    color_system: |
+      Phase-based color palettes (hue cycling)
+      Chakra colors (7 energy centers)
+      Gamma correction and vignette
+
+  current_wgsl_state:
+    implemented:
+      - "Basic figure with arms (simplified sdPill approach)"
+      - "Chakra glows (7 points, wave propagation)"
+      - "Sacred rings (hex/tri geometry)"
+      - "Phase-based color grading"
+      - "Star background (simplified)"
+    missing_from_glsl:
+      - "Text rendering system (SDF glyphs)"
+      - "3D text positioning in scene"
+      - "Circular progress dial"
+      - "Full kaleidoscope background from GLSL"
+      - "Advanced star pattern with hex symmetry"
+      - "Fog integration with raymarching"
+
+planning_criteria:
+  priority_weighting:
+    visual_impact: 40%     # How much does this improve the visual experience
+    technical_risk: 30%    # Complexity of implementation in WGSL
+    user_value: 30%        # Does it improve the breathing guidance
+
+  agent_assignments:
+    GeometrySpecialist:
+      - "Restore full kaleidoscope effect from GLSL kalei()"
+      - "Implement hex-symmetric star pattern background"
+      - "Add fog integration to raymarching"
+    
+    EffectSpecialist:
+      - "Implement SDF text rendering system"
+      - "Create glyph data structures (port from GLSL uvec4)"
+      - "Add breath instruction text to scene"
+    
+    UISpecialist:
+      - "Implement circular progress dial"
+      - "Add cycle counter display"
+      - "Create time remaining indicator"
+
+deliverable_format:
+  output_file: "improvement_plan.json"
+  structure:
+    summary: "Brief description of top 3 improvements selected"
+    
+    agent_tasks:
+      - agent: "GeometrySpecialist"
+        task_id: "GEO-001"
+        title: "Enhanced Background System"
+        description: "Port GLSL kalei() and starPattern() to WGSL"
+        estimated_lines: 150
+        key_functions: ["kalei()", "starPattern()", "toLogPolar()", "mapStars()"]
+        glsl_reference_lines: "275-293, 216-269"
+        requirements:
+          - "Maintain 60fps on mobile (limit kalei iterations to 4)"
+          - "Integrate with existing trace() function"
+          - "Add fog parameter to trace return"
+      
+      - agent: "EffectSpecialist"
+        task_id: "EFF-001"
+        title: "SDF Text Rendering System"
+        description: "Port GLSL glyph system for breath instructions"
+        estimated_lines: 200
+        key_functions: ["glyph()", "number()", "text()", "alphabet SDFs"]
+        glsl_reference_lines: "72-144, 487-731, 801-849"
+        requirements:
+          - "Port 26 letter SDFs (aa-zz functions)"
+          - "Port glyph bit-packed data (char_numbers array)"
+          - "Create text() function that returns SDF distance"
+          - "Render 'breathe in', 'breathe out', 'hold', 'raise arms', 'lower arms'"
+          - "Position text in 3D scene using transform macros"
+      
+      - agent: "UISpecialist"
+        task_id: "UI-001"
+        title: "Breath Progress HUD"
+        description: "Implement circular progress dial and counters"
+        estimated_lines: 100
+        key_functions: ["getGradientValue()", "circular progress", "number rendering"]
+        glsl_reference_lines: "851-866, 940-989"
+        requirements:
+          - "Circular dial with gradient (red→yellow)"
+          - "Shows phase progress (0-100%)"
+          - "Numbers for cycle count and time remaining"
+          - "Integrate into mainImage() overlay"
+    
+    integration_notes: |
+      Order of integration matters:
+      1. GeometrySpecialist changes first (affects background, trace())
+      2. EffectSpecialist text system (adds to map() or as overlay)
+      3. UISpecialist HUD elements (overlay on final color)
+
+---
+
+# 📋 WORKER AGENT 1: GeometrySpecialist
+
+mission: |
+  Port and enhance the background visual effects from the original GLSL shader.
+  Focus on the kaleidoscope tunnel (kalei) and star pattern background.
+
+input_spec:
+  glsl_source: "yoga.glsl lines 275-293, 216-269"
+  current_wgsl: "yoga-regular.wgsl"
+  target_location: "public/shaders/improvements/geometry.wgsl"
+
+tasks:
+  primary:
+    - name: "Port kalei() function"
+      description: |
+        Port the GLSL kalei() function to WGSL. This creates a recursive 
+        kaleidoscope effect with polar repetition.
+      glsl_reference: |
+        vec3 kalei(vec3 p) {
+            p.x = abs(p.x) - 2.5;
+            vec3 q = p;
+            q.y -= .5;
+            q.y += .4*sin(tt);
+            p.y += .3*sin(p.z*3.+.5*tt);
+            float at = length(q) - .01;
+            for(float i=0.; i < 6.; i++) {
+                p.x = abs(p.x) - 1.5;
+                p.xz *= rot2(1.-exp(-p.z*.14*i)+.2*tt+.1*at);
+                p.xy *= rot2(sin(2.*i)+.2*tt);
+                p.y += 1.-exp(-p.z*.1*i);
+            }
+            p.x = abs(p.x) + 2.5;
+            return p;
+        }
+      wgsl_requirements:
+        - "Reduce iterations from 6 to 4 for performance"
+        - "Use existing rot2() helper or create if missing"
+        - "Add time-based animation from u_breath.time"
+        - "Return vec3<f32> modified position"
+    
+    - name: "Port starPattern() function"
+      description: |
+        Port the log-polar star pattern with hexagonal symmetry.
+      glsl_reference: |
+        void mapStars(vec2 uv, out vec3 near, out vec3 neighbor)
+        float starPattern(vec2 uv)
+      wgsl_requirements:
+        - "Port mapStars() logic for hex grid"
+        - "Port starPattern() with log-polar transform"
+        - "Return float intensity value"
+        - "Animate with time parameter"
+    
+    - name: "Enhance trace() with fog"
+      description: |
+        Add distance-based fog to the existing trace function.
+      integration: |
+        Modify existing trace() in yoga-regular.wgsl to return fog factor.
+        Add fog calculation based on hit distance.
+  
+  constraints:
+    - "Must compile with existing WGSL structure"
+    - "Use f32 instead of float, vec3<f32> instead of vec3"
+    - "Maintain 60fps: limit loops, avoid branching in hot paths"
+    - "Integrate with existing u_breath uniform structure"
+
+deliverable:
+  file: "swarm-outputs/improvement-2-geometry.wgsl"
+  contents:
+    - "Complete kalei() function"
+    - "Complete starPattern() function with helpers"
+    - "Modified trace() with fog"
+    - "Integration notes for main shader"
+
+---
+
+# 📋 WORKER AGENT 2: EffectSpecialist
+
+mission: |
+  Port the SDF text rendering system from GLSL to WGSL. This is the most complex
+  feature - a complete alphabet and number rendering system using signed distance
+  fields and bit-packed glyph data.
+
+input_spec:
+  glsl_source: "yoga.glsl lines 72-144, 487-731, 801-849"
+  current_wgsl: "yoga-regular.wgsl"
+  target_location: "public/shaders/improvements/text.wgsl"
+
+tasks:
+  primary:
+    - name: "Port glyph data structures"
+      description: |
+        Convert the GLSL uvec4 array to WGSL array<vec4<u32>>.
+      glsl_reference: |
+        uvec4[10] char_numbers=uvec4[10](
+          uvec4(0x7FBFFC0F,0x03C0F33C,0xCF03C0F0,0x3FFDFE00),
+          ...
+        );
+        uvec4 char_dash=uvec4(0x00000000,0x00003FFF,0xFC000000,0x00000000);
+        uvec4 char_period=uvec4(0x00000000,0x00000000,0x00000000,0x00C03000);
+      wgsl_requirements:
+        - "Create array<vec4<u32>, 10> for numbers 0-9"
+        - "Create vec4<u32> for dash and period"
+        - "Port _O() bit extraction function"
+        - "Port glyph() function for character lookup"
+    
+    - name: "Port alphabet SDFs"
+      description: |
+        Port all 26 letter distance functions (aa() through zz()).
+      glsl_reference: "Lines 523-705"
+      wgsl_requirements:
+        - "Port all letter functions: aa, bb, cc, dd, ee, ff, gg, hh, ii, jj"
+        - "Port: kk, ll, mm, nn, oo, pp, qq, rr, ss, tt_, uu, vv, ww, xx, yy, zz"
+        - "Note: tt_ has underscore to avoid WGSL keyword conflict"
+        - "Port bracketRight, bracketLeft, semicolon"
+        - "Each returns f32 distance from letter shape"
+    
+    - name: "Port text rendering macros"
+      description: |
+        Convert the #define macros for text layout to WGSL functions/constants.
+      glsl_reference: |
+        #define ch(l) x=min(x,l(uv+vec2(spacing.x*nr, 0.)));nr-=size.x;
+        #define a_ ch(aa);
+        #define line1 _ c_ o_ s_ brR m_ o_ s_ brL sc crlf e_ t_ h_ e_ r_ e_ a_ l_ n_ e_ t_
+      wgsl_requirements:
+        - "Create character selection functions instead of macros"
+        - "Port line1-line9 text strings"
+        - "Create text() function that composites letters into SDF"
+        - "Return float distance for 3D positioning"
+    
+    - name: "Create number rendering"
+      description: |
+        Port the number() function for displaying time/cycle counts.
+      glsl_reference: "Lines 117-144"
+      wgsl_requirements:
+        - "int number(in float number, in int places, in float scale, in vec2 pos, in vec2 fragCoord)"
+        - "Renders numeric values using glyph system"
+        - "Handle decimal places and negative numbers"
+  
+  constraints:
+    - "WGSL does not have #define - use const and functions"
+    - "Bit operations: use u32 type, & operator, >> shift"
+    - "Loop unrolling may help performance for small fixed iterations"
+    - "Text should be readable at various sizes"
+
+deliverable:
+  file: "swarm-outputs/improvement-2-effect.wgsl"
+  contents:
+    - "Glyph data arrays (numbers, dash, period)"
+    - "Complete alphabet SDF functions (aa-zz)"
+    - "Text layout system (converted from macros)"
+    - "number() rendering function"
+    - "Integration example showing how to add to map()"
+
+---
+
+# 📋 WORKER AGENT 3: UISpecialist
+
+mission: |
+  Create the breath timing HUD elements: circular progress dial, cycle counter,
+  and time remaining display. These overlay the 3D scene.
+
+input_spec:
+  glsl_source: "yoga.glsl lines 851-866, 940-989"
+  current_wgsl: "yoga-regular.wgsl"
+  target_location: "public/shaders/improvements/ui.wgsl"
+
+tasks:
+  primary:
+    - name: "Circular progress dial"
+      description: |
+        Create a circular progress indicator showing breath phase completion.
+      glsl_reference: |
+        float progress = mod(iTime + (strength * 0.5), strength) / strength;
+        float innerRadius=0.5; float outerRadius=0.65;
+        vec4 ioColor = getGradientValue(uv2);
+        // Arc rendering with smoothstep...
+      wgsl_requirements:
+        - "Calculate progress based on phaseProgress"
+        - "Render ring with gradient color (red→yellow)"
+        - "Show partial arc based on progress (0-100%)"
+        - "Add smooth antialiasing"
+    
+    - name: "Cycle counter display"
+      description: |
+        Display current breath cycle number.
+      integration: |
+        Use EffectSpecialist's number() function or create simplified version.
+        Position in corner of screen.
+        Show cycle count from u_breath.cycle.
+    
+    - name: "Time remaining indicator"
+      description: |
+        Show remaining time in current phase.
+      wgsl_requirements:
+        - "Calculate time from phaseProgress and phase duration"
+        - "Display as number (seconds)"
+        - "Position near progress dial"
+    
+    - name: "Integration in mainImage"
+      description: |
+        Add all UI elements to the final fragment shader output.
+      wgsl_requirements:
+        - "Composite UI on top of 3D scene"
+        - "Apply after color grading but before final output"
+        - "Use screen-space coordinates (fragCoord)"
+  
+  constraints:
+    - "UI should not obscure the central figure"
+    - "Keep minimal and elegant - this is a meditation app"
+    - "Ensure text is readable on all backgrounds"
+    - "Mobile-friendly sizing"
+
+deliverable:
+  file: "swarm-outputs/improvement-2-ui.wgsl"
+  contents:
+    - "progressDial() function"
+    - "cycleCounter() function"  
+    - "timeDisplay() function"
+    - "mainImage integration snippet"
+    - "Visual placement guide"
+
+---
+
+# 📋 INTEGRATION ENGINEER
+
+mission: |
+  Merge all worker agent outputs into a single cohesive WGSL shader.
+  Resolve conflicts, ensure compilation, and verify performance.
+
+input:
+  base: "public/yoga-regular.wgsl"
+  improvements:
+    - "swarm-outputs/improvement-2-geometry.wgsl"
+    - "swarm-outputs/improvement-2-effect.wgsl"
+    - "swarm-outputs/improvement-2-ui.wgsl"
+  plan: "swarm-outputs/improvement_plan.json"
+
+tasks:
+  - name: "Merge geometry improvements"
+    steps:
+      - "Add kalei() and starPattern() functions"
+      - "Update trace() to include fog"
+      - "Integrate star background into mainImage()"
+  
+  - name: "Merge text system"
+    steps:
+      - "Add all glyph data arrays at top of shader"
+      - "Add all alphabet SDF functions"
+      - "Add text() function"
+      - "Integrate text rendering into scene (optional: add to map or overlay)"
+  
+  - name: "Merge UI elements"
+    steps:
+      - "Add progress dial function"
+      - "Add counter functions"
+      - "Composite UI in mainImage()"
+  
+  - name: "Validation"
+    steps:
+      - "Check all function names are unique"
+      - "Verify uniform bindings match React component"
+      - "Ensure no WGSL syntax errors"
+      - "Check for missing dependencies"
+
+conflict_resolution:
+  - "If kalei() and existing functions share names: rename with _geo suffix"
+  - "Text rendering: decide between 3D scene integration vs 2D overlay"
+  - "Uniform buffer: ensure all agents used consistent layout"
+
+output:
+  file: "public/shaders/breath-swarm-next.wgsl"
+  validation:
+    - "Compiles without Tint warnings"
+    - "Consistent code style with base shader"
+    - "Performance: <1ms frame time on desktop"
+
+---
+
+# 🔧 TECHNICAL NOTES FOR ALL AGENTS
+
+wgsl_differences_from_glsl:
+  types:
+    - "float → f32"
+    - "vec3 → vec3<f32>"
+    - "uvec4 → vec4<u32>"
+    - "int → i32"
+    - "uint → u32"
+  
+  functions:
+    - "atan(y,x) → atan2(y, x)"
+    - "mix() → mix() (same)"
+    - "clamp() → clamp() (same)"
+    - "smoothstep() → smoothstep() (same)"
+    - "length() → length() (same)"
+    - "distance() → distance() (same)"
+    - "dot() → dot() (same)"
+    - "normalize() → normalize() (same)"
+    - "abs() → abs() (same)"
+    - "sign() → sign() (same)"
+    - "floor() → floor() (same)"
+    - "ceil() → ceil() (same)"
+    - "fract() → fract() (same)"
+    - "mod() → mod() for floats, % for integers"
+    - "pow() → pow() (same)"
+    - "exp() → exp() (same)"
+    - "log() → log() (same)"
+    - "sin() → sin() (same)"
+    - "cos() → cos() (same)"
+    - "sqrt() → sqrt() (same)"
+  
+  control_flow:
+    - "for(float i=0; i<N; i++) → for(var i: i32 = 0; i < N; i = i + 1)"
+    - "if/else → if/else (same syntax)"
+    - "switch → switch with cases requiring braces: case 0u: { ... }"
+    - "?: ternary → select() builtin or if/else"
+  
+  macros:
+    - "#define PI 3.14 → const PI: f32 = 3.14;"
+    - "#define FUNC(x) x*2 → fn FUNC(x: f32) -> f32 { return x * 2.0; }"
+
+performance_guidelines:
+  - "Limit loop iterations - unroll small fixed loops if possible"
+  - "Avoid dynamic loops (loop count based on uniforms)"
+  - "Prefer select() over branch in hot paths"
+  - "Precompute values outside loops when possible"
+  - "Use f32 not f16 unless specifically optimizing for mobile"
+  - "Group uniform buffer accesses - avoid repeated reads"

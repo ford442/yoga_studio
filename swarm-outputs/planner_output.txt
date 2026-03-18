@@ -1,0 +1,40 @@
+I've successfully created the improvement plan at `swarm-outputs/improvement_plan.json`. Here's a summary of what was analyzed and planned:
+
+## Analysis Summary
+
+### Files Analyzed:
+| File | Lines | Key Content |
+|------|-------|-------------|
+| `public/yoga.glsl` | 990 | Full GLSL raymarcher with kalei(), starPattern(), SDF text (a-z alphabet), glyph bit-packing, circular progress dial |
+| `public/yoga-regular.wgsl` | 400 | Working WGSL with basic figure, chakras, rings, simplified stars |
+| `swarm-spec-shader-improvements.yaml` | 493 | Swarm protocol with 3 worker agents |
+
+### Agent Task Assignments:
+
+#### 🔷 GeometrySpecialist (GEO-001)
+**Task:** Port sacred geometry background system
+- **GLSL Lines:** 275-312 (kalei), 216-293 (starPattern)
+- **Key Functions:** `kalei()`, `starPattern()`, `toLogPolar()`, `mapStars()`
+- **Estimated:** 150 lines
+- **Critical Requirement:** Reduce kalei iterations from 6→4 for mobile 60fps
+
+#### 🔷 EffectSpecialist (EFF-001)  
+**Task:** SDF text rendering system
+- **GLSL Lines:** 72-144 (glyphs), 487-731 (alphabet), 801-849 (text)
+- **Key Functions:** `glyph()`, `number()`, `text()`, 26 letter SDFs (aa-zz)
+- **Estimated:** 250 lines
+- **Critical Requirement:** Port bit-packed `uvec4[10]` to `array<vec4<u32>, 10>`
+
+#### 🔷 UISpecialist (UI-001)
+**Task:** Breath progress HUD
+- **GLSL Lines:** 851-866 (gradient), 940-965 (dial), 972-989 (counters)
+- **Key Functions:** `progressDial()`, `getGradientValue()`, `cycleCounter()`
+- **Estimated:** 100 lines
+- **Critical Requirement:** Position UI to not obscure central figure
+
+### Integration Order:
+1. **GeometrySpecialist** first (establishes coordinate space)
+2. **EffectSpecialist** second (provides number() for UI)
+3. **UISpecialist** third (overlays on final scene)
+
+The plan includes specific line references, function signatures, integration points, and meditation-app-specific considerations (calm visuals, 60fps requirement).
