@@ -33,6 +33,12 @@ const EXHALE_COLOR = vec3<f32>(0.4, 0.5, 0.9);
 const HOLD2_COLOR  = vec3<f32>(0.7, 0.8, 0.7);
 
 // ============================================================================
+// SACRED GEOMETRY CONSTANTS
+// ============================================================================
+const HEX_COS = 0.866025404;
+const HEX_TAN = 0.577350269;
+
+// ============================================================================
 // MATH HELPERS
 // ============================================================================
 fn rot2(a: f32) -> mat2x2<f32> {
@@ -254,7 +260,172 @@ fn rings(uv_in: vec2<f32>) -> vec3<f32> {
 }
 
 // ============================================================================
-// STARS + VIDEO + COLOR
+// SACRED GEOMETRY BACKGROUND (from improvement-2-geometry.wgsl)
+// ============================================================================
+
+// Kaleidoscope recursive transformation (4 iterations for performance)
+fn kalei(p_in: vec3<f32>, time: f32) -> vec3<f32> {
+  var p = p_in;
+  let at = atan2(p.y, p.x);
+  for(var i: i32 = 0; i < 4; i = i + 1) {
+    let fi = f32(i);
+    p = vec3<f32>(abs(p.x) - 0.2, p.y, p.z);
+    p.xz = rot2(sin(f32(i)) + 0.2 * time + 0.1 * at) * p.xz;
+    p.xy = rot2(sin(2.0 * f32(i)) + 0.2 * time) * p.xy;
+    p.y = p.y + 1.0 - exp(-p.z * 0.1 * f32(i));
+  }
+  p.x = abs(p.x) + 2.5;
+  return p;
+}
+
+// Hex-symmetric star point mapping with output parameters
+fn mapStarsGeo(uv: vec2<f32>, out near: ptr<function, vec3<f32>>, out neighbor: ptr<function, vec3<f32>>) {
+  var point: vec2<f32>;
+  *near = vec3<f32>(1e+4, 1e+4, 1e+4);
+  
+  for(var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+    point = vec2<f32>(0.0, HEX_COS + y * HEX_TAN * 0.25);
+    let dist = distance(uv, point);
+    if ((*near).z >= dist) {
+      *near = vec3<f32>(point, dist);
+    }
+  }
+  
+  for(var x: f32 = -1.0; x <= 1.0; x = x + 2.0) {
+    for(var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+      for(var both: f32 = -1.0; both <= 1.0; both = both + 2.0) {
+        point = vec2<f32>(x * 0.125, HEX_COS + y * HEX_COS * 0.5);
+        point.x = point.x + both * 0.5 * 0.125 * -x;
+        point.y = point.y + both * HEX_TAN * 0.125 * -y;
+        let dist = distance(uv, point);
+        if ((*near).z >= dist) {
+          *near = vec3<f32>(point, dist);
+        }
+      }
+    }
+  }
+  
+  *neighbor = vec3<f32>(1e+4, 1e+4, 1e+4);
+  
+  for(var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+    point = vec2<f32>(0.0, HEX_COS + y * HEX_TAN * 0.25);
+    if (!all((*near).xy == point)) {
+      let center = (point + (*near).xy) * 0.5;
+      let dist = dot(uv - center, normalize((*near).xy - point));
+      if ((*neighbor).z >= dist) {
+        *neighbor = vec3<f32>(point, dist);
+      }
+    }
+  }
+  
+  for(var x: f32 = -1.0; x <= 1.0; x = x + 2.0) {
+    for(var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+      for(var both: f32 = -1.0; both <= 1.0; both = both + 2.0) {
+        point = vec2<f32>(x * 0.125, HEX_COS + y * HEX_COS * 0.5);
+        point.x = point.x + both * 0.5 * 0.125 * -x;
+        point.y = point.y + both * HEX_TAN * 0.125 * -y;
+        if (!all((*near).xy == point)) {
+          let center = (point + (*near).xy) * 0.5;
+          let dist = dot(uv - center, normalize((*near).xy - point));
+          if ((*neighbor).z >= dist) {
+            *neighbor = vec3<f32>(point, dist);
+          }
+        }
+      }
+    }
+  }
+}
+
+// Log-polar coordinate transform
+fn toLogPolar(p: vec2<f32>) -> vec2<f32> {
+  return vec2<f32>(log(length(p)), atan2(p.y, p.x));
+}
+
+// Polar repetition for hex symmetry
+fn pmod(pos: vec2<f32>, num: f32, out_id: ptr<function, f32>) -> vec2<f32> {
+  let angle = atan2(pos.x, pos.y) + PI / num;
+  let split = TAU / num;
+  *out_id = floor(angle / split);
+  let final_angle = (*out_id) * split;
+  return rot2(final_angle) * pos;
+}
+
+// Hex-symmetric star pattern with log-polar coords
+fn starPattern(uv_in: vec2<f32>, time: f32) -> f32 {
+  let uvb = uv_in;
+  var uv = uv_in;
+  
+  let width = 0.0001 + mix(0.03, 0.0, pow(dot(uv, uv), 0.3));
+  
+  uv = toLogPolar(uv * 0.01) * 2.5;
+  uv.x = uv.x + (-0.2 * time);
+  uv = vec2<f32>(uv.x % 1.0 - 0.5, uv.y % (HEX_COS * 2.0) - HEX_COS);
+  
+  var id: f32 = 0.0;
+  let reps: f32 = 5.0;
+  let t: f32 = 0.07 * (time + 6.0);
+  let modid: f32 = (floor(0.1 * length(uv) - t) % reps + 3.0) * 2.0;
+  let modt: f32 = pow(smoothstep(0.0, 0.3, abs(fract(0.1 * length(uvb) - t) - 0.5)), 500.0);
+  let alpha: f32 = mix(6.0, 18.0, modt);
+  
+  uv = pmod(uv, alpha, &id);
+  
+  var near: vec3<f32>;
+  var neighbor: vec3<f32>;
+  mapStarsGeo(uv, &near, &neighbor);
+  
+  let line: f32 = 1.0 - smoothstep(0.0, width, neighbor.z);
+  return line;
+}
+
+// Phase-aware atmospheric fog color
+fn getFogColor(phase: u32, progress: f32) -> vec3<f32> {
+  var fogCol = vec3<f32>(0.016, 0.086, 0.125);
+  
+  switch(phase) {
+    case 0u: {
+      fogCol = mix(fogCol, INHALE_COLOR * 0.1, progress);
+    }
+    case 1u: {
+      fogCol = mix(INHALE_COLOR * 0.1, HOLD1_COLOR * 0.15, progress);
+    }
+    case 2u: {
+      fogCol = mix(HOLD1_COLOR * 0.15, EXHALE_COLOR * 0.1, progress);
+    }
+    case 3u: {
+      fogCol = mix(EXHALE_COLOR * 0.1, vec3<f32>(0.02, 0.03, 0.05), progress);
+    }
+    default: {}
+  }
+  
+  return fogCol;
+}
+
+// Render sacred geometry background
+fn renderBackground(uv: vec2<f32>, time: f32, phase: u32, progress: f32, intensity: f32) -> vec3<f32> {
+  var col = vec3<f32>(0.0);
+  
+  // Star pattern from kalei geometry
+  let stars = starPattern(uv * 0.5, time * 0.3);
+  col = col + stars * 0.6 * (0.1 + 0.9 * hueFromTime(-time + length(uv)));
+  
+  // Fog color based on phase
+  let fogColor = getFogColor(phase, progress);
+  col = col + fogColor * mix(0.3, 1.1, 1.0 - pow(dot(uv, uv), 0.5));
+  
+  // Apply intensity modulation
+  col = col * (0.5 + intensity * 0.5);
+  
+  return col;
+}
+
+// Hue helper for star coloring
+fn hueFromTime(v: f32) -> vec3<f32> {
+  return 0.6 + 0.6 * cos(6.3 * v + vec3<f32>(0.0, 23.0, 21.0));
+}
+
+// ============================================================================
+// ORIGINAL STARS (fallback/simple version)
 // ============================================================================
 fn mapStars(uv: vec2<f32>) -> vec3<f32> {
   var col = vec3<f32>(0.0);
@@ -298,6 +469,260 @@ fn applyVignette(col: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
 
 fn applyGamma(col: vec3<f32>) -> vec3<f32> {
   return pow(col, vec3<f32>(0.85));
+}
+
+// ============================================================================
+// BREATH TIMING HUD (from improvement-2-ui.wgsl)
+// ============================================================================
+
+// Progress dial constants
+const DIAL_CENTER = vec2<f32>(0.75, -0.75);
+const DIAL_RADIUS = 0.12;
+const DIAL_THICKNESS = 0.015;
+const ANGLE_OFFSET = -PI * 0.5;
+const DIAL_COLOR_START = vec3<f32>(1.0, 0.2, 0.2);
+const DIAL_COLOR_END = vec3<f32>(1.0, 0.9, 0.2);
+
+// Get gradient based on progress
+fn getProgressGradient(progress: f32) -> vec3<f32> {
+  let t = clamp(progress, 0.0, 1.0);
+  return mix(DIAL_COLOR_START, DIAL_COLOR_END, t);
+}
+
+// Circular breath progress indicator
+fn progressDial(uv: vec2<f32>, progress: f32) -> vec4<f32> {
+  let delta = uv - DIAL_CENTER;
+  let dist = length(delta);
+  
+  let innerRadius = DIAL_RADIUS - DIAL_THICKNESS * 0.5;
+  let outerRadius = DIAL_RADIUS + DIAL_THICKNESS * 0.5;
+  
+  let w = DIAL_THICKNESS * 0.5;
+  var ring = smoothstep(outerRadius + w, outerRadius - w, dist);
+  ring -= smoothstep(innerRadius + w, innerRadius - w, dist);
+  
+  let angle = atan2(delta.y, delta.x) + ANGLE_OFFSET;
+  let normalizedAngle = select(angle, angle + TAU, angle < 0.0);
+  
+  let endAngle = progress * TAU;
+  
+  var alpha = ring;
+  
+  if (normalizedAngle > endAngle) {
+    let edgeDist = abs(normalizedAngle - endAngle);
+    let fade = smoothstep(0.15, -w * 2.0, edgeDist);
+    alpha *= fade;
+  }
+  
+  if (normalizedAngle - w * 2.0 < 0.0) {
+    let startFade = smoothstep(-w * 2.0, w * 2.0, abs(normalizedAngle));
+    alpha *= startFade;
+  }
+  
+  let color = getProgressGradient(progress);
+  
+  return vec4<f32>(color * alpha, alpha);
+}
+
+// Cycle counter position
+const CYCLE_POS = vec2<f32>(0.82, 0.82);
+const CYCLE_SIZE = 0.08;
+
+// Simple 3x5 digit patterns
+fn digitPattern(digit: i32, uv: vec2<f32>) -> f32 {
+  let x = i32(uv.x * 3.0);
+  let y = i32(uv.y * 5.0);
+  let idx = y * 3 + x;
+  
+  switch(digit) {
+    case 0: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 3) || (idx == 5) ||
+          (idx == 6) || (idx == 8) ||
+          (idx == 9) || (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 1: {
+      if (idx == 1 || idx == 4 || idx == 7 || idx == 10 || idx == 13) { return 1.0; }
+    }
+    case 2: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 5) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 9) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 3: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 5) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 4: {
+      if ((idx == 0) || (idx == 2) ||
+          (idx == 3) || (idx == 5) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 11) ||
+          (idx == 14)) { return 1.0; }
+    }
+    case 5: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 3) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 6: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 3) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 9) || (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 7: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 5) ||
+          (idx == 8) ||
+          (idx == 11) ||
+          (idx == 14)) { return 1.0; }
+    }
+    case 8: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 3) || (idx == 5) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 9) || (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    case 9: {
+      if ((idx == 0) || (idx == 1) || (idx == 2) ||
+          (idx == 3) || (idx == 5) ||
+          (idx == 6) || (idx == 7) || (idx == 8) ||
+          (idx == 11) ||
+          (idx == 12) || (idx == 13) || (idx == 14)) { return 1.0; }
+    }
+    default: {}
+  }
+  return 0.0;
+}
+
+// Render cycle counter
+fn cycleCounter(uv: vec2<f32>, cycle: f32) -> vec4<f32> {
+  let cycleInt = i32(cycle);
+  let tens = cycleInt / 10;
+  let ones = cycleInt % 10;
+  
+  let boxMin = CYCLE_POS - vec2<f32>(CYCLE_SIZE * 1.2, CYCLE_SIZE * 0.6);
+  let boxMax = CYCLE_POS + vec2<f32>(CYCLE_SIZE * 1.2, CYCLE_SIZE * 0.6);
+  
+  if (uv.x < boxMin.x || uv.x > boxMax.x || uv.y < boxMin.y || uv.y > boxMax.y) {
+    return vec4<f32>(0.0);
+  }
+  
+  let boxSize = boxMax - boxMin;
+  let localUV = (uv - boxMin) / boxSize;
+  
+  var value: f32 = 0.0;
+  
+  if (tens > 0) {
+    let leftUV = vec2<f32>(localUV.x * 2.0, localUV.y);
+    if (leftUV.x < 1.0 && leftUV.x > 0.0 && leftUV.y > 0.0 && leftUV.y < 1.0) {
+      let paddedUV = (leftUV - 0.5) * 0.8 + 0.5;
+      if (paddedUV.x > 0.0 && paddedUV.x < 1.0 && paddedUV.y > 0.0 && paddedUV.y < 1.0) {
+        value = digitPattern(tens, paddedUV);
+      }
+    }
+  }
+  
+  let rightUV = vec2<f32>((localUV.x - 0.5) * 2.0, localUV.y);
+  if (rightUV.x > 0.0 && rightUV.x < 1.0 && rightUV.y > 0.0 && rightUV.y < 1.0) {
+    let paddedUV = (rightUV - 0.5) * 0.8 + 0.5;
+    if (paddedUV.x > 0.0 && paddedUV.x < 1.0 && paddedUV.y > 0.0 && paddedUV.y < 1.0) {
+      value = max(value, digitPattern(ones, paddedUV));
+    }
+  }
+  
+  value = smoothstep(0.3, 0.7, value);
+  
+  // Cyan color for cycle counter
+  let color = vec3<f32>(0.02, 0.71, 0.83);
+  
+  return vec4<f32>(color * value, value);
+}
+
+// Time display position
+const TIME_POS = vec2<f32>(-0.82, 0.82);
+const TIME_SIZE = 0.06;
+
+// Render time remaining display
+fn timeDisplay(uv: vec2<f32>, timeRemaining: f32) -> vec4<f32> {
+  let timeInt = i32(ceil(timeRemaining));
+  let tens = min(timeInt / 10, 9);
+  let ones = timeInt % 10;
+  
+  let boxMin = TIME_POS - vec2<f32>(TIME_SIZE * 1.5, TIME_SIZE * 0.8);
+  let boxMax = TIME_POS + vec2<f32>(TIME_SIZE * 1.5, TIME_SIZE * 0.8);
+  
+  if (uv.x < boxMin.x || uv.x > boxMax.x || uv.y < boxMin.y || uv.y > boxMax.y) {
+    return vec4<f32>(0.0);
+  }
+  
+  let boxSize = boxMax - boxMin;
+  let localUV = (uv - boxMin) / boxSize;
+  
+  var value: f32 = 0.0;
+  
+  if (tens > 0) {
+    let leftUV = vec2<f32>(localUV.x * 2.0, localUV.y);
+    if (leftUV.x < 1.0 && leftUV.x > 0.0 && leftUV.y > 0.0 && leftUV.y < 1.0) {
+      let paddedUV = (leftUV - 0.5) * 0.85 + 0.5;
+      if (paddedUV.x > 0.0 && paddedUV.x < 1.0 && paddedUV.y > 0.0 && paddedUV.y < 1.0) {
+        value = digitPattern(tens, paddedUV);
+      }
+    }
+  }
+  
+  let rightUV = vec2<f32>((localUV.x - select(0.0, 0.5, tens > 0)) * 
+                          select(1.0, 2.0, tens > 0), localUV.y);
+  if (rightUV.x > 0.0 && rightUV.x < 1.0 && rightUV.y > 0.0 && rightUV.y < 1.0) {
+    let paddedUV = (rightUV - 0.5) * 0.85 + 0.5;
+    if (paddedUV.x > 0.0 && paddedUV.x < 1.0 && paddedUV.y > 0.0 && paddedUV.y < 1.0) {
+      value = max(value, digitPattern(ones, paddedUV));
+    }
+  }
+  
+  value = smoothstep(0.3, 0.7, value);
+  
+  var color = vec3<f32>(1.0, 0.9, 0.6);
+  
+  // Fade out when time is low (last 3 seconds)
+  let urgency = smoothstep(3.0, 0.0, timeRemaining);
+  color = mix(color, vec3<f32>(1.0, 0.3, 0.2), urgency * 0.5);
+  
+  return vec4<f32>(color * value, value);
+}
+
+// Render all HUD elements
+fn renderBreathHUD(col: ptr<function, vec3<f32>>, uv: vec2<f32>, 
+                   progress: f32, cycle: f32, phase: u32, time: f32) {
+  // Progress dial with gradient
+  let dial = progressDial(uv, progress);
+  *col = mix(*col, dial.rgb, dial.a * 0.75);
+  
+  // Cycle counter
+  let counter = cycleCounter(uv, cycle);
+  *col = mix(*col, counter.rgb, counter.a * 0.8);
+  
+  // Time remaining (estimate from phase duration)
+  var phaseDur: f32 = 5.0;
+  switch(phase) {
+    case 0u, 2u: { phaseDur = 5.0; }
+    case 1u, 3u: { phaseDur = 5.0; }
+    default: {}
+  }
+  let remaining = phaseDur * (1.0 - progress);
+  let timeDisp = timeDisplay(uv, remaining);
+  *col = mix(*col, timeDisp.rgb, timeDisp.a * 0.8);
 }
 
 // ============================================================================
@@ -351,8 +776,14 @@ fn shade(ro: vec3<f32>, rd: vec3<f32>) -> vec3<f32> {
 fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   let resolution = iResolution;
   let uv = (fragCoord - 0.5 * resolution) / resolution.y;
+  let aspect = resolution.x / resolution.y;
   
   var col = vec3<f32>(0.02, 0.03, 0.05);
+  
+  // Sacred geometry background with phase-aware fog
+  let bgCol = renderBackground(uv, u_breath.time, u32(u_breath.phase), 
+                                u_breath.phaseProgress, u_breath.intensity);
+  col = mix(col, bgCol, 0.7);
   
   // Phase background tint
   switch(u32(u_breath.phase)) {
@@ -363,8 +794,13 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
     default: {}
   }
   
-  col += mapStars(uv) * 0.5;
+  // Original stars (subtle overlay)
+  col += mapStars(uv) * 0.3;
+  
+  // Sacred rings
   col += rings(uv);
+  
+  // Chakras
   col += chakras(uv * 1.5);
   
   // 3D Figure
@@ -374,12 +810,18 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   let figCol = shade(ro, rd);
   col = mix(col, figCol, smoothstep(0.02, 0.0, map(hit.xyz)));
   
+  // Color grading
   col = getBreathColorGrade(col);
   
   // Global sacred pulse
   col *= 0.92 + 0.08 * sin(u_breath.time * 1.8 + u_breath.phase * 1.57);
   
-  col = applyVignette(col, uv / (resolution.x / resolution.y));
+  // Breath timing HUD
+  renderBreathHUD(&col, uv, u_breath.phaseProgress, u_breath.cycle, 
+                  u32(u_breath.phase), u_breath.time);
+  
+  // Vignette and gamma
+  col = applyVignette(col, uv / aspect);
   col = applyGamma(col);
   
   *(fragColor) = vec4<f32>(col, 1.0);
