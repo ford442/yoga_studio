@@ -69,6 +69,10 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   const particlePipelineRef = useRef<GPUComputePipeline | null>(null);
   const auroraPipelineRef = useRef<GPUComputePipeline | null>(null);
 
+  // Particle render pass (instanced quads → particleTexture)
+  const particleRenderPipelineRef = useRef<GPURenderPipeline | null>(null);
+  const particleRenderBindGroupRef = useRef<GPUBindGroup | null>(null);
+
   // Compute bind groups
   const bloomExtractBindGroupRef = useRef<GPUBindGroup | null>(null);
   const bloomBlurHBindGroupRef = useRef<GPUBindGroup | null>(null);
@@ -85,6 +89,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   const bloomTemp1TextureRef = useRef<GPUTexture | null>(null);
   const bloomTemp2TextureRef = useRef<GPUTexture | null>(null);
   const auroraTextureRef = useRef<GPUTexture | null>(null);
+  const particleTextureRef = useRef<GPUTexture | null>(null);
 
   // Bloom params buffers
   const bloomParamsHRef = useRef<GPUBuffer | null>(null);
@@ -148,6 +153,15 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       format: 'rgba8unorm',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
       label: 'auroraTexture',
+    });
+
+    // Particle render texture (full res) — render target for instanced particle quads
+    particleTextureRef.current?.destroy();
+    particleTextureRef.current = device.createTexture({
+      size: [w, h],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      label: 'particleTexture',
     });
 
     canvasSizeRef.current = { w, h };
@@ -263,6 +277,19 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
     }
 
+    // --- Particle render bind group ---
+    if (particleRenderPipelineRef.current && particleTextureRef.current) {
+      particleRenderBindGroupRef.current = device.createBindGroup({
+        layout: particleRenderPipelineRef.current.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: uniformBuffer } },
+          { binding: 1, resource: { buffer: resolutionBuffer } },
+          { binding: 2, resource: { buffer: particleBuffer } },
+        ],
+        label: 'particleRenderBindGroup',
+      });
+    }
+
     // --- Aurora compute bind group ---
     if (auroraPipelineRef.current && auroraTextureRef.current) {
       device.queue.writeBuffer(auroraParamsRef.current!, 0, new Float32Array([hw, hh, 0, 0]));
@@ -279,7 +306,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     }
 
     // --- Composite bind group ---
-    if (compositePipelineRef.current && sceneTextureRef.current && bloomTemp1TextureRef.current && auroraTextureRef.current) {
+    if (compositePipelineRef.current && sceneTextureRef.current && bloomTemp1TextureRef.current && auroraTextureRef.current && particleTextureRef.current) {
       compositeBindGroupRef.current = device.createBindGroup({
         layout: compositePipelineRef.current.getBindGroupLayout(0),
         entries: [
@@ -289,7 +316,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
           { binding: 3, resource: bloomTemp1TextureRef.current.createView() },
           { binding: 4, resource: auroraTextureRef.current.createView() },
           { binding: 5, resource: sampler },
-          { binding: 6, resource: { buffer: particleBuffer } },
+          { binding: 6, resource: particleTextureRef.current.createView() },
         ],
         label: 'compositeBindGroup',
       });
@@ -361,10 +388,11 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       initParticleBuffer(device);
 
       // Load all shaders in parallel
-      const [baseCode, bloomCode, particleCode, auroraCode, compositeCode] = await Promise.all([
+      const [baseCode, bloomCode, particleCode, particleRenderCode, auroraCode, compositeCode] = await Promise.all([
         loadShader('./yoga-breath.wgsl'),
         loadShader('./shaders/bloom-compute.wgsl'),
         loadShader('./shaders/particle-compute.wgsl'),
+        loadShader('./shaders/particle-render.wgsl'),
         loadShader('./shaders/aurora-compute.wgsl'),
         loadShader('./shaders/composite.wgsl'),
       ]);
@@ -373,11 +401,12 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       const baseModule = device.createShaderModule({ code: baseCode, label: 'yoga-breath' });
       const bloomModule = device.createShaderModule({ code: bloomCode, label: 'bloom-compute' });
       const particleModule = device.createShaderModule({ code: particleCode, label: 'particle-compute' });
+      const particleRenderModule = device.createShaderModule({ code: particleRenderCode, label: 'particle-render' });
       const auroraModule = device.createShaderModule({ code: auroraCode, label: 'aurora-compute' });
       const compositeModule = device.createShaderModule({ code: compositeCode, label: 'composite' });
 
       // Check compilation for all modules
-      const modules = [baseModule, bloomModule, particleModule, auroraModule, compositeModule];
+      const modules = [baseModule, bloomModule, particleModule, particleRenderModule, auroraModule, compositeModule];
       for (const mod of modules) {
         const info = await mod.getCompilationInfo();
         for (const msg of info.messages) {
@@ -422,6 +451,25 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
         layout: 'auto',
         compute: { module: particleModule, entryPoint: 'update_particles' },
         label: 'particlePipeline',
+      });
+
+      // 4b. Particle render pipeline (instanced quads → particleTexture)
+      particleRenderPipelineRef.current = device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module: particleRenderModule, entryPoint: 'vs_main' },
+        fragment: {
+          module: particleRenderModule,
+          entryPoint: 'fs_main',
+          targets: [{
+            format: 'rgba8unorm',
+            blend: {
+              color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+            },
+          }],
+        },
+        primitive: { topology: 'triangle-list' },
+        label: 'particleRenderPipeline',
       });
 
       // 5. Aurora compute pipeline
@@ -563,6 +611,25 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       }
 
       // ========================================
+      // Pass 5b: Particle render (instanced quads → particleTexture)
+      // ========================================
+      if (particleRenderBindGroupRef.current && particleTextureRef.current) {
+        const particleRenderPass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: particleTextureRef.current.createView(),
+            loadOp: 'clear',
+            clearValue: [0.0, 0.0, 0.0, 0.0],
+            storeOp: 'store',
+          }],
+        });
+        particleRenderPass.setPipeline(particleRenderPipelineRef.current!);
+        particleRenderPass.setBindGroup(0, particleRenderBindGroupRef.current);
+        // 6 vertices per quad × PARTICLE_COUNT instances
+        particleRenderPass.draw(6, PARTICLE_COUNT);
+        particleRenderPass.end();
+      }
+
+      // ========================================
       // Pass 6: Aurora generation
       // ========================================
       if (auroraBindGroupRef.current) {
@@ -608,6 +675,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       bloomTemp1TextureRef.current?.destroy();
       bloomTemp2TextureRef.current?.destroy();
       auroraTextureRef.current?.destroy();
+      particleTextureRef.current?.destroy();
       uniformBufferRef.current?.destroy();
       resolutionBufferRef.current?.destroy();
       particleBufferRef.current?.destroy();
