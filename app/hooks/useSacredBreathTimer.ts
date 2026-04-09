@@ -89,20 +89,22 @@ export function useSacredBreathTimer(initialStrength: number = 0) {
 
   const getUniforms = () => {
     const phaseIdx = phases.indexOf(phase);
-    // Compute active chakra index (0–6) matching particle-compute.wgsl logic
+    // Compute active chakra index (0–6) matching particle-compute.wgsl logic.
+    // During inhale: rise through chakras 0→5 (6 is reached at hold-in).
+    // During exhale: descend through chakras 6→1 (0 is reached at hold-out).
     let activeChakra: number;
     let secondaryChakra = -1;
     switch (phaseIdx) {
-      case 0: // inhale — rising through chakras
-        activeChakra = Math.min(6, Math.floor(phaseProgress * 6));
-        if (activeChakra < 6) secondaryChakra = activeChakra + 1;
+      case 0: // inhale — rising through chakras 0→5
+        activeChakra = Math.min(5, Math.floor(phaseProgress * 6));
+        secondaryChakra = Math.min(6, activeChakra + 1);
         break;
       case 1: // hold-in — crown
         activeChakra = 6;
         break;
-      case 2: // exhale — descending through chakras
-        activeChakra = Math.max(0, 6 - Math.floor(phaseProgress * 6));
-        if (activeChakra > 0) secondaryChakra = activeChakra - 1;
+      case 2: // exhale — descending through chakras 6→1
+        activeChakra = Math.max(1, 6 - Math.floor(phaseProgress * 6));
+        secondaryChakra = activeChakra - 1;
         break;
       case 3: // hold-out — root
         activeChakra = 0;

@@ -403,7 +403,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
     }
 
-    // Pass 5: Particle simulation
+    // Pass 5: Particle simulation (compute)
     if (particlePipelineRef.current && particleBindGroupRef.current) {
       passes.push({
         type: 'compute', label: 'particleSim',
@@ -412,7 +412,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
     }
 
-    // Pass 5b: Particle render (instanced quads → particleTexture)
+    // Pass 6: Particle render (instanced quads → particleTexture)
     if (particleRenderPipelineRef.current && particleRenderBindGroupRef.current && particleTextureRef.current) {
       passes.push({
         type: 'render', label: 'particleRender',
@@ -422,7 +422,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
     }
 
-    // Pass 6: Aurora generation
+    // Pass 7: Aurora generation
     if (auroraPipelineRef.current && auroraBindGroupRef.current) {
       passes.push({
         type: 'compute', label: 'aurora',
@@ -431,7 +431,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       });
     }
 
-    // Pass 7: Composite → canvas
+    // Pass 8: Composite → canvas
     if (compositePipelineRef.current && compositeBindGroupRef.current) {
       passes.push({
         type: 'render-canvas', label: 'composite',
@@ -689,7 +689,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
             });
             rp.setPipeline(pass.pipeline);
             rp.setBindGroup(0, pass.bindGroup);
-            rp.draw(pass.vertices, pass.instances);
+            rp.draw(pass.vertices, pass.instances ?? 1);
             rp.end();
             break;
           }

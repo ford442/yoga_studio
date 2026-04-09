@@ -26,6 +26,16 @@ struct ParticleBuffer {
 
 const PARTICLE_COUNT: u32 = 4096u;
 
+// Particle size constants
+const BASE_PARTICLE_SIZE: f32 = 0.015; // Minimum particle size in NDC
+const LIFE_SIZE_SCALE: f32 = 0.01;     // How much life increases size
+const GLOW_RADIUS_MULT: f32 = 3.0;     // Multiplier to extend quad for glow falloff
+
+// Life-alpha fade thresholds: fade in 0→0.3, fade out 1.5→2.0
+const LIFE_FADE_IN: f32 = 0.3;
+const LIFE_FADE_OUT_START: f32 = 1.5;
+const LIFE_FADE_OUT_END: f32 = 2.0;
+
 // ============================================================================
 // Vertex Shader — position each quad around its particle
 // ============================================================================
@@ -66,7 +76,7 @@ fn vs_main(
     let screenP = vec2<f32>(p.pos.x, p.pos.y) * projScale;
 
     // Particle size — matches the old composite particle sizing
-    let size = (0.015 + 0.01 * p.life * u_breath.intensity) * 3.0;
+    let size = (BASE_PARTICLE_SIZE + LIFE_SIZE_SCALE * p.life * u_breath.intensity) * GLOW_RADIUS_MULT;
 
     // Offset quad corners in NDC (screen-aligned billboard)
     let offset = quadPos[vid] * size;
@@ -78,7 +88,7 @@ fn vs_main(
     out.position = vec4<f32>(ndc, 0.0, 1.0);
     out.quadUV = quadPos[vid];
     out.hue = p.hue;
-    out.lifeAlpha = smoothstep(0.0, 0.3, p.life) * smoothstep(2.0, 1.5, p.life);
+    out.lifeAlpha = smoothstep(0.0, LIFE_FADE_IN, p.life) * smoothstep(LIFE_FADE_OUT_END, LIFE_FADE_OUT_START, p.life);
 
     return out;
 }
