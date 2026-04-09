@@ -9,15 +9,17 @@ export default function Home() {
   const breath = useSacredBreathTimer(0); // start with light level
   const shaderRef = useRef<WebGPUShaderRef>(null);
 
+  const { getUniforms } = breath;
+
   useEffect(() => {
     if (!shaderRef.current) return;
     const update = () => {
-      shaderRef.current?.updateUniforms(breath.getUniforms());
+      shaderRef.current?.updateUniforms(getUniforms());
       requestAnimationFrame(update);
     };
     const raf = requestAnimationFrame(update);
     return () => cancelAnimationFrame(raf);
-  }, [breath.phase, breath.phaseProgress, breath.cycle, breath.strengthLevel]);
+  }, [getUniforms, breath.phase, breath.phaseProgress, breath.cycle, breath.strengthLevel]);
 
   return (
     <main className="relative w-screen h-screen bg-black overflow-hidden">

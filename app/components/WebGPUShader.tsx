@@ -654,77 +654,89 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
 
   useImperativeHandle(ref, () => ({ updateUniforms }), [updateUniforms]);
 
-  // Multi-pass render loop — iterates the data-driven pass list
-  const render = useCallback(() => {
-    const device = deviceRef.current;
-    const context = contextRef.current;
-    const passes = passesRef.current;
+  // Store the latest render closure in a ref so the rAF loop always invokes
+  // the most up-to-date version without a self-referential useCallback.
+  const renderRef = useRef<() => void>(() => {});
 
-    if (!device || !context || passes.length === 0) {
-      animationRef.current = requestAnimationFrame(render);
-      return;
-    }
+  useEffect(() => {
+    renderRef.current = () => {
+      const device = deviceRef.current;
+      const context = contextRef.current;
+      const passes = passesRef.current;
 
-    try {
-      const encoder = device.createCommandEncoder();
-
-      for (const pass of passes) {
-        switch (pass.type) {
-          case 'compute': {
-            const cp = encoder.beginComputePass();
-            cp.setPipeline(pass.pipeline);
-            cp.setBindGroup(0, pass.bindGroup);
-            cp.dispatchWorkgroups(...pass.workgroups);
-            cp.end();
-            break;
-          }
-          case 'render': {
-            const rp = encoder.beginRenderPass({
-              colorAttachments: [{
-                view: pass.target,
-                loadOp: 'clear',
-                clearValue: pass.clearValue,
-                storeOp: 'store',
-              }],
-            });
-            rp.setPipeline(pass.pipeline);
-            rp.setBindGroup(0, pass.bindGroup);
-            rp.draw(pass.vertices, pass.instances ?? 1);
-            rp.end();
-            break;
-          }
-          case 'render-canvas': {
-            const canvasView = context.getCurrentTexture().createView();
-            const rp = encoder.beginRenderPass({
-              colorAttachments: [{
-                view: canvasView,
-                loadOp: 'clear',
-                clearValue: [0.0, 0.0, 0.0, 1.0],
-                storeOp: 'store',
-              }],
-            });
-            rp.setPipeline(pass.pipeline);
-            rp.setBindGroup(0, pass.bindGroup);
-            rp.draw(pass.vertices);
-            rp.end();
-            break;
-          }
-        }
+      if (!device || !context || passes.length === 0) {
+        animationRef.current = requestAnimationFrame(() => renderRef.current());
+        return;
       }
 
-      device.queue.submit([encoder.finish()]);
-    } catch (e) {
-      console.error('Render error:', e);
-    }
+      try {
+        const encoder = device.createCommandEncoder();
 
-    animationRef.current = requestAnimationFrame(render);
+        for (const pass of passes) {
+          switch (pass.type) {
+            case 'compute': {
+              const cp = encoder.beginComputePass();
+              cp.setPipeline(pass.pipeline);
+              cp.setBindGroup(0, pass.bindGroup);
+              cp.dispatchWorkgroups(...pass.workgroups);
+              cp.end();
+              break;
+            }
+            case 'render': {
+              const rp = encoder.beginRenderPass({
+                colorAttachments: [{
+                  view: pass.target,
+                  loadOp: 'clear',
+                  clearValue: pass.clearValue,
+                  storeOp: 'store',
+                }],
+              });
+              rp.setPipeline(pass.pipeline);
+              rp.setBindGroup(0, pass.bindGroup);
+              rp.draw(pass.vertices, pass.instances ?? 1);
+              rp.end();
+              break;
+            }
+            case 'render-canvas': {
+              const canvasView = context.getCurrentTexture().createView();
+              const rp = encoder.beginRenderPass({
+                colorAttachments: [{
+                  view: canvasView,
+                  loadOp: 'clear',
+                  clearValue: [0.0, 0.0, 0.0, 1.0],
+                  storeOp: 'store',
+                }],
+              });
+              rp.setPipeline(pass.pipeline);
+              rp.setBindGroup(0, pass.bindGroup);
+              rp.draw(pass.vertices);
+              rp.end();
+              break;
+            }
+          }
+        }
+
+        device.queue.submit([encoder.finish()]);
+      } catch (e) {
+        console.error('Render error:', e);
+      }
+
+      animationRef.current = requestAnimationFrame(() => renderRef.current());
+    };
   }, []);
 
   // Initialize on mount
   useEffect(() => {
-    initWebGPU();
+    let cancelled = false;
+
+    // Run init asynchronously to avoid synchronous setState in effect body
+    const run = async () => {
+      await initWebGPU();
+    };
+    if (!cancelled) run();
 
     return () => {
+      cancelled = true;
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       sceneTextureRef.current?.destroy();
       bloomTemp1TextureRef.current?.destroy();
@@ -744,12 +756,12 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   // Start render loop when initialized
   useEffect(() => {
     if (basePipelineRef.current && compositePipelineRef.current) {
-      animationRef.current = requestAnimationFrame(render);
+      animationRef.current = requestAnimationFrame(() => renderRef.current());
       return () => {
         if (animationRef.current) cancelAnimationFrame(animationRef.current);
       };
     }
-  }, [render]);
+  }, []);
 
   // Handle resize
   useEffect(() => {
