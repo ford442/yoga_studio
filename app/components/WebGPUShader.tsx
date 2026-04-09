@@ -14,16 +14,38 @@ export interface WebGPUShaderRef {
     cycle: number;
     strengthLevel: number;
     intensity: number;
+    activeChakra: number;
+    secondaryChakra: number;
   }) => void;
 }
 
-// Uniform buffer layout (40 bytes = 10 × f32):
+// Uniform buffer layout (48 bytes = 12 × f32):
 //   [0] time  [1] phase  [2] phaseProgress  [3] cycle
 //   [4] strengthLevel  [5] intensity
 //   [6] sin_time  [7] cos_time  [8] sin_fast  [9] cos_fast
-const UNIFORM_FLOATS = 10;
+//   [10] activeChakra  [11] secondaryChakra
+const UNIFORM_FLOATS = 12;
 const PARTICLE_COUNT = 4096;
 const PARTICLE_STRIDE = 32; // 8 floats × 4 bytes: pos(3) + life(1) + vel(3) + hue(1)
+
+// Shared WGSL struct injected into all shaders at load time.
+// Single source of truth — shaders must NOT define BreathUniforms themselves.
+const BREATH_UNIFORMS_WGSL = `
+struct BreathUniforms {
+    time:            f32,
+    phase:           u32,
+    phaseProgress:   f32,
+    cycle:           u32,
+    strengthLevel:   u32,
+    intensity:       f32,
+    sin_time:        f32,
+    cos_time:        f32,
+    sin_fast:        f32,
+    cos_fast:        f32,
+    activeChakra:    f32,
+    secondaryChakra: f32,
+}
+`;
 
 const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthLevel }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,11 +97,15 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
   // Track canvas size
   const canvasSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
-  // Load shader from file
+  // Load shader from file, stripping any local BreathUniforms definition
+  // and prepending the shared header so the struct is defined exactly once.
   const loadShader = async (path: string): Promise<string> => {
     const response = await fetch(path);
     if (!response.ok) throw new Error(`Failed to load shader: ${path}`);
-    return await response.text();
+    let code = await response.text();
+    // Remove the duplicated struct block (matches `struct BreathUniforms { ... }`)
+    code = code.replace(/struct\s+BreathUniforms\s*\{[\s\S]*?\}/, '');
+    return BREATH_UNIFORMS_WGSL + code;
   };
 
   // Create textures sized to canvas
@@ -443,6 +469,8 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     cycle: number;
     strengthLevel: number;
     intensity: number;
+    activeChakra: number;
+    secondaryChakra: number;
   }) => {
     if (!uniformBufferRef.current || !deviceRef.current) return;
     const t = data.time;
@@ -450,6 +478,7 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       t, data.phase, data.phaseProgress, data.cycle,
       data.strengthLevel, data.intensity,
       Math.sin(t), Math.cos(t), Math.sin(t * 4.0), Math.cos(t * 4.0),
+      data.activeChakra, data.secondaryChakra,
     ]);
     deviceRef.current.queue.writeBuffer(uniformBufferRef.current, 0, array);
   }, []);

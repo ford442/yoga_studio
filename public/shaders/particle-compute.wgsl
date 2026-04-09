@@ -68,15 +68,7 @@ fn turbulence(p: vec3<f32>, seed: u32) -> vec3<f32> {
 }
 
 fn getActiveChakraIndex() -> i32 {
-    let phase = u_breath.phase;
-    let pp = u_breath.phaseProgress;
-    switch (phase) {
-        case 0u: { return i32(pp * 6.0); }           // Rising through chakras during inhale
-        case 1u: { return 6; }                         // Crown during hold-in
-        case 2u: { return 6 - i32(pp * 6.0); }        // Descending during exhale
-        case 3u: { return 0; }                         // Root during hold-out
-        default: { return 3; }                         // Heart default
-    }
+    return clamp(i32(u_breath.activeChakra), 0, 6);
 }
 
 fn respawnParticle(idx: u32) -> Particle {
