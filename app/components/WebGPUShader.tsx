@@ -47,12 +47,47 @@ struct BreathUniforms {
 }
 `;
 
+// ---------------------------------------------------------------------------
+// Pass descriptors — data-driven render loop
+// ---------------------------------------------------------------------------
+// To add a new pass, append to the `passes` array in rebuildPasses().
+// The render loop iterates the array — no copy-paste needed.
+// ---------------------------------------------------------------------------
+type ComputePass = {
+  type: 'compute';
+  label: string;
+  pipeline: GPUComputePipeline;
+  bindGroup: GPUBindGroup;
+  workgroups: [number, number?, number?];
+};
+type RenderPass = {
+  type: 'render';
+  label: string;
+  pipeline: GPURenderPipeline;
+  bindGroup: GPUBindGroup;
+  target: GPUTextureView;
+  clearValue: GPUColor;
+  vertices: number;
+  instances?: number;
+};
+type CanvasRenderPass = {
+  type: 'render-canvas';
+  label: string;
+  pipeline: GPURenderPipeline;
+  bindGroup: GPUBindGroup;
+  vertices: number;
+};
+type PassDescriptor = ComputePass | RenderPass | CanvasRenderPass;
+
 const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthLevel }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const deviceRef = useRef<GPUDevice | null>(null);
   const contextRef = useRef<GPUCanvasContext | null>(null);
   const animationRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Data-driven pass list (rebuilt on texture resize)
+  const passesRef = useRef<PassDescriptor[]>([]);
 
   // Buffers
   const uniformBufferRef = useRef<GPUBuffer | null>(null);
@@ -323,6 +358,91 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     }
   }, []);
 
+  // Build the data-driven pass list from current pipelines, bind groups, and textures.
+  // Called after rebuildBindGroups() whenever textures are (re-)created.
+  const rebuildPasses = useCallback(() => {
+    const { w, h } = canvasSizeRef.current;
+    const hw = Math.max(1, Math.floor(w / 2));
+    const hh = Math.max(1, Math.floor(h / 2));
+    const passes: PassDescriptor[] = [];
+
+    // Pass 1: Base yoga shader → sceneTexture
+    if (basePipelineRef.current && baseBindGroupRef.current && sceneTextureRef.current) {
+      passes.push({
+        type: 'render', label: 'base',
+        pipeline: basePipelineRef.current, bindGroup: baseBindGroupRef.current,
+        target: sceneTextureRef.current.createView(),
+        clearValue: [0.0, 0.0, 0.02, 1.0], vertices: 6,
+      });
+    }
+
+    // Pass 2: Bloom extract
+    if (bloomExtractPipelineRef.current && bloomExtractBindGroupRef.current) {
+      passes.push({
+        type: 'compute', label: 'bloomExtract',
+        pipeline: bloomExtractPipelineRef.current, bindGroup: bloomExtractBindGroupRef.current,
+        workgroups: [Math.ceil(w / 16), Math.ceil(h / 16)],
+      });
+    }
+
+    // Pass 3: Bloom blur horizontal
+    if (bloomBlurPipelineRef.current && bloomBlurHBindGroupRef.current) {
+      passes.push({
+        type: 'compute', label: 'bloomBlurH',
+        pipeline: bloomBlurPipelineRef.current, bindGroup: bloomBlurHBindGroupRef.current,
+        workgroups: [Math.ceil(hw / 16), Math.ceil(hh / 16)],
+      });
+    }
+
+    // Pass 4: Bloom blur vertical
+    if (bloomBlurPipelineRef.current && bloomBlurVBindGroupRef.current) {
+      passes.push({
+        type: 'compute', label: 'bloomBlurV',
+        pipeline: bloomBlurPipelineRef.current, bindGroup: bloomBlurVBindGroupRef.current,
+        workgroups: [Math.ceil(hw / 16), Math.ceil(hh / 16)],
+      });
+    }
+
+    // Pass 5: Particle simulation
+    if (particlePipelineRef.current && particleBindGroupRef.current) {
+      passes.push({
+        type: 'compute', label: 'particleSim',
+        pipeline: particlePipelineRef.current, bindGroup: particleBindGroupRef.current,
+        workgroups: [Math.ceil(PARTICLE_COUNT / 256)],
+      });
+    }
+
+    // Pass 5b: Particle render (instanced quads → particleTexture)
+    if (particleRenderPipelineRef.current && particleRenderBindGroupRef.current && particleTextureRef.current) {
+      passes.push({
+        type: 'render', label: 'particleRender',
+        pipeline: particleRenderPipelineRef.current, bindGroup: particleRenderBindGroupRef.current,
+        target: particleTextureRef.current.createView(),
+        clearValue: [0.0, 0.0, 0.0, 0.0], vertices: 6, instances: PARTICLE_COUNT,
+      });
+    }
+
+    // Pass 6: Aurora generation
+    if (auroraPipelineRef.current && auroraBindGroupRef.current) {
+      passes.push({
+        type: 'compute', label: 'aurora',
+        pipeline: auroraPipelineRef.current, bindGroup: auroraBindGroupRef.current,
+        workgroups: [Math.ceil(hw / 16), Math.ceil(hh / 16)],
+      });
+    }
+
+    // Pass 7: Composite → canvas
+    if (compositePipelineRef.current && compositeBindGroupRef.current) {
+      passes.push({
+        type: 'render-canvas', label: 'composite',
+        pipeline: compositePipelineRef.current, bindGroup: compositeBindGroupRef.current,
+        vertices: 6,
+      });
+    }
+
+    passesRef.current = passes;
+  }, []);
+
   // Initialize WebGPU
   const initWebGPU = useCallback(async () => {
     if (!canvasRef.current) return;
@@ -502,12 +622,13 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
 
       createTextures(device, w, h, 'rgba8unorm');
       rebuildBindGroups(device, format);
+      rebuildPasses();
 
     } catch (e) {
       console.error('WebGPU initialization failed:', e);
       setError('WebGPU initialization failed: ' + (e as Error).message);
     }
-  }, [createTextures, initParticleBuffer, rebuildBindGroups]);
+  }, [createTextures, initParticleBuffer, rebuildBindGroups, rebuildPasses]);
 
   // Update uniforms
   const updateUniforms = useCallback((data: {
@@ -533,129 +654,63 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
 
   useImperativeHandle(ref, () => ({ updateUniforms }), [updateUniforms]);
 
-  // Multi-pass render loop
+  // Multi-pass render loop — iterates the data-driven pass list
   const render = useCallback(() => {
     const device = deviceRef.current;
     const context = contextRef.current;
+    const passes = passesRef.current;
 
-    if (!device || !context || !basePipelineRef.current || !compositePipelineRef.current
-        || !sceneTextureRef.current || !baseBindGroupRef.current || !compositeBindGroupRef.current) {
+    if (!device || !context || passes.length === 0) {
       animationRef.current = requestAnimationFrame(render);
       return;
     }
 
     try {
       const encoder = device.createCommandEncoder();
-      const { w, h } = canvasSizeRef.current;
-      const hw = Math.max(1, Math.floor(w / 2));
-      const hh = Math.max(1, Math.floor(h / 2));
 
-      // ========================================
-      // Pass 1: Render base yoga shader → sceneTexture
-      // ========================================
-      const basePass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: sceneTextureRef.current.createView(),
-          loadOp: 'clear',
-          clearValue: [0.0, 0.0, 0.02, 1.0],
-          storeOp: 'store',
-        }],
-      });
-      basePass.setPipeline(basePipelineRef.current);
-      basePass.setBindGroup(0, baseBindGroupRef.current);
-      basePass.draw(6);
-      basePass.end();
-
-      // ========================================
-      // Pass 2: Bloom extract (sceneTexture → bloomTemp1)
-      // ========================================
-      if (bloomExtractBindGroupRef.current) {
-        const bloomExtract = encoder.beginComputePass();
-        bloomExtract.setPipeline(bloomExtractPipelineRef.current!);
-        bloomExtract.setBindGroup(0, bloomExtractBindGroupRef.current);
-        bloomExtract.dispatchWorkgroups(Math.ceil(w / 16), Math.ceil(h / 16));
-        bloomExtract.end();
+      for (const pass of passes) {
+        switch (pass.type) {
+          case 'compute': {
+            const cp = encoder.beginComputePass();
+            cp.setPipeline(pass.pipeline);
+            cp.setBindGroup(0, pass.bindGroup);
+            cp.dispatchWorkgroups(...pass.workgroups);
+            cp.end();
+            break;
+          }
+          case 'render': {
+            const rp = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: pass.target,
+                loadOp: 'clear',
+                clearValue: pass.clearValue,
+                storeOp: 'store',
+              }],
+            });
+            rp.setPipeline(pass.pipeline);
+            rp.setBindGroup(0, pass.bindGroup);
+            rp.draw(pass.vertices, pass.instances);
+            rp.end();
+            break;
+          }
+          case 'render-canvas': {
+            const canvasView = context.getCurrentTexture().createView();
+            const rp = encoder.beginRenderPass({
+              colorAttachments: [{
+                view: canvasView,
+                loadOp: 'clear',
+                clearValue: [0.0, 0.0, 0.0, 1.0],
+                storeOp: 'store',
+              }],
+            });
+            rp.setPipeline(pass.pipeline);
+            rp.setBindGroup(0, pass.bindGroup);
+            rp.draw(pass.vertices);
+            rp.end();
+            break;
+          }
+        }
       }
-
-      // ========================================
-      // Pass 3: Bloom blur horizontal (bloomTemp1 → bloomTemp2)
-      // ========================================
-      if (bloomBlurHBindGroupRef.current) {
-        const blurH = encoder.beginComputePass();
-        blurH.setPipeline(bloomBlurPipelineRef.current!);
-        blurH.setBindGroup(0, bloomBlurHBindGroupRef.current);
-        blurH.dispatchWorkgroups(Math.ceil(hw / 16), Math.ceil(hh / 16));
-        blurH.end();
-      }
-
-      // ========================================
-      // Pass 4: Bloom blur vertical (bloomTemp2 → bloomTemp1)
-      // ========================================
-      if (bloomBlurVBindGroupRef.current) {
-        const blurV = encoder.beginComputePass();
-        blurV.setPipeline(bloomBlurPipelineRef.current!);
-        blurV.setBindGroup(0, bloomBlurVBindGroupRef.current);
-        blurV.dispatchWorkgroups(Math.ceil(hw / 16), Math.ceil(hh / 16));
-        blurV.end();
-      }
-
-      // ========================================
-      // Pass 5: Particle simulation
-      // ========================================
-      if (particleBindGroupRef.current) {
-        const particlePass = encoder.beginComputePass();
-        particlePass.setPipeline(particlePipelineRef.current!);
-        particlePass.setBindGroup(0, particleBindGroupRef.current);
-        particlePass.dispatchWorkgroups(Math.ceil(PARTICLE_COUNT / 256));
-        particlePass.end();
-      }
-
-      // ========================================
-      // Pass 5b: Particle render (instanced quads → particleTexture)
-      // ========================================
-      if (particleRenderBindGroupRef.current && particleTextureRef.current) {
-        const particleRenderPass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: particleTextureRef.current.createView(),
-            loadOp: 'clear',
-            clearValue: [0.0, 0.0, 0.0, 0.0],
-            storeOp: 'store',
-          }],
-        });
-        particleRenderPass.setPipeline(particleRenderPipelineRef.current!);
-        particleRenderPass.setBindGroup(0, particleRenderBindGroupRef.current);
-        // 6 vertices per quad × PARTICLE_COUNT instances
-        particleRenderPass.draw(6, PARTICLE_COUNT);
-        particleRenderPass.end();
-      }
-
-      // ========================================
-      // Pass 6: Aurora generation
-      // ========================================
-      if (auroraBindGroupRef.current) {
-        const auroraPass = encoder.beginComputePass();
-        auroraPass.setPipeline(auroraPipelineRef.current!);
-        auroraPass.setBindGroup(0, auroraBindGroupRef.current);
-        auroraPass.dispatchWorkgroups(Math.ceil(hw / 16), Math.ceil(hh / 16));
-        auroraPass.end();
-      }
-
-      // ========================================
-      // Pass 7: Composite all layers → canvas
-      // ========================================
-      const canvasView = context.getCurrentTexture().createView();
-      const compositePass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: canvasView,
-          loadOp: 'clear',
-          clearValue: [0.0, 0.0, 0.0, 1.0],
-          storeOp: 'store',
-        }],
-      });
-      compositePass.setPipeline(compositePipelineRef.current);
-      compositePass.setBindGroup(0, compositeBindGroupRef.current);
-      compositePass.draw(6);
-      compositePass.end();
 
       device.queue.submit([encoder.finish()]);
     } catch (e) {
@@ -716,12 +771,13 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       const format = navigator.gpu.getPreferredCanvasFormat();
       createTextures(device, w, h, 'rgba8unorm');
       rebuildBindGroups(device, format);
+      rebuildPasses();
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [createTextures, rebuildBindGroups]);
+  }, [createTextures, rebuildBindGroups, rebuildPasses]);
 
   if (error) {
     return (
