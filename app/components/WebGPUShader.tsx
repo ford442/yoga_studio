@@ -732,8 +732,12 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
     // Run init asynchronously to avoid synchronous setState in effect body
     const run = async () => {
       await initWebGPU();
+      // Start render loop once initialized (only if not unmounted)
+      if (!cancelled && basePipelineRef.current && compositePipelineRef.current) {
+        animationRef.current = requestAnimationFrame(() => renderRef.current());
+      }
     };
-    if (!cancelled) run();
+    run();
 
     return () => {
       cancelled = true;
@@ -752,16 +756,6 @@ const WebGPUShader = forwardRef<WebGPUShaderRef, WebGPUShaderProps>(({ strengthL
       deviceRef.current?.destroy();
     };
   }, [initWebGPU]);
-
-  // Start render loop when initialized
-  useEffect(() => {
-    if (basePipelineRef.current && compositePipelineRef.current) {
-      animationRef.current = requestAnimationFrame(() => renderRef.current());
-      return () => {
-        if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      };
-    }
-  }, []);
 
   // Handle resize
   useEffect(() => {
