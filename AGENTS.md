@@ -1,190 +1,29 @@
+<!-- From: /root/yoga_studio/AGENTS.md -->
 # Yoga Studio - Sacred Breath Timer
 
-An AI coding agent guide for this Next.js React application featuring WebGPU-powered breathing visualization with yoga posture guidance and chakra awareness.
+An AI coding agent guide for this Next.js React application featuring a WebGPU-powered breathing visualization with posture guidance.
 
 ---
 
 ## Project Overview
 
-**Yoga Studio** is a comprehensive yoga sadhana (spiritual practice) tool that combines:
-- Precise breath timing with 4-phase pranayama cycles
-- Visual posture guidance with animated stick figures
-- Chakra awareness synchronized to breath phases
-- WebGPU-powered visualization with energy channel graphics
+**Yoga Studio** is a full-screen pranayama practice companion. It displays a large breath-phase countdown, an animated WebGPU visualization of a stick-figure yogi with chakra energy effects, and a simple SVG posture guide. The app is designed for single-session, immersive use on desktop and tablet.
 
-The application transforms a simple breath timer into a complete practice guide suitable for Kundalini, Hatha, and standing breathwork traditions.
+The current runtime architecture is intentionally minimal: one breath timer hook drives one page, which renders one WebGPU canvas and one SVG posture overlay. Several older components and hooks remain in the repository but are **not imported by the active page**.
 
 ---
 
 ## Technology Stack
 
-| Layer | Technology | Version |
-|-------|------------|---------|
-| Framework | Next.js | 16.1.6 |
+| Layer | Technology | Version / Notes |
+|-------|------------|-----------------|
+| Framework | Next.js | 16.1.6 (App Router) |
 | UI Library | React | 19.2.3 |
 | Language | TypeScript | 5.x |
-| Styling | Tailwind CSS | 4.x |
-| Graphics API | WebGPU | - |
-| Build Output | Static Export | - |
-
----
-
-## Project Structure
-
-```
-.
-├── app/                          # Next.js App Router
-│   ├── components/
-│   │   ├── WebGPUShader.tsx      # WebGPU visualization with chakra highlighting
-│   │   ├── BreathTimer.tsx       # Timer UI with chakra display
-│   │   └── PostureGuide.tsx      # SVG stick figure posture guide
-│   ├── hooks/
-│   │   └── useBreathTimer.ts     # Breath timing + chakra mapping logic
-│   ├── favicon.ico
-│   ├── globals.css               # Global styles with Tailwind v4
-│   ├── layout.tsx                # Root layout component
-│   └── page.tsx                  # Home page with all components
-├── public/                       # Static assets
-│   ├── yoga.glsl                 # Original GLSL shader reference
-│   ├── yoga-regular.wgsl         # WGSL shader reference
-│   └── yoga-fixed.wgsl           # Fixed WGSL shader reference
-├── deploy.py                     # SFTP deployment script
-├── webgpu.d.ts                   # WebGPU type declarations
-├── next.config.ts                # Next.js configuration (static export)
-├── tsconfig.json                 # TypeScript configuration
-├── eslint.config.mjs             # ESLint flat config
-└── postcss.config.mjs            # PostCSS with Tailwind v4
-```
-
----
-
-## Breath Timing System
-
-### 4-Phase Pranayama Cycle
-
-```
-┌──────────────┬──────────────┬──────────────┬──────────────┐
-│   INHALE     │  HOLD IN     │   EXHALE     │  HOLD OUT    │
-│   (0-25%)    │   (25-50%)   │   (50-75%)   │   (75-100%)  │
-├──────────────┼──────────────┼──────────────┼──────────────┤
-│ Breath in    │ Hold breath  │ Breath out   │ Hold empty   │
-│ Raise arms   │ Flex/Engage  │ Lower arms   │ Relax        │
-│ Anahata      │ Manipura     │ Muladhara    │ Sahasrara    │
-│ (Heart)      │ (Solar Plex) │ (Root)       │ (Crown)      │
-│ Cyan         │ Yellow       │ Purple       │ Green        │
-└──────────────┴──────────────┴──────────────┴──────────────┘
-```
-
-### Strength Levels
-
-| Level | Initial | After 16 cycles | After 31 cycles | After 61 cycles |
-|-------|---------|-----------------|-----------------|-----------------|
-| Light | 5s | 7s | - | - |
-| Medium | 7s | 8s | - | - |
-| Strong | 7s | 8s | 10s | - |
-
----
-
-## Chakra System
-
-### The Seven Chakras
-
-| # | Name | Sanskrit | Color | Location | Element | Phase Association |
-|---|------|----------|-------|----------|---------|-------------------|
-| 1 | Muladhara | मूलाधार | Red (#ef4444) | Base of spine | Earth | Exhale (grounding) |
-| 2 | Svadhisthana | स्वाधिष्ठान | Orange (#f97316) | Lower abdomen | Water | - |
-| 3 | Manipura | मणिपूर | Yellow (#eab308) | Solar plexus | Fire | Hold-in (power) |
-| 4 | Anahata | अनाहत | Green (#22c55e) | Heart center | Air | Inhale (opening) |
-| 5 | Vishuddha | विशुद्ध | Cyan (#06b6d4) | Throat | Ether | Inhale secondary |
-| 6 | Ajna | आज्ञा | Indigo (#6366f1) | Between eyebrows | Light | - |
-| 7 | Sahasrara | सहस्रार | Violet (#a855f7) | Crown of head | Cosmic | Hold-out (liberation) |
-
-### Phase-Chakra Mapping
-
-```typescript
-PHASE_CHAKRAS: Record<BreathPhase, { primary: ChakraName; secondary?: ChakraName; significance: string }>
-
-inhale:   { primary: 'Anahata', secondary: 'Vishuddha', significance: 'Opening the heart, receiving prana' }
-hold-in:  { primary: 'Manipura', significance: 'Building internal fire, charging solar plexus' }
-exhale:   { primary: 'Muladhara', significance: 'Grounding, releasing into earth element' }
-hold-out: { primary: 'Sahasrara', significance: 'Open to cosmic consciousness, shunya (void)' }
-```
-
----
-
-## Yoga Knowledge Integration
-
-### Posture Guide (PostureGuide.tsx)
-
-**Animated SVG stick figures** display for each breath phase:
-- **Inhale**: Arms rising overhead (Urdhva Hastasana)
-- **Hold-in**: Arms extended with subtle tension, core engaged
-- **Exhale**: Arms gracefully lowering
-- **Hold-out**: Neutral standing (Tadasana), complete relaxation
-
-**Features:**
-- Phase-appropriate arm positions with CSS animations
-- Chakra indicators along the spine (7 glowing dots)
-- Active chakra pulse animation
-- Sanskrit names and detailed instructions
-- Bandha (energy lock) guidance
-- Drishti (gaze) recommendations
-
-### Educational Content
-
-The bottom section provides:
-1. **Practice Guidelines** - Step-by-step instructions
-2. **Pranayama Wisdom** - Concepts explained:
-   - Kumbhaka (breath retention)
-   - Bandhas (Mula, Uddiyana, Jalandhara)
-   - Nadis (Ida, Pingala, Sushumna)
-3. **Current Phase Info** - Real-time context for the active phase
-
----
-
-## WebGPU Shader Architecture
-
-### Uniform Buffer (32 bytes)
-
-```wgsl
-struct Uniforms {
-  resolution: vec2<f32>,      // Canvas size
-  time: f32,                  // Continuous animation time
-  breathProgress: f32,        // 0.0-1.0 within breath cycle
-  breathPhase: f32,           // 0=inhale, 1=hold-in, 2=exhale, 3=hold-out
-  cycleNumber: f32,           // Current breath cycle
-  isRunning: f32,             // 1.0 running, 0.0 paused
-  activeChakra: f32,          // 0-6 representing the 7 chakras
-  secondaryChakra: f32,       // -1 if none, otherwise 0-6
-};
-```
-
-### Visual Features
-
-1. **Kaleidoscope Pattern** - Animated raymarched geometry
-2. **Breath Synchronization** - Pattern scales/pulses with breathProgress
-3. **Phase Colors** - Cyan/Yellow/Purple/Green based on breathPhase
-4. **Chakra Visualization** - All 7 chakras displayed along central channel (sushumna)
-   - Active chakra glows brightly with pulse animation
-   - Secondary chakra shows moderate glow
-   - Inactive chakras show subtle base glow
-5. **Breath Ring Overlay** - Expanding/contracting ring showing breath state
-
-### Chakra Colors in Shader
-
-```wgsl
-// 0=Root(red), 1=Sacral(orange), 2=Solar(yellow), 3=Heart(green)
-// 4=Throat(cyan), 5=ThirdEye(indigo), 6=Crown(violet)
-fn getChakraColor(chakraIndex: f32) -> vec3<f32> {
-  if (chakraIndex < 0.5) { return vec3<f32>(0.93, 0.27, 0.27); }  // Red
-  if (chakraIndex < 1.5) { return vec3<f32>(0.98, 0.45, 0.09); }  // Orange
-  if (chakraIndex < 2.5) { return vec3<f32>(0.92, 0.72, 0.03); }  // Yellow
-  if (chakraIndex < 3.5) { return vec3<f32>(0.13, 0.77, 0.37); }  // Green
-  if (chakraIndex < 4.5) { return vec3<f32>(0.02, 0.71, 0.83); }  // Cyan
-  if (chakraIndex < 5.5) { return vec3<f32>(0.39, 0.40, 0.95); }  // Indigo
-  return vec3<f32>(0.66, 0.33, 0.97);                             // Violet
-}
-```
+| Styling | Tailwind CSS | v4 (`@import "tailwindcss"` in `globals.css`) |
+| Build Output | Static Export | `output: 'export'` in `next.config.ts` |
+| Graphics API | WebGPU / WGSL | `@webgpu/types` ^0.1.69 |
+| Linting | ESLint | Flat config (`eslint.config.mjs`) with `eslint-config-next` |
 
 ---
 
@@ -198,11 +37,11 @@ npm install
 npm run dev
 # → http://localhost:3000
 
-# Build for production
+# Build static site for production
 npm run build
 # → Output goes to `out/` directory
 
-# Start production server
+# Start production server (for local verification)
 npm start
 
 # Run ESLint
@@ -211,150 +50,265 @@ npm run lint
 
 ---
 
-## Code Style Guidelines
+## Project Structure
 
-### TypeScript Configuration
+### Active Files (imported by `page.tsx` at runtime)
 
-- **Target:** ES2017
-- **Strict mode:** Enabled
-- **Module resolution:** bundler
-- **Path aliases:** `@/*` maps to `./*`
-
-### Component Patterns
-
-- Functional components with TypeScript
-- Client components marked with `'use client'`
-- Custom hooks for complex logic (useBreathTimer)
-- Props interfaces defined inline
-
-### Tailwind CSS v4
-
-```css
-/* globals.css */
-@import "tailwindcss";
+```
+app/
+├── layout.tsx                    # Root layout with metadata
+├── page.tsx                      # Main page: countdown, controls, WebGPU, posture
+├── globals.css                   # Tailwind v4 import + CSS variables
+├── components/
+│   ├── WebGPUShader.tsx          # Multi-pass WebGPU renderer (see below)
+│   └── PostureGuide.tsx          # SVG stick-figure with rotating arms
+└── hooks/
+    └── useSacredBreathTimer.ts   # Breath timing + uniform generation
 ```
 
-- Utility-first approach
-- Glassmorphism effects: `backdrop-blur`, `bg-white/10`
-- Chakra colors mapped to Tailwind classes
+### Legacy / Unused Files (present but not imported by `page.tsx`)
+
+| File | Status | Note |
+|------|--------|------|
+| `app/components/BreathTimer.tsx` | Unused | Rich timer UI with chakra cards; not imported by current page |
+| `app/components/BreathingVisualizer.tsx` | Unused | Simpler WebGPU canvas with inline WGSL |
+| `app/hooks/useBreathTimer.ts` | Unused | Defines detailed `CHAKRAS` and `PHASE_CHAKRAS` records; richer types but unused |
+| `app/hooks/useBreathingTimer.ts` | Unused | Generic 4-phase timer hook |
+
+> **Agent caution:** When modifying behavior, edit `useSacredBreathTimer.ts` and `WebGPUShader.tsx`, not the legacy files above, unless you are explicitly reviving them.
+
+### Static Assets
+
+```
+public/
+├── yoga-breath.wgsl              # Base scene shader (raymarched SDF + chakras)
+├── shaders/
+│   ├── bloom-compute.wgsl        # Bright extract + separable Gaussian blur
+│   ├── particle-compute.wgsl     # 4096-particle spine energy simulation
+│   ├── particle-render.wgsl      # Instanced quads for particles
+│   ├── aurora-compute.wgsl       # Aurora background generation
+│   └── composite.wgsl            # Final blend pass
+├── yoga.glsl                     # Original GLSL reference (legacy)
+├── yoga-regular.wgsl             # WGSL reference (legacy)
+└── yoga-fixed.wgsl               # WGSL reference fix (legacy)
+```
+
+### Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `next.config.ts` | Static export, empty `basePath` |
+| `tsconfig.json` | ES2017, strict, bundler resolution, `@/*` → `./*` |
+| `postcss.config.mjs` | Tailwind v4 PostCSS plugin |
+| `eslint.config.mjs` | Flat ESLint config with Next.js web-vitals + typescript presets |
+| `webgpu.d.ts` | `/// <reference types="@webgpu/types" />` |
+| `deploy.py` | SFTP deployment script (see Deployment) |
 
 ---
 
-## Testing Checklist
+## WebGPU Shader Architecture
 
-### Manual Testing
+`WebGPUShader.tsx` is **not** a single-shader component. It builds a data-driven, 8-pass render pipeline using offscreen textures and compute passes.
 
-1. **Breath Timer**
-   - [ ] Timer starts automatically
-   - [ ] Phases progress correctly
-   - [ ] Cycle count increments
-   - [ ] Pause/Resume works
-   - [ ] Reset returns to cycle 0
+### Render Pipeline Order
 
-2. **Posture Guide**
-   - [ ] Stick figure changes pose per phase
-   - [ ] Chakra glows pulse on active chakra
-   - [ ] Sanskrit names display correctly
-   - [ ] Bandha/drishti info updates per phase
+1. **Base render** — `public/yoga-breath.wgsl` → `sceneTexture` (full res)
+2. **Bloom extract** — `public/shaders/bloom-compute.wgsl` (`bloom_extract` entry) → `bloomTemp1` (half res)
+3. **Bloom blur H** — same WGSL (`bloom_blur` entry) → `bloomTemp2`
+4. **Bloom blur V** — same WGSL (`bloom_blur` entry) → `bloomTemp1`
+5. **Particle compute** — `public/shaders/particle-compute.wgsl` → updates particle buffer
+6. **Particle render** — `public/shaders/particle-render.wgsl` → `particleTexture` (full res, instanced quads)
+7. **Aurora compute** — `public/shaders/aurora-compute.wgsl` → `auroraTexture` (half res)
+8. **Composite** — `public/shaders/composite.wgsl` → canvas (blends scene + bloom + aurora + particles)
 
-3. **Chakra Display**
-   - [ ] Active chakra color matches phase
-   - [ ] Secondary chakra shows when applicable
-   - [ ] Chakra significance text updates
+### Shared Uniform Buffer
 
-4. **WebGPU Shader**
-   - [ ] Chakra visualization renders
-   - [ ] Active chakra glows brighter
-   - [ ] Colors shift with breath phases
-   - [ ] Fallback message shows in non-WebGPU browsers
+`WebGPUShader.tsx` injects the following WGSL struct into every shader at load time, stripping any duplicate `struct BreathUniforms` definitions it finds in the source files.
 
-5. **Educational Content**
-   - [ ] All three info cards display
-   - [ ] Current phase info updates in real-time
-   - [ ] Responsive layout works on mobile
+```wgsl
+struct BreathUniforms {
+    time:            f32,   // offset  0
+    phase:           u32,   // offset  4  (0=inhale, 1=hold1, 2=exhale, 3=hold2)
+    phaseProgress:   f32,   // offset  8
+    cycle:           u32,   // offset 12
+    strengthLevel:   u32,   // offset 16
+    intensity:       f32,   // offset 20
+    sin_time:        f32,   // offset 24
+    cos_time:        f32,   // offset 28
+    sin_fast:        f32,   // offset 32
+    cos_fast:        f32,   // offset 36
+    activeChakra:    f32,   // offset 40  (0–6)
+    secondaryChakra: f32,   // offset 44  (-1 if none)
+}
+```
+
+Total size: **48 bytes** (12 × `f32`).
+
+The React side writes this buffer via `device.queue.writeBuffer()` inside the `updateUniforms` imperative handle, which `page.tsx` calls every `requestAnimationFrame`.
+
+### Texture Resizing
+
+On window resize, the component recreates all offscreen textures, rebuilds all bind groups, and rebuilds the pass descriptor array. The canvas dimensions are driven by `getBoundingClientRect()`.
+
+---
+
+## Breath Timing System
+
+### Active Hook: `useSacredBreathTimer.ts`
+
+This is the single source of truth for breath state. It is **not** auto-started on mount; the user presses the "Begin Sacred Breath" button in `page.tsx`.
+
+#### Returned API
+
+```typescript
+{
+  phase: 'inhale' | 'hold1' | 'exhale' | 'hold2',
+  phaseProgress: number,        // 0–1 within current phase
+  cycle: number,                // completed cycles
+  countdown: number,            // ceiling seconds remaining in phase
+  isRunning: boolean,
+  strengthLevel: number,        // 0=Light, 1=Medium, 2=Strong
+  start: () => void,
+  pause: () => void,
+  reset: () => void,
+  setStrengthLevel: (n: number) => void,
+  getUniforms: () => {          // data sent to WebGPU each frame
+    time, phase, phaseProgress, cycle, strengthLevel, intensity,
+    activeChakra, secondaryChakra
+  }
+}
+```
+
+#### Durations
+
+Base durations per phase:
+- `inhale`: 4s
+- `hold1`: 4s
+- `exhale`: 6s
+- `hold2`: 2s
+
+Strength scaling (applied inside `getDuration`):
+- **Light (0):** base durations, then capped to 7s after cycle 16
+- **Medium (1):** base durations, then capped to 8s after cycle 31
+- **Strong (2):** base durations, capped to 8s after cycle 31, then 10s after cycle 61
+
+#### Chakra Mapping in Uniforms
+
+The shader receives `activeChakra` and `secondaryChakra` indices (0–6):
+
+| Phase | `activeChakra` | `secondaryChakra` | Behavior |
+|-------|---------------|-------------------|----------|
+| Inhale | `min(5, floor(progress * 6))` | `min(6, active + 1)` | Rises from root toward third eye |
+| Hold1 | 6 | -1 | Crown |
+| Exhale | `max(1, 6 - floor(progress * 6))` | `active - 1` | Descends from crown toward sacral |
+| Hold2 | 0 | -1 | Root |
+
+The **shader** (`yoga-breath.wgsl`) independently implements its own chakra glow logic based on these uniforms, including energy-flow beams and hue shifts per phase.
+
+---
+
+## Code Style Guidelines
+
+### TypeScript
+- Target: ES2017
+- Strict mode enabled
+- Module resolution: `bundler`
+- Path alias: `@/*` maps to `./*`
+
+### React
+- Functional components only
+- Client components must start with `'use client'`
+- Props interfaces defined inline
+- Complex logic extracted to custom hooks
+
+### Tailwind CSS v4
+- Import via `@import "tailwindcss"` in `globals.css`
+- Utility-first; glassmorphism via `backdrop-blur`, `bg-white/10`, etc.
+- No `tailwind.config.js` is present; theming is done via `@theme inline` in `globals.css`
+
+### WebGPU / WGSL
+- Shaders in `public/` are loaded at runtime via `fetch()`
+- `WebGPUShader.tsx` prepends a shared `BreathUniforms` struct; do **not** duplicate this struct in new shader files
+- Entry points are consistently `vs_main` / `fs_main` for render pipelines, and descriptive names (`bloom_extract`, `update_particles`, etc.) for compute pipelines
+
+---
+
+## Testing Instructions
+
+### Automated Tests
+**There are no automated tests.** The project does not include Jest, Vitest, Playwright, Cypress, or any other test framework.
+
+### Manual Testing Checklist
+
+When making changes, verify the following in a WebGPU-compatible browser (Chrome/Edge 113+):
+
+- [ ] `npm run dev` starts without TypeScript or ESLint errors
+- [ ] Page loads and shows "Begin Sacred Breath" button
+- [ ] Pressing "Begin" starts the countdown
+- [ ] Phases cycle through: inhale → hold1 → exhale → hold2
+- [ ] Cycle count increments after each full round
+- [ ] Pause stops the timer; resume continues from where it left off
+- [ ] Reset returns to cycle 0, phase inhale, countdown restored
+- [ ] Strength selector (Light / Medium / Strong) changes phase durations
+- [ ] WebGPU canvas renders (not black) — check for shader compilation errors in DevTools
+- [ ] Posture guide SVG arms rotate appropriately per phase
+- [ ] Responsive layout does not break on window resize
+- [ ] `npm run build` completes and outputs to `out/`
 
 ---
 
 ## Deployment Process
 
+### Build
 ```bash
-# Build the static site
 npm run build
+```
 
-# Deploy via SFTP
+### SFTP Deploy
+```bash
 python deploy.py
 ```
 
-The `out/` directory contains the complete static site ready for any static hosting.
+- `deploy.py` uses `paramiko` to upload the `out/` directory recursively.
+- It contains hardcoded server credentials (`HOSTNAME`, `USERNAME`, `PASSWORD`).
+- If the `out/` directory is missing, the script prints an error reminding you to run `npm run build` first.
+
+### Static Hosting
+Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complete static site and can be served by any static host (Netlify, Vercel, GitHub Pages, S3, etc.).
 
 ---
 
-## Architecture Decisions
+## Security Considerations
 
-### Why Separate Yoga Logic from Shader?
+- `deploy.py` contains a **hardcoded plaintext password**. Do not commit this file to public repositories without refactoring it to use environment variables or a secrets manager.
+- The app runs entirely client-side after build; there is no server-side API or database.
 
-**Original approach:** All text and posture info rendered in shader
-**New approach:** React manages yoga knowledge, shader focuses on visuals
+---
 
-**Benefits:**
-- Easier to update yoga content without shader recompilation
-- Better accessibility (screen readers can access text)
-- More flexible UI (CSS animations, responsive design)
-- Better performance (shader does less work)
+## Common Pitfalls for Agents
 
-### Why SVG Stick Figures?
-
-- **Lightweight** - No external image assets
-- **Scalable** - Looks crisp at any size
-- **Animatable** - CSS animations for arm movements
-- **Accessible** - Semantic SVG elements
-- **Sacred aesthetic** - Minimalist line drawings match yoga tradition
-
-### Chakra Phase Mapping Rationale
-
-| Phase | Chakra | Rationale |
-|-------|--------|-----------|
-| Inhale | Anahata (Heart) | Opening to receive, compassion |
-| Hold-in | Manipura (Solar Plexus) | Building power, transformation |
-| Exhale | Muladhara (Root) | Grounding, releasing to earth |
-| Hold-out | Sahasrara (Crown) | Connection to cosmic consciousness |
+1. **Editing the wrong timer hook** — `useSacredBreathTimer.ts` is the active one. `useBreathTimer.ts` and `useBreathingTimer.ts` are legacy.
+2. **Editing the wrong visualizer** — `WebGPUShader.tsx` is the active one. `BreathingVisualizer.tsx` is legacy.
+3. **Duplicating `BreathUniforms` in WGSL** — `WebGPUShader.tsx` injects this struct automatically. Adding another definition will cause a compilation error (unless the loader regex happens to strip it).
+4. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
+5. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
 
 ---
 
 ## File Reference
 
-| File | Purpose |
-|------|---------|
-| `app/hooks/useBreathTimer.ts` | Breath timing + chakra mapping |
-| `app/components/WebGPUShader.tsx` | WebGPU with chakra visualization |
-| `app/components/BreathTimer.tsx` | Timer UI with chakra display |
-| `app/components/PostureGuide.tsx` | SVG posture guide with stick figures |
-| `app/page.tsx` | Main page integrating all components |
-| `app/layout.tsx` | Root layout with metadata |
-| `app/globals.css` | Tailwind v4 styles |
-
----
-
-## Future Enhancements
-
-Potential features to consider:
-
-1. **Audio cues** - "So Hum" mantra or bell sounds per phase
-2. **Progress tracking** - Session history, statistics
-3. **More pranayama types** - Nadi Shodhana, Kapalabhati, etc.
-4. **Seated variations** - Postures for chair practice
-5. **Meditation timer** - Silent practice after breathwork
-6. **Export/Share** - Session summaries
-
----
-
-## Sacred Practice Notes
-
-This tool is designed as a **sadhana support** - a digital companion for traditional yoga practice. Key principles:
-
-- **Respect the tradition** - Accurate Sanskrit, proper technique descriptions
-- **Embodied practice** - Visual posture guidance, not just breath timing
-- **Energy awareness** - Chakra visualization for subtle body experience
-- **Progressive approach** - Three levels matching traditional pranayama progression
-
-The goal is to support practitioners in developing a consistent, informed, and deeply felt pranayama practice.
+| File | Purpose | Status |
+|------|---------|--------|
+| `app/hooks/useSacredBreathTimer.ts` | Active breath timing + uniform generation | **Active** |
+| `app/components/WebGPUShader.tsx` | 8-pass WebGPU pipeline | **Active** |
+| `app/components/PostureGuide.tsx` | SVG posture guidance | **Active** |
+| `app/page.tsx` | Main page orchestrator | **Active** |
+| `app/layout.tsx` | Root layout | **Active** |
+| `app/globals.css` | Tailwind v4 styles | **Active** |
+| `public/yoga-breath.wgsl` | Base SDF scene shader | **Active** |
+| `public/shaders/*.wgsl` | Compute / render passes | **Active** |
+| `app/hooks/useBreathTimer.ts` | Legacy timer with rich chakra types | Unused |
+| `app/hooks/useBreathingTimer.ts` | Legacy generic timer | Unused |
+| `app/components/BreathTimer.tsx` | Legacy rich UI component | Unused |
+| `app/components/BreathingVisualizer.tsx` | Legacy simple WebGPU canvas | Unused |
+| `deploy.py` | SFTP deployment script | **Active** |
