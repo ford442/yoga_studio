@@ -1,15 +1,14 @@
-<!-- From: /root/yoga_studio/AGENTS.md -->
-# Yoga Studio - Sacred Breath Timer
+# Yoga Studio — Sacred Breath Timer
 
-An AI coding agent guide for this Next.js React application featuring a WebGPU-powered breathing visualization with posture guidance.
+An AI coding agent guide for this Next.js React application featuring a WebGPU-powered breathing visualization, session-based pranayama timing, voice guidance, and practice stats.
 
 ---
 
 ## Project Overview
 
-**Yoga Studio** is a full-screen pranayama practice companion. It displays a large breath-phase countdown, an animated WebGPU visualization of a stick-figure yogi with chakra energy effects, and a simple SVG posture guide. The app is designed for single-session, immersive use on desktop and tablet.
+**Yoga Studio** is a full-screen pranayama practice companion. It displays a large breath-phase countdown, an animated WebGPU visualization of a sacred monk silhouette with mandala and particle effects, and a suite of supporting features: timed sessions, breath presets, theme switching, voice guidance (English / Sanskrit), practice stats with streak tracking, and a PWA install prompt.
 
-The current runtime architecture is intentionally minimal: one breath timer hook drives one page, which renders one WebGPU canvas and one SVG posture overlay. Several older components and hooks remain in the repository but are **not imported by the active page**.
+The runtime architecture is intentionally minimal but has grown beyond a single hook: `page.tsx` orchestrates one timer hook, one WebGPU canvas, and several small UI components and effect hooks.
 
 ---
 
@@ -57,37 +56,47 @@ npm run lint
 ```
 app/
 ├── layout.tsx                    # Root layout with metadata
-├── page.tsx                      # Main page: countdown, controls, WebGPU, posture
+├── manifest.ts                   # PWA manifest (force-static)
+├── page.tsx                      # Main page: countdown, controls, WebGPU, stats, settings
 ├── globals.css                   # Tailwind v4 import + CSS variables
 ├── components/
-│   ├── WebGPUShader.tsx          # Multi-pass WebGPU renderer (see below)
-│   └── PostureGuide.tsx          # SVG stick-figure with rotating arms
+│   ├── WebGPUShader.tsx          # Single-pass WebGPU renderer (sacred-monk.wgsl)
+│   ├── InstallPrompt.tsx         # PWA beforeinstallprompt install button
+│   ├── ExportStats.tsx           # Generates 1080×1080 PNG of today's practice stats
+│   ├── CompletionScreen.tsx      # Session-end overlay with confetti animation
+│   └── ThemeSwitcher.tsx         # Theme (Cosmic/Golden/Ocean) + mandala style toggles
 └── hooks/
-    └── useSacredBreathTimer.ts   # Breath timing + uniform generation
+    ├── useBreathTimer.ts         # Core breathing logic, presets, session auto-end
+    ├── useBreathAudio.ts         # Phase-transition chimes + ambient drone
+    ├── useVoiceGuidance.ts       # SpeechSynthesis voice guidance (EN / Sanskrit)
+    ├── useSessionStats.ts        # localStorage-backed stats (minutes, breaths, streak)
+    └── useRippleAudio.ts         # Interactive ripple sound on canvas pointer move
 ```
 
 ### Legacy / Unused Files (present but not imported by `page.tsx`)
 
 | File | Status | Note |
 |------|--------|------|
-| `app/components/BreathTimer.tsx` | Unused | Rich timer UI with chakra cards; not imported by current page |
+| `app/components/PostureGuide.tsx` | Unused | SVG stick-figure with rotating arms; not imported by current page |
 | `app/components/BreathingVisualizer.tsx` | Unused | Simpler WebGPU canvas with inline WGSL |
-| `app/hooks/useBreathTimer.ts` | Unused | Defines detailed `CHAKRAS` and `PHASE_CHAKRAS` records; richer types but unused |
-| `app/hooks/useBreathingTimer.ts` | Unused | Generic 4-phase timer hook |
+| `app/hooks/useSacredBreathTimer.ts` | Unused | Older timer with strength levels and chakra uniform generation |
+| `app/hooks/useBreathingTimer.ts` | Unused | Generic 4-phase timer hook with `globalProgress` |
 
-> **Agent caution:** When modifying behavior, edit `useSacredBreathTimer.ts` and `WebGPUShader.tsx`, not the legacy files above, unless you are explicitly reviving them.
+> **Agent caution:** When modifying behavior, edit `useBreathTimer.ts` and `WebGPUShader.tsx`, not the legacy files above, unless you are explicitly reviving them.
 
 ### Static Assets
 
 ```
 public/
-├── yoga-breath.wgsl              # Base scene shader (raymarched SDF + chakras)
+├── sacred-monk.wgsl              # Active scene shader (mandala + monk SDF + particles)
 ├── shaders/
-│   ├── bloom-compute.wgsl        # Bright extract + separable Gaussian blur
-│   ├── particle-compute.wgsl     # 4096-particle spine energy simulation
-│   ├── particle-render.wgsl      # Instanced quads for particles
-│   ├── aurora-compute.wgsl       # Aurora background generation
-│   └── composite.wgsl            # Final blend pass
+│   ├── bloom-compute.wgsl        # Legacy bright extract + Gaussian blur (unused)
+│   ├── particle-compute.wgsl     # Legacy particle simulation (unused)
+│   ├── particle-render.wgsl      # Legacy particle instanced quads (unused)
+│   ├── aurora-compute.wgsl       # Legacy aurora background (unused)
+│   ├── composite.wgsl            # Legacy final blend pass (unused)
+│   └── breath-swarm-merged.wgsl  # Swarm experiment outputs (unused by page)
+├── yoga-breath.wgsl              # Legacy base SDF scene shader (unused)
 ├── yoga.glsl                     # Original GLSL reference (legacy)
 ├── yoga-regular.wgsl             # WGSL reference (legacy)
 └── yoga-fixed.wgsl               # WGSL reference fix (legacy)
@@ -108,102 +117,151 @@ public/
 
 ## WebGPU Shader Architecture
 
-`WebGPUShader.tsx` is **not** a single-shader component. It builds a data-driven, 8-pass render pipeline using offscreen textures and compute passes.
+`WebGPUShader.tsx` is a **single-pass** renderer. It fetches `public/sacred-monk.wgsl` at runtime, creates one render pipeline, and draws a full-screen triangle.
 
-### Render Pipeline Order
+### Uniform Buffer Layout
 
-1. **Base render** — `public/yoga-breath.wgsl` → `sceneTexture` (full res)
-2. **Bloom extract** — `public/shaders/bloom-compute.wgsl` (`bloom_extract` entry) → `bloomTemp1` (half res)
-3. **Bloom blur H** — same WGSL (`bloom_blur` entry) → `bloomTemp2`
-4. **Bloom blur V** — same WGSL (`bloom_blur` entry) → `bloomTemp1`
-5. **Particle compute** — `public/shaders/particle-compute.wgsl` → updates particle buffer
-6. **Particle render** — `public/shaders/particle-render.wgsl` → `particleTexture` (full res, instanced quads)
-7. **Aurora compute** — `public/shaders/aurora-compute.wgsl` → `auroraTexture` (half res)
-8. **Composite** — `public/shaders/composite.wgsl` → canvas (blends scene + bloom + aurora + particles)
+The React side writes a 64-byte uniform buffer (16 × `f32`) every frame:
 
-### Shared Uniform Buffer
-
-`WebGPUShader.tsx` injects the following WGSL struct into every shader at load time, stripping any duplicate `struct BreathUniforms` definitions it finds in the source files.
-
-```wgsl
-struct BreathUniforms {
-    time:            f32,   // offset  0
-    phase:           u32,   // offset  4  (0=inhale, 1=hold1, 2=exhale, 3=hold2)
-    phaseProgress:   f32,   // offset  8
-    cycle:           u32,   // offset 12
-    strengthLevel:   u32,   // offset 16
-    intensity:       f32,   // offset 20
-    sin_time:        f32,   // offset 24
-    cos_time:        f32,   // offset 28
-    sin_fast:        f32,   // offset 32
-    cos_fast:        f32,   // offset 36
-    activeChakra:    f32,   // offset 40  (0–6)
-    secondaryChakra: f32,   // offset 44  (-1 if none)
-}
+```
+offset  0  time            f32
+offset  4  breathPhase     f32   // 0–1 full cycle progress
+offset  8  intensity       f32
+offset 12  chakraPhase     f32   // 0–3 mapped to phase
+offset 16  theme           f32   // 0=Cosmic, 1=Golden, 2=Ocean
+offset 20  mandalaStyle    f32   // 0=Lotus, 1=Yantra, 2=Flower
+offset 24  mouse.x         f32   // -1..1 or -2 when inactive
+offset 28  mouse.y         f32
+offset 32  mouseStrength   f32   // 0..1
+offset 36  padding         f32
+offset 40  padding         f32
+offset 44  padding         f32
+offset 48  resolution.x    f32
+offset 52  resolution.y    f32
+offset 56  padding         f32
+offset 60  padding         f32
 ```
 
-Total size: **48 bytes** (12 × `f32`).
+The shader defines its own `struct Uniforms` at the top of `sacred-monk.wgsl`. Do **not** duplicate this struct elsewhere.
 
-The React side writes this buffer via `device.queue.writeBuffer()` inside the `updateUniforms` imperative handle, which `page.tsx` calls every `requestAnimationFrame`.
+### Shader Features
+
+- **Cosmic background** — starfield generated with a hash
+- **Volumetric light shafts** — 5 rotating beams tinted by breath phase
+- **Mandala** — radial pattern with 3 selectable styles (`u.mandalaStyle`)
+- **Particles** — 9 drifting light points
+- **Sacred monk silhouette** — SDF stick figure with breath-pulse scaling
+- **Neon glow halos** — 4 nested glow rings around the monk
+- **Interactive ripple** — mouse/touch distortion on the canvas
+- **Theme color shifts** — `u.theme` modifies the neon hue multipliers
 
 ### Texture Resizing
 
-On window resize, the component recreates all offscreen textures, rebuilds all bind groups, and rebuilds the pass descriptor array. The canvas dimensions are driven by `getBoundingClientRect()`.
+The canvas dimensions are driven by `clientWidth/clientHeight × devicePixelRatio`. On window resize the canvas is resized; the shader reads the new resolution from the uniform buffer.
 
 ---
 
 ## Breath Timing System
 
-### Active Hook: `useSacredBreathTimer.ts`
+### Active Hook: `useBreathTimer.ts`
 
-This is the single source of truth for breath state. It is **not** auto-started on mount; the user presses the "Begin Sacred Breath" button in `page.tsx`.
+This is the single source of truth for breath state.
 
 #### Returned API
 
 ```typescript
 {
-  phase: 'inhale' | 'hold1' | 'exhale' | 'hold2',
-  phaseProgress: number,        // 0–1 within current phase
-  cycle: number,                // completed cycles
-  countdown: number,            // ceiling seconds remaining in phase
+  breathPhase: number,          // 0–1 cycle progress
   isRunning: boolean,
-  strengthLevel: number,        // 0=Light, 1=Medium, 2=Strong
-  start: () => void,
-  pause: () => void,
+  currentPhase: 'inhale' | 'hold1' | 'exhale' | 'hold2',
+  settings: BreathSettings,     // { inhale, hold1, exhale, hold2 }
+  sessionDuration: 5 | 10 | 15 | null,
+  totalBreaths: number,
+  startSession: (minutes) => void,
+  toggleFree: () => void,       // start/pause free-form session
   reset: () => void,
-  setStrengthLevel: (n: number) => void,
-  getUniforms: () => {          // data sent to WebGPU each frame
-    time, phase, phaseProgress, cycle, strengthLevel, intensity,
-    activeChakra, secondaryChakra
-  }
+  updateSettings: (Partial<BreathSettings>) => void,
+  endSession: () => void,
 }
 ```
 
-#### Durations
+#### Default Durations
 
-Base durations per phase:
 - `inhale`: 4s
 - `hold1`: 4s
 - `exhale`: 6s
 - `hold2`: 2s
 
-Strength scaling (applied inside `getDuration`):
-- **Light (0):** base durations, then capped to 7s after cycle 16
-- **Medium (1):** base durations, then capped to 8s after cycle 31
-- **Strong (2):** base durations, capped to 8s after cycle 31, then 10s after cycle 61
+#### Built-in Presets
 
-#### Chakra Mapping in Uniforms
+| Preset | inhale | hold1 | exhale | hold2 |
+|--------|--------|-------|--------|-------|
+| box    | 4      | 4     | 4      | 4     |
+| 478    | 4      | 7     | 8      | 0     |
+| sigh   | 4      | 0     | 6      | 8     |
+| free   | 5      | 3     | 7      | 2     |
 
-The shader receives `activeChakra` and `secondaryChakra` indices (0–6):
+#### Session Behavior
 
-| Phase | `activeChakra` | `secondaryChakra` | Behavior |
-|-------|---------------|-------------------|----------|
-| Inhale | `min(5, floor(progress * 6))` | `min(6, active + 1)` | Rises from root toward third eye |
-| Hold1 | 6 | -1 | Crown |
-| Exhale | `max(1, 6 - floor(progress * 6))` | `active - 1` | Descends from crown toward sacral |
-| Hold2 | 0 | -1 | Root |
+- `startSession(minutes)` starts a timed session and resets `totalBreaths`.
+- A `requestAnimationFrame` loop advances `breathPhase` continuously.
+- When `sessionDuration` elapses, the hook auto-calls `endSession()`.
+- `toggleFree()` toggles running state for untimed practice.
 
-The **shader** (`yoga-breath.wgsl`) independently implements its own chakra glow logic based on these uniforms, including energy-flow beams and hue shifts per phase.
+#### Countdown Logic in page.tsx
+
+`page.tsx` computes the remaining seconds for the current phase from `breathPhase` and `settings` (not from the hook). The large numeric display is `Math.max(0, remaining).toFixed(0)`.
+
+---
+
+## Audio & Feedback Systems
+
+### `useBreathAudio.ts`
+
+- Phase-transition chimes using `AudioContext` oscillators:
+  - inhale → 432 Hz sine
+  - hold1  → 528 Hz triangle
+  - exhale → 396 Hz sine
+  - hold2  → 639 Hz triangle
+- Ambient low drone (110 Hz sine, very quiet) while running
+- `toggleMute()` mutes/unmutes all generated audio
+
+### `useVoiceGuidance.ts`
+
+- Uses `window.speechSynthesis` to announce each phase change
+- Messages in English and Sanskrit:
+  - Puraka / Kumbhaka / Rechaka / Shunyaka
+- 180 ms delay after phase change to avoid overlapping chimes
+- Settings persisted to `localStorage` under `sacred-breath-voice`
+
+### `useRippleAudio.ts`
+
+- Short sine burst (80–300 Hz) triggered by canvas pointer movement
+- Rate-limited to once per 100 ms
+
+---
+
+## Session Stats & Persistence
+
+### `useSessionStats.ts`
+
+- Stores `todayMinutes`, `todayBreaths`, `currentStreak`, `lastPracticeDate` in `localStorage` under `sacred-breath-stats`.
+- Resets daily counters when `lastPracticeDate` is not today.
+- Streak logic: increments if last practice was yesterday; resets to 1 if gap is larger.
+- `addPracticeTime(seconds)` is called on every full cycle completion (`hold2` → `inhale` transition).
+
+### `ExportStats.tsx`
+
+- Draws a 1080×1080 canvas with radial-gradient background, mandala rings, and large stats typography.
+- Downloads as `sacred-breath-{YYYY-MM-DD}.png`.
+
+---
+
+## PWA & Install Support
+
+- `app/manifest.ts` exports a Next.js `MetadataRoute.Manifest` with `display: 'standalone'`.
+- `InstallPrompt.tsx` listens for `beforeinstallprompt`, shows a floating "INSTALL APP" button, and calls `.prompt()` on click.
+- Hides automatically when `display-mode: standalone` matches.
 
 ---
 
@@ -228,8 +286,8 @@ The **shader** (`yoga-breath.wgsl`) independently implements its own chakra glow
 
 ### WebGPU / WGSL
 - Shaders in `public/` are loaded at runtime via `fetch()`
-- `WebGPUShader.tsx` prepends a shared `BreathUniforms` struct; do **not** duplicate this struct in new shader files
-- Entry points are consistently `vs_main` / `fs_main` for render pipelines, and descriptive names (`bloom_extract`, `update_particles`, etc.) for compute pipelines
+- The active shader (`sacred-monk.wgsl`) defines its own `struct Uniforms`; do not inject a second definition
+- Entry points in the active shader are `vs` (vertex) and `main` (fragment)
 
 ---
 
@@ -243,15 +301,27 @@ The **shader** (`yoga-breath.wgsl`) independently implements its own chakra glow
 When making changes, verify the following in a WebGPU-compatible browser (Chrome/Edge 113+):
 
 - [ ] `npm run dev` starts without TypeScript or ESLint errors
-- [ ] Page loads and shows "Begin Sacred Breath" button
-- [ ] Pressing "Begin" starts the countdown
+- [ ] Page loads and shows "SACRED BREATH" title with 5 MIN / 10 MIN / 15 MIN buttons
+- [ ] Pressing a duration button starts a timed session
+- [ ] Pressing BEGIN starts free-form practice
 - [ ] Phases cycle through: inhale → hold1 → exhale → hold2
+- [ ] Countdown decrements each second
+- [ ] Breath ring SVG stroke animates with `breathPhase`
 - [ ] Cycle count increments after each full round
-- [ ] Pause stops the timer; resume continues from where it left off
-- [ ] Reset returns to cycle 0, phase inhale, countdown restored
-- [ ] Strength selector (Light / Medium / Strong) changes phase durations
+- [ ] Pause stops the timer; resume continues
+- [ ] Reset returns to cycle 0, phase inhale
+- [ ] Preset buttons (BOX, 478, SIGH, FREE) update durations
+- [ ] Custom settings drawer sliders change phase durations
 - [ ] WebGPU canvas renders (not black) — check for shader compilation errors in DevTools
-- [ ] Posture guide SVG arms rotate appropriately per phase
+- [ ] Mouse/touch on canvas triggers ripple distortion and sound
+- [ ] Theme buttons change visual colors
+- [ ] Mandala style buttons change pattern
+- [ ] Voice guidance toggle speaks phase names
+- [ ] Sanskrit toggle switches to Sanskrit terms
+- [ ] Mute toggle silences chimes and drone
+- [ ] Completion screen appears when timed session ends
+- [ ] Export Stats button downloads a PNG
+- [ ] Stats (MIN TODAY, BREATHS, STREAK) update after each cycle
 - [ ] Responsive layout does not break on window resize
 - [ ] `npm run build` completes and outputs to `out/`
 
@@ -282,16 +352,19 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 
 - `deploy.py` contains a **hardcoded plaintext password**. Do not commit this file to public repositories without refactoring it to use environment variables or a secrets manager.
 - The app runs entirely client-side after build; there is no server-side API or database.
+- `localStorage` is used for stats and voice settings; no sensitive data is stored.
 
 ---
 
 ## Common Pitfalls for Agents
 
-1. **Editing the wrong timer hook** — `useSacredBreathTimer.ts` is the active one. `useBreathTimer.ts` and `useBreathingTimer.ts` are legacy.
+1. **Editing the wrong timer hook** — `useBreathTimer.ts` is the active one. `useSacredBreathTimer.ts` and `useBreathingTimer.ts` are legacy.
 2. **Editing the wrong visualizer** — `WebGPUShader.tsx` is the active one. `BreathingVisualizer.tsx` is legacy.
-3. **Duplicating `BreathUniforms` in WGSL** — `WebGPUShader.tsx` injects this struct automatically. Adding another definition will cause a compilation error (unless the loader regex happens to strip it).
-4. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
-5. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
+3. **PostureGuide is unused** — `PostureGuide.tsx` exists but is not imported by `page.tsx`. Do not assume it renders.
+4. **Old multi-pass shaders are unused** — Files in `public/shaders/` (bloom, particle, aurora, composite) and `public/yoga-breath.wgsl` are not loaded by the active component. The only active shader is `public/sacred-monk.wgsl`.
+5. **Duplicating `Uniforms` struct in WGSL** — The active shader already declares `struct Uniforms`. Adding another definition will cause a compilation error.
+6. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
+7. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
 
 ---
 
@@ -299,16 +372,25 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `app/hooks/useSacredBreathTimer.ts` | Active breath timing + uniform generation | **Active** |
-| `app/components/WebGPUShader.tsx` | 8-pass WebGPU pipeline | **Active** |
-| `app/components/PostureGuide.tsx` | SVG posture guidance | **Active** |
+| `app/hooks/useBreathTimer.ts` | Active breath timing, presets, session auto-end | **Active** |
+| `app/hooks/useBreathAudio.ts` | Phase chimes + ambient drone | **Active** |
+| `app/hooks/useVoiceGuidance.ts` | Speech synthesis guidance | **Active** |
+| `app/hooks/useSessionStats.ts` | localStorage stats & streak | **Active** |
+| `app/hooks/useRippleAudio.ts` | Interactive ripple sound | **Active** |
+| `app/components/WebGPUShader.tsx` | Single-pass WebGPU renderer | **Active** |
+| `app/components/InstallPrompt.tsx` | PWA install prompt | **Active** |
+| `app/components/ExportStats.tsx` | Stats PNG export | **Active** |
+| `app/components/CompletionScreen.tsx` | Session completion overlay | **Active** |
+| `app/components/ThemeSwitcher.tsx` | Theme & mandala style toggles | **Active** |
 | `app/page.tsx` | Main page orchestrator | **Active** |
 | `app/layout.tsx` | Root layout | **Active** |
+| `app/manifest.ts` | PWA manifest | **Active** |
 | `app/globals.css` | Tailwind v4 styles | **Active** |
-| `public/yoga-breath.wgsl` | Base SDF scene shader | **Active** |
-| `public/shaders/*.wgsl` | Compute / render passes | **Active** |
-| `app/hooks/useBreathTimer.ts` | Legacy timer with rich chakra types | Unused |
-| `app/hooks/useBreathingTimer.ts` | Legacy generic timer | Unused |
-| `app/components/BreathTimer.tsx` | Legacy rich UI component | Unused |
+| `public/sacred-monk.wgsl` | Active scene shader | **Active** |
+| `app/components/PostureGuide.tsx` | SVG posture guidance | Unused |
 | `app/components/BreathingVisualizer.tsx` | Legacy simple WebGPU canvas | Unused |
+| `app/hooks/useSacredBreathTimer.ts` | Legacy timer with chakra uniforms | Unused |
+| `app/hooks/useBreathingTimer.ts` | Legacy generic timer | Unused |
+| `public/shaders/*.wgsl` | Legacy compute / render passes | Unused |
+| `public/yoga-breath.wgsl` | Legacy base SDF scene shader | Unused |
 | `deploy.py` | SFTP deployment script | **Active** |
