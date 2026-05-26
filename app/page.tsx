@@ -73,7 +73,29 @@ export default function Home() {
   else if (currentPhase === 'exhale') remaining = settings.exhale - (elapsedInCycle - settings.inhale - settings.hold1);
   else remaining = settings.hold2 - (elapsedInCycle - settings.inhale - settings.hold1 - settings.exhale);
 
-  const intensity = 1.0 + 0.4 * Math.sin(breathPhase * Math.PI * 2);
+  // Compute how far through the current phase we are (0..1), used by
+  // the shader for accurate petal-bloom and ribbon timing.
+  const phaseDuration =
+    currentPhase === 'inhale' ? settings.inhale :
+    currentPhase === 'hold1'  ? settings.hold1  :
+    currentPhase === 'exhale' ? settings.exhale  :
+    settings.hold2;
+  const phaseElapsed = phaseDuration > 0
+    ? Math.max(0, phaseDuration - Math.max(0, remaining))
+    : 0;
+  const phaseProgress = phaseDuration > 0
+    ? Math.min(1, phaseElapsed / phaseDuration)
+    : 0;
+
+  // Phase-aware intensity: rises 0→1 on inhale, holds at ~1, falls 1→0 on
+  // exhale, rests at a gentle pulse during hold2. This drives lotus bloom,
+  // ribbon brightness, and aura brightness in the shader.
+  const intensity =
+    currentPhase === 'inhale' ? phaseProgress :
+    currentPhase === 'hold1'  ? 1.0 :
+    currentPhase === 'exhale' ? 1.0 - phaseProgress :
+    0.25 + 0.15 * Math.sin(Date.now() / 1200);  // gentle hold2 pulse
+
   const chakraPhase = chakraLabels.indexOf(currentPhase);
 
   const phaseColors: Record<string, string> = {
@@ -118,6 +140,7 @@ export default function Home() {
           breathPhase={breathPhase}
           intensity={intensity}
           chakraPhase={chakraPhase}
+          phaseProgress={phaseProgress}
           theme={theme}
           mandalaStyle={mandalaStyle}
           mouse={mouse}

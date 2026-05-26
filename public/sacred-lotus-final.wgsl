@@ -54,6 +54,7 @@ struct Uniforms {
     mandalaStyle: f32,
     mouse: vec2<f32>,        // -1..1 or (-2,-2) = inactive
     mouseStrength: f32,      // 0..1 touch strength
+    phaseProgress: f32,      // 0..1 progress within the current breath phase
     resolution: vec2<f32>,
 }
 
@@ -134,29 +135,23 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
 // =================================================================
 
 // Derive a smooth 0..1 "expand" factor from the 4-phase breath cycle.
+// Prefers the externally-supplied u.phaseProgress (accurate per-phase
+// progress from the JS timer) when it is available (non-negative).
+// Falls back to the approximate internal derivation from breathPhase.
 // 0 = resting/closed, 1 = fully open/peak.
 fn deriveBreathExpand(breath: f32, chakraPhase: f32) -> f32 {
-    var phaseProgress = fract(breath * 4.0);
-    if (breath < 0.23) {
-        phaseProgress = breath / 0.25;
-    } else if (breath < 0.48) {
-        phaseProgress = (breath - 0.25) / 0.25;
-    } else if (breath < 0.73) {
-        phaseProgress = (breath - 0.50) / 0.25;
-    } else {
-        phaseProgress = (breath - 0.75) / 0.25;
-    }
-    phaseProgress = clamp(phaseProgress, 0.0, 1.0);
+    // Use the accurate per-phase progress supplied by the JS timer.
+    var pp = clamp(u.phaseProgress, 0.0, 1.0);
 
     var expand = 0.0;
     if (chakraPhase < 0.5) {
-        expand = phaseProgress;          // inhale  : opening
+        expand = pp;          // inhale  : opening with breath
     } else if (chakraPhase < 1.5) {
-        expand = 1.0;                    // hold1   : peak
+        expand = 1.0;         // hold1   : fully open, peak prana
     } else if (chakraPhase < 2.5) {
-        expand = 1.0 - phaseProgress;    // exhale  : releasing
+        expand = 1.0 - pp;    // exhale  : releasing, closing
     } else {
-        expand = 0.0;                    // hold2   : resting
+        expand = 0.0;         // hold2   : resting, seed-state
     }
     return expand * expand * (3.0 - 2.0 * expand);
 }
