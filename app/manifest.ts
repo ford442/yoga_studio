@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Sacred Breath',
     short_name: 'SacredBreath',
     description: 'A sacred breath timer for deep meditation and pranayama practice',
-    start_url: '/',
+    start_url: '/yoga/',
     display: 'standalone',
     background_color: '#05010a',
     theme_color: '#05010a',

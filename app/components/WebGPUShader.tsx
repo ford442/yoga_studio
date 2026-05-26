@@ -69,7 +69,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       context.configure({ device, format, alphaMode: 'premultiplied' });
 
-      const shaderCode = await fetch('/sacred-lotus-final.wgsl').then(r => r.text());
+      const shaderCode = await fetch('/yoga/sacred-lotus-final.wgsl').then(r => r.text());
       const shaderModule = device.createShaderModule({ code: shaderCode });
 
       const pipeline = device.createRenderPipeline({

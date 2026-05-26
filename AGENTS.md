@@ -106,7 +106,7 @@ public/
 
 | File | Purpose |
 |------|---------|
-| `next.config.ts` | Static export, empty `basePath` |
+| `next.config.ts` | Static export, `basePath: '/yoga'` |
 | `tsconfig.json` | ES2017, strict, bundler resolution, `@/*` → `./*` |
 | `postcss.config.mjs` | Tailwind v4 PostCSS plugin |
 | `eslint.config.mjs` | Flat ESLint config with Next.js web-vitals + typescript presets |
