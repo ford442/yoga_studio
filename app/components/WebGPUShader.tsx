@@ -6,6 +6,7 @@ interface WebGPUShaderProps {
   breathPhase: number;
   intensity?: number;
   chakraPhase?: number;
+  phaseProgress?: number;
   theme?: number;
   mandalaStyle?: number;
   mouse?: { x: number; y: number };
@@ -18,6 +19,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   breathPhase,
   intensity = 1.0,
   chakraPhase = 0,
+  phaseProgress = 0,
   theme = 0,
   mandalaStyle = 0,
   mouse = { x: -2, y: -2 },
@@ -35,8 +37,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const startTimeRef = useRef(Date.now());
 
   // Mutable refs for animated values so WebGPU only initializes once
-  const propsRef = useRef({ breathPhase, intensity, chakraPhase, theme, mandalaStyle, mouse, mouseStrength, timeScale });
-  useEffect(() => { propsRef.current = { breathPhase, intensity, chakraPhase, theme, mandalaStyle, mouse, mouseStrength, timeScale }; }, [breathPhase, intensity, chakraPhase, theme, mandalaStyle, mouse, mouseStrength, timeScale]);
+  const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale });
+  useEffect(() => { propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale }; }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +69,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       context.configure({ device, format, alphaMode: 'premultiplied' });
 
-      const shaderCode = await fetch('/sacred-monk.wgsl').then(r => r.text());
+      const shaderCode = await fetch('/sacred-lotus-final.wgsl').then(r => r.text());
       const shaderModule = device.createShaderModule({ code: shaderCode });
 
       const pipeline = device.createRenderPipeline({
@@ -78,8 +80,22 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       });
       pipelineRef.current = pipeline;
 
+      // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
+      //   [0]  time           @byte  0
+      //   [1]  breathPhase    @byte  4
+      //   [2]  intensity      @byte  8
+      //   [3]  chakraPhase    @byte 12
+      //   [4]  theme          @byte 16
+      //   [5]  mandalaStyle   @byte 20
+      //   [6]  mouse.x        @byte 24  (vec2<f32>, align 8)
+      //   [7]  mouse.y        @byte 28
+      //   [8]  mouseStrength  @byte 32
+      //   [9]  phaseProgress  @byte 36
+      //   [10] resolution.x   @byte 40  (vec2<f32>, align 8)
+      //   [11] resolution.y   @byte 44
+      //   Total struct size: 48 bytes
       const uniformBuffer = device.createBuffer({
-        size: 64,
+        size: 48,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       uniformBufferRef.current = uniformBuffer;
@@ -103,33 +119,25 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const loop = () => {
         if (!device || !pipeline || !uniformBuffer || !context || !bindGroup || !vertexBuffer) return;
 
-        const { breathPhase: bp, intensity: int, chakraPhase: cp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts } = propsRef.current;
+        const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts } = propsRef.current;
         const now = (Date.now() - startTimeRef.current) / 1000;
         const currentTime = now * ts;
         const w = canvas.width;
         const h = canvas.height;
 
-        // Layout matches sacred-monk.wgsl Uniforms struct:
-        // time(f32)@0, breathPhase(f32)@4, intensity(f32)@8,
-        // chakraPhase(f32)@12, theme(f32)@16, mandalaStyle(f32)@20,
-        // mouse(vec2)@24, mouseStrength(f32)@28, pad@32, resolution(vec2)@40
         const uniforms = new Float32Array([
-          currentTime,  // 0  time
-          bp,           // 1  breathPhase
-          int,          // 2  intensity
-          cp,           // 3  chakraPhase
-          th,           // 4  theme
-          ms,           // 5  mandalaStyle
-          m.x,          // 6  mouse.x
-          m.y,          // 7  mouse.y
-          msr,          // 8  mouseStrength
-          0,            // 9  padding
-          0,            // 10 padding
-          0,            // 11 padding
-          w,            // 12 resolution.x
-          h,            // 13 resolution.y
-          0,            // 14 padding
-          0,            // 15 padding
+          currentTime,  //  [0]  time
+          bp,           //  [1]  breathPhase
+          int,          //  [2]  intensity
+          cp,           //  [3]  chakraPhase
+          th,           //  [4]  theme
+          ms,           //  [5]  mandalaStyle
+          m.x,          //  [6]  mouse.x
+          m.y,          //  [7]  mouse.y
+          msr,          //  [8]  mouseStrength
+          pp,           //  [9]  phaseProgress
+          w,            // [10]  resolution.x
+          h,            // [11]  resolution.y
         ]);
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
 
@@ -176,3 +184,4 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 };
 
 export default WebGPUShader;
+

@@ -10,6 +10,7 @@ struct Uniforms {
     mandalaStyle: f32,
     mouse: vec2<f32>,        // -1..1 or (-2,-2) = inactive
     mouseStrength: f32,      // 0..1 strength of current touch
+    phaseProgress: f32,      // 0..1 progress within the current breath phase
     resolution: vec2<f32>,
 }
 
