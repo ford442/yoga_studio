@@ -2,6 +2,19 @@ import type { SessionMode } from '../types/sessionMode';
 
 export const SESSION_MODES: SessionMode[] = [
   {
+    id: 'sacred-ultra',
+    label: 'Sacred Ultra',
+    emoji: '✨',
+    description: 'The master composition: lotus, figure, chakras, ribbons, geometry, and cinematic post-processing.',
+    chakraFocus: 'All',
+    shaderPath: '/yoga/sacred-ultra.wgsl',
+    vertexEntry: 'vs',
+    fragmentEntry: 'main',
+    breath: { inhale: 4, hold1: 4, exhale: 6, hold2: 2 },
+    theme: 0,
+    mandalaStyle: 0,
+  },
+  {
     id: 'lotus-heart',
     label: 'Lotus Heart',
     emoji: '🪷',
