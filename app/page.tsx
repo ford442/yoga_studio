@@ -5,19 +5,14 @@ import WebGPUShader from './components/WebGPUShader';
 import InstallPrompt from './components/InstallPrompt';
 import ExportStats from './components/ExportStats';
 import CompletionScreen from './components/CompletionScreen';
-import ThemeSwitcher from './components/ThemeSwitcher';
-import { useBreathTimer, type BreathSettings } from './hooks/useBreathTimer';
+import SessionModeSwitcher from './components/SessionModeSwitcher';
+import { useBreathTimer } from './hooks/useBreathTimer';
 import { useBreathAudio } from './hooks/useBreathAudio';
 import { useSessionStats } from './hooks/useSessionStats';
 import { useVoiceGuidance } from './hooks/useVoiceGuidance';
 import { useRippleAudio } from './hooks/useRippleAudio';
-
-const presets: Record<string, BreathSettings> = {
-  box: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
-  '478': { inhale: 4, hold1: 7, exhale: 8, hold2: 0 },
-  sigh: { inhale: 4, hold1: 0, exhale: 6, hold2: 8 },
-  free: { inhale: 5, hold1: 3, exhale: 7, hold2: 2 },
-};
+import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
+import type { SessionMode } from './types/sessionMode';
 
 const chakraLabels = ['inhale', 'hold1', 'exhale', 'hold2'];
 
@@ -44,12 +39,16 @@ export default function Home() {
 
   const [showDrawer, setShowDrawer] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
-  const [theme, setTheme] = useState(0);
-  const [mandalaStyle, setMandalaStyle] = useState(0);
+  const [selectedMode, setSelectedMode] = useState<SessionMode>(DEFAULT_MODE);
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
   const lastRippleRef = useRef(0);
+
+  const handleModeSelect = (mode: SessionMode) => {
+    setSelectedMode(mode);
+    updateSettings(mode.breath);
+  };
 
   // Detect full breath cycle completion (hold2 → inhale transition)
   const prevPhaseRef = useRef(currentPhase);
@@ -137,15 +136,19 @@ export default function Home() {
         }}
       >
         <WebGPUShader
+          key={selectedMode.id}
           breathPhase={breathPhase}
           intensity={intensity}
           chakraPhase={chakraPhase}
           phaseProgress={phaseProgress}
-          theme={theme}
-          mandalaStyle={mandalaStyle}
+          theme={selectedMode.theme}
+          mandalaStyle={selectedMode.mandalaStyle}
           mouse={mouse}
           mouseStrength={mouseStrength}
           timeScale={1.0}
+          shaderPath={selectedMode.shaderPath}
+          vertexEntry={selectedMode.vertexEntry}
+          fragmentEntry={selectedMode.fragmentEntry}
           className="w-full h-full"
         />
       </div>
@@ -215,25 +218,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <ThemeSwitcher
-            theme={theme}
-            mandalaStyle={mandalaStyle}
-            onThemeChange={setTheme}
-            onStyleChange={setMandalaStyle}
+        <div className="w-full mb-6">
+          <SessionModeSwitcher
+            modes={SESSION_MODES}
+            selectedModeId={selectedMode.id}
+            onSelect={handleModeSelect}
           />
-        </div>
-
-        <div className="flex flex-wrap justify-center gap-2 mb-8">
-          {Object.entries(presets).map(([name, preset]) => (
-            <button
-              key={name}
-              onClick={() => { updateSettings(preset); if (!isRunning) toggleFree(); }}
-              className="px-5 py-2.5 text-sm font-light tracking-wider bg-white/10 hover:bg-white/20 border border-white/20 rounded-3xl transition-all active:scale-95"
-            >
-              {name.toUpperCase()}
-            </button>
-          ))}
         </div>
 
         <div className="mb-6">

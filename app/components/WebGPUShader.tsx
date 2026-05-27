@@ -13,6 +13,9 @@ interface WebGPUShaderProps {
   mouseStrength?: number;
   timeScale?: number;
   className?: string;
+  shaderPath?: string;
+  vertexEntry?: string;
+  fragmentEntry?: string;
 }
 
 const WebGPUShader: React.FC<WebGPUShaderProps> = ({
@@ -26,6 +29,9 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   mouseStrength = 0,
   timeScale = 1.0,
   className = '',
+  shaderPath = '/yoga/sacred-lotus-final.wgsl',
+  vertexEntry = 'vs',
+  fragmentEntry = 'main',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const deviceRef = useRef<GPUDevice | null>(null);
@@ -69,13 +75,13 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       context.configure({ device, format, alphaMode: 'premultiplied' });
 
-      const shaderCode = await fetch('/yoga/sacred-lotus-final.wgsl').then(r => r.text());
+      const shaderCode = await fetch(shaderPath).then(r => r.text());
       const shaderModule = device.createShaderModule({ code: shaderCode });
 
       const pipeline = device.createRenderPipeline({
         layout: 'auto',
-        vertex: { module: shaderModule, entryPoint: 'vs' },
-        fragment: { module: shaderModule, entryPoint: 'main', targets: [{ format }] },
+        vertex: { module: shaderModule, entryPoint: vertexEntry },
+        fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
         primitive: { topology: 'triangle-list' },
       });
       pipelineRef.current = pipeline;
