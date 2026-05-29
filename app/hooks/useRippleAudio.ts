@@ -6,7 +6,8 @@ export const useRippleAudio = () => {
   const playRipple = (strength: number = 0.6) => {
     if (!('AudioContext' in window)) return;
 
-    const ctx = audioContextRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const ctx = audioContextRef.current || new (AudioContextCtor || AudioContext)();
     audioContextRef.current = ctx;
 
     const osc = ctx.createOscillator();

@@ -41,7 +41,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const uniformBufferRef = useRef<GPUBuffer | null>(null);
   const bindGroupRef = useRef<GPUBindGroup | null>(null);
   const animationRef = useRef<number | null>(null);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef<number | null>(null);
 
   // Mutable refs for animated values so WebGPU only initializes once
   const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
@@ -53,6 +53,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     const init = async () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+
+      if (!startTimeRef.current) startTimeRef.current = Date.now();
 
       const adapter = await navigator.gpu?.requestAdapter();
       if (!adapter) {
@@ -121,7 +123,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
 
         const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts, strengthLevel: sl } = propsRef.current;
-        const now = (Date.now() - startTimeRef.current) / 1000;
+        const start = startTimeRef.current ?? Date.now();
+        const now = (Date.now() - start) / 1000;
         const currentTime = now * ts;
         const w = canvas.width;
         const h = canvas.height;
@@ -176,6 +179,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       deviceRef.current?.destroy();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

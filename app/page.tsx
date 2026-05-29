@@ -6,7 +6,7 @@ import InstallPrompt from './components/InstallPrompt';
 import ExportStats from './components/ExportStats';
 import CompletionScreen from './components/CompletionScreen';
 import SessionModeSwitcher from './components/SessionModeSwitcher';
-import { useBreathTimer } from './hooks/useBreathTimer';
+import { useBreathTimer, type SessionDuration } from './hooks/useBreathTimer';
 import { useBreathAudio } from './hooks/useBreathAudio';
 import { useSessionStats } from './hooks/useSessionStats';
 import { useVoiceGuidance } from './hooks/useVoiceGuidance';
@@ -28,22 +28,23 @@ export default function Home() {
     toggleFree,
     reset,
     updateSettings,
-    endSession,
   } = useBreathTimer();
 
   const totalCycle = settings.inhale + settings.hold1 + settings.exhale + settings.hold2;
 
-  const { toggleMute, isMuted } = useBreathAudio(currentPhase, isRunning);
+  useBreathAudio(currentPhase, isRunning); // audio side effects only (chimes + drone)
   const { stats, addPracticeTime } = useSessionStats();
   const { settings: voiceSettings, toggleVoice, toggleSanskrit } = useVoiceGuidance(currentPhase, isRunning);
 
   const [showDrawer, setShowDrawer] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [completedInfo, setCompletedInfo] = useState({ minutes: 5, breaths: 0 });
   const [selectedMode, setSelectedMode] = useState<SessionMode>(DEFAULT_MODE);
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
   const lastRippleRef = useRef(0);
+  const prevSessionDurationRef = useRef<SessionDuration>(null);
 
   const handleModeSelect = (mode: SessionMode) => {
     setSelectedMode(mode);
@@ -59,11 +60,18 @@ export default function Home() {
     prevPhaseRef.current = currentPhase;
   }, [currentPhase, totalCycle, addPracticeTime]);
 
-  // Show completion screen when a timed session ends
+  // Show completion screen when a timed session ends (use prev ref because
+  // endSession() inside the hook nulls sessionDuration on the same update).
   useEffect(() => {
-    if (!isRunning && sessionDuration !== null && totalBreaths > 0) {
+    if (prevSessionDurationRef.current !== null && !isRunning && totalBreaths > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCompletedInfo({
+        minutes: prevSessionDurationRef.current || 5,
+        breaths: totalBreaths,
+      });
       setShowCompletion(true);
     }
+    prevSessionDurationRef.current = sessionDuration;
   }, [isRunning, sessionDuration, totalBreaths]);
   const elapsedInCycle = (breathPhase * totalCycle) % totalCycle;
   let remaining = 0;
@@ -87,13 +95,13 @@ export default function Home() {
     : 0;
 
   // Phase-aware intensity: rises 0→1 on inhale, holds at ~1, falls 1→0 on
-  // exhale, rests at a gentle pulse during hold2. This drives lotus bloom,
+  // exhale, rests at a gentle level during hold2. This drives lotus bloom,
   // ribbon brightness, and aura brightness in the shader.
   const intensity =
     currentPhase === 'inhale' ? phaseProgress :
     currentPhase === 'hold1'  ? 1.0 :
     currentPhase === 'exhale' ? 1.0 - phaseProgress :
-    0.25 + 0.15 * Math.sin(Date.now() / 1200);  // gentle hold2 pulse
+    0.3;  // gentle hold2 level (stable, no impure Date.now in render)
 
   const chakraPhase = chakraLabels.indexOf(currentPhase);
 
@@ -163,7 +171,7 @@ export default function Home() {
           {[5, 10, 15].map(min => (
             <button
               key={min}
-              onClick={() => startSession(min as any)}
+              onClick={() => startSession(min as 5 | 10 | 15)}
               className="flex-1 py-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-3xl text-sm tracking-widest transition-all active:scale-95"
             >
               {min} MIN
@@ -296,6 +304,19 @@ export default function Home() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Global PWA install prompt (listens for beforeinstallprompt) */}
+      <InstallPrompt />
+
+      {/* Session completion overlay with confetti (shown after timed sessions end) */}
+      {showCompletion && (
+        <CompletionScreen
+          minutes={completedInfo.minutes}
+          breaths={completedInfo.breaths}
+          streak={stats.currentStreak}
+          onClose={() => setShowCompletion(false)}
+        />
       )}
     </main>
   );

@@ -9,7 +9,10 @@ interface BeforeInstallPromptEvent extends Event {
 
 const InstallPrompt: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showInstall, setShowInstall] = useState(false);
+  const [showInstall, setShowInstall] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.matchMedia('(display-mode: standalone)').matches;
+  });
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -19,11 +22,6 @@ const InstallPrompt: React.FC = () => {
     };
 
     window.addEventListener('beforeinstallprompt', handler);
-
-    // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setShowInstall(false);
-    }
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
