@@ -144,7 +144,6 @@ export default function Home() {
         }}
       >
         <WebGPUShader
-          key={selectedMode.id}
           breathPhase={breathPhase}
           intensity={intensity}
           chakraPhase={chakraPhase}

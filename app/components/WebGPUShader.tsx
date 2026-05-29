@@ -29,7 +29,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   mouse = { x: -2, y: -2 },
   mouseStrength = 0,
   timeScale = 1.0,
-  strengthLevel = 1.0, // 0=light, 1=regular, 2=strong
+  strengthLevel = 1.0,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
@@ -37,19 +37,19 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const deviceRef = useRef<GPUDevice | null>(null);
-  const pipelineRef = useRef<GPURenderPipeline | null>(null);
-  const uniformBufferRef = useRef<GPUBuffer | null>(null);
-  const bindGroupRef = useRef<GPUBindGroup | null>(null);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Mutable refs for animated values so WebGPU only initializes once
   const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
-  useEffect(() => { propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel }; }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel]);
+  useEffect(() => {
+    propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel };
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel]);
 
   useEffect(() => {
     let cancelled = false;
+    let ro: ResizeObserver | null = null;
 
     const init = async () => {
       const canvas = canvasRef.current;
@@ -59,50 +59,53 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       const adapter = await navigator.gpu?.requestAdapter();
       if (!adapter) {
-        console.error('WebGPU not supported');
+        console.warn('WebGPU not supported on this browser.');
         return;
       }
 
       const device = await adapter.requestDevice();
-      if (cancelled) { device.destroy(); return; }
+      if (cancelled) {
+        device.destroy();
+        return;
+      }
       deviceRef.current = device;
 
-      const context = canvas.getContext('webgpu')!;
+      const context = canvas.getContext('webgpu');
+      if (!context) return;
+
       const format = navigator.gpu.getPreferredCanvasFormat();
 
+      // Robust resize + reconfigure
       // Robust resize + reconfigure. We measure after layout and reconfigure the
       // swapchain whenever the canvas backing store size changes. This is essential
       // for reliable startup (async init + large shader fetch can race layout) and
       // for window resizes / DPR changes / container resizes.
       const resize = () => {
+        if (!canvas || cancelled) return;
         const dpr = window.devicePixelRatio || 1;
         const w = Math.floor(canvas.clientWidth * dpr);
         const h = Math.floor(canvas.clientHeight * dpr);
+
+        // Prevent WebGPU crash if canvas is invisible/0px during React mount
+        if (w === 0 || h === 0) return;
+
         if (canvas.width !== w || canvas.height !== h) {
           canvas.width = w;
           canvas.height = h;
-          // Reconfigure is REQUIRED after changing canvas dimensions.
-          context.configure({ device, format, alphaMode: 'premultiplied' });
+          try {
+            context.configure({ device, format, alphaMode: 'premultiplied' });
+          } catch (e) {
+            console.error('Failed to configure WebGPU context:', e);
+          }
         }
       };
 
-      // Initial measurement (post-paint from useEffect). May still be 0 in some
-      // timing/race cases; we will force another measurement after shader load.
+      // Initial measurement
       resize();
 
-      context.configure({ device, format, alphaMode: 'premultiplied' });
-
-      // ResizeObserver catches initial size (when it stabilizes) + all future changes.
-      const ro = new ResizeObserver(() => resize());
+      // ResizeObserver catches real dimensions if CSS hasn't painted yet
+      ro = new ResizeObserver(() => resize());
       ro.observe(canvas);
-      resizeObserverRef.current = ro;
-
-      if (cancelled) {
-        ro.disconnect();
-        resizeObserverRef.current = null;
-        device.destroy();
-        return;
-      }
 
       let pipeline: GPURenderPipeline | null = null;
       let uniformBuffer: GPUBuffer | null = null;
@@ -123,15 +126,16 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           }
           return new URL(path, loc.origin + dir).href;
         };
+
         const shaderUrl = getShaderUrl(shaderPath);
         const shaderResponse = await fetch(shaderUrl);
         if (!shaderResponse.ok) {
-          console.error(`[WebGPUShader] Failed to fetch shader at ${shaderUrl}: ${shaderResponse.status} ${shaderResponse.statusText}`);
-          throw new Error(`Shader load failed: ${shaderResponse.status}`);
+          throw new Error(`Shader load failed: ${shaderResponse.status} ${shaderUrl}`);
         }
+
         const shaderCode = await shaderResponse.text();
         const shaderModule = device.createShaderModule({ code: shaderCode });
-
+      // Create the pipeline layout and module
         pipeline = device.createRenderPipeline({
           layout: 'auto',
           vertex: { module: shaderModule, entryPoint: vertexEntry },
@@ -141,34 +145,34 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         pipelineRef.current = pipeline;
 
         // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
-      //   [0]  time           @byte  0
-      //   [1]  breathPhase    @byte  4
-      //   [2]  intensity      @byte  8
-      //   [3]  chakraPhase    @byte 12
-      //   [4]  theme          @byte 16
-      //   [5]  mandalaStyle   @byte 20
-      //   [6]  phaseProgress  @byte 24
-      //   [7]  strengthLevel  @byte 28   // 0.0=light, 1.0=regular, 2.0=strong
-      //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
-      //   [9]  mouse.y        @byte 36
-      //   [10] mouseStrength  @byte 40
-      //   [11] padding        @byte 44   // 16-byte alignment padding
-      //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
-      //   [13] resolution.y   @byte 52
-      //   [14] padding        @byte 56
-      //   [15] padding        @byte 60
-      //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
-      uniformBuffer = device.createBuffer({
-        size: 64,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      uniformBufferRef.current = uniformBuffer;
+        //   [0]  time           @byte  0
+        //   [1]  breathPhase    @byte  4
+        //   [2]  intensity      @byte  8
+        //   [3]  chakraPhase    @byte 12
+        //   [4]  theme          @byte 16
+        //   [5]  mandalaStyle   @byte 20
+        //   [6]  phaseProgress  @byte 24
+        //   [7]  strengthLevel  @byte 28   // 0.0=light, 1.0=regular, 2.0=strong
+        //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
+        //   [9]  mouse.y        @byte 36
+        //   [10] mouseStrength  @byte 40
+        //   [11] padding        @byte 44   // 16-byte alignment padding
+        //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
+        //   [13] resolution.y   @byte 52
+        //   [14] padding        @byte 56
+        //   [15] padding        @byte 60
+        //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
+        uniformBuffer = device.createBuffer({
+          size: 64,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        uniformBufferRef.current = uniformBuffer;
 
-      bindGroup = device.createBindGroup({
-        layout: pipeline!.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: uniformBuffer! } }],
-      });
-      bindGroupRef.current = bindGroup;
+        bindGroup = device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+        });
+        bindGroupRef.current = bindGroup;
       } catch (err) {
         console.error('[WebGPUShader] WebGPU pipeline setup failed:', err);
         // Leave canvas black; the rest of the UI still works.
@@ -181,7 +185,13 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       resize();
 
       const loop = () => {
-        if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
+        if (cancelled || !device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
+
+        // Skip render if canvas is 0px (not yet visible)
+        if (canvas.width === 0 || canvas.height === 0) {
+          animationRef.current = requestAnimationFrame(loop);
+          return;
+        }
 
         const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts, strengthLevel: sl } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
@@ -198,31 +208,37 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           th,            //  [4] theme
           ms,            //  [5] mandalaStyle
           pp,            //  [6] phaseProgress
-          sl,            //  [7] strengthLevel  (0=light, 1=regular, 2=strong)
+          sl,            //  [7] strengthLevel
           m.x,           //  [8] mouse.x
           m.y,           //  [9] mouse.y
           msr,           // [10] mouseStrength
-          0,             // [11] padding (16-byte alignment)
+          0,             // [11] padding
           w,             // [12] resolution.x
           h,             // [13] resolution.y
           0,             // [14] padding
           0,             // [15] padding
         ]);
-        device.queue.writeBuffer(uniformBuffer, 0, uniforms);
 
-        const encoder = device.createCommandEncoder();
-        const view = context.getCurrentTexture().createView();
+        try {
+          device.queue.writeBuffer(uniformBuffer, 0, uniforms);
 
-        const pass = encoder.beginRenderPass({
-          colorAttachments: [{ view, clearValue: [0,0,0,1], loadOp: 'clear', storeOp: 'store' }],
-        });
+          const encoder = device.createCommandEncoder();
+          const view = context.getCurrentTexture().createView();
 
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
-        pass.draw(6);
-        pass.end();
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [{ view, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }],
+          });
 
-        device.queue.submit([encoder.finish()]);
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, bindGroup);
+          pass.draw(6);
+          pass.end();
+
+          device.queue.submit([encoder.finish()]);
+        } catch (e) {
+          console.error('Render loop error:', e);
+        }
+
         animationRef.current = requestAnimationFrame(loop);
       };
 
@@ -234,12 +250,13 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     return () => {
       cancelled = true;
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-      deviceRef.current?.destroy();
+      if (ro) ro.disconnect();
+      if (deviceRef.current) {
+        try { deviceRef.current.destroy(); } catch (e) { /* ignore */ }
+        deviceRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [shaderPath, vertexEntry, fragmentEntry]);
 
   return (
     <canvas
@@ -251,4 +268,3 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 };
 
 export default WebGPUShader;
-
