@@ -260,6 +260,15 @@ export default function Home() {
         </div>
       </div>
 
+      {showCompletion && (
+        <CompletionScreen
+          minutes={stats.todayMinutes}
+          breaths={totalBreaths}
+          streak={stats.currentStreak}
+          onClose={() => setShowCompletion(false)}
+        />
+      )}
+
       {/* Custom settings drawer */}
       {showDrawer && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
