@@ -111,6 +111,26 @@ def main():
     except Exception:
         print("Warning: Could not contact storage.noahcohn.com (continuing anyway).")
 
+    print(f"\nUploading files from {BUILD_DIR}/ ...\n")
+
+    uploaded = 0
+    failed = 0
+
+    for root, dirs, files in os.walk(build_path):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
+        for filename in sorted(files):
+            local_file = Path(root) / filename
+            rel_path = f"{PROJECT_NAME}/{local_file.relative_to(build_path)}"
+            if upload_single_file(local_file, rel_path):
+                uploaded += 1
+            else:
+                failed += 1
+
+    print(f"\n=== Deployment complete ===")
+    print(f"  Uploaded: {uploaded}")
+    print(f"  Failed:   {failed}")
+    if failed:
+        sys.exit(1)
     print()
     success = deploy_bundle(build_path)
 
