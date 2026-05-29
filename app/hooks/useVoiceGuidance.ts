@@ -9,15 +9,11 @@ interface VoiceSettings {
 const VOICE_SETTINGS_KEY = 'sacred-breath-voice';
 
 export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) => {
-  const [settings, setSettings] = useState<VoiceSettings>({ enabled: true, useSanskrit: false });
-
-  // Load from localStorage on mount (client-only)
-  useEffect(() => {
+  const [settings, setSettings] = useState<VoiceSettings>(() => {
+    if (typeof window === 'undefined') return { enabled: true, useSanskrit: false };
     const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
-    if (saved) {
-      setSettings(JSON.parse(saved));
-    }
-  }, []);
+    return saved ? JSON.parse(saved) : { enabled: true, useSanskrit: false };
+  });
 
   const lastPhaseRef = useRef<BreathPhase>(currentPhase);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);

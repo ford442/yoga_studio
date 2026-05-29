@@ -65,7 +65,7 @@ export const useBreathTimer = () => {
       setBreathPhase(cycleProgress);
 
       // Phase label
-      let phaseTime = elapsed % tct;
+      const phaseTime = elapsed % tct;
       let newPhase: BreathPhase = 'inhale';
       const s = settingsRef.current;
       if (phaseTime < s.inhale) newPhase = 'inhale';

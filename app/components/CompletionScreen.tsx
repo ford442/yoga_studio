@@ -12,7 +12,6 @@ interface CompletionScreenProps {
 const CompletionScreen: React.FC<CompletionScreenProps> = ({ minutes, breaths, streak, onClose }) => {
   useEffect(() => {
     // Gentle confetti burst
-    const colors = ['#a78bfa', '#67e8f9', '#f472b6', '#fbbf24'];
     for (let i = 0; i < 80; i++) {
       setTimeout(() => {
         const confetti = document.createElement('div');

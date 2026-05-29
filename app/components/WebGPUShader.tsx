@@ -39,6 +39,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const deviceRef = useRef<GPUDevice | null>(null);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Mutable refs for animated values so WebGPU only initializes once
   const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
@@ -75,6 +76,10 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const format = navigator.gpu.getPreferredCanvasFormat();
 
       // Robust resize + reconfigure
+      // Robust resize + reconfigure. We measure after layout and reconfigure the
+      // swapchain whenever the canvas backing store size changes. This is essential
+      // for reliable startup (async init + large shader fetch can race layout) and
+      // for window resizes / DPR changes / container resizes.
       const resize = () => {
         if (!canvas || cancelled) return;
         const dpr = window.devicePixelRatio || 1;
@@ -107,10 +112,16 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       let bindGroup: GPUBindGroup | null = null;
 
       try {
+        // Resolve shader URL relative to the current page directory.
+        // This is critical for sub-path deployments (e.g. /yoga/) behind a reverse proxy
+        // that strips the prefix. A bare relative fetch('sacred-xxx.wgsl') resolves
+        // incorrectly if the page URL lacks a trailing slash (pathname=/yoga vs /yoga/).
+        // We derive the directory from window.location so the visible prefix is always used.
         const getShaderUrl = (path: string): string => {
           const loc = window.location;
           let dir = loc.pathname;
           if (!dir.endsWith('/')) {
+            // Treat as directory (e.g. /yoga -> /yoga/)
             dir = dir.replace(/[^/]*$/, '') + '/';
           }
           return new URL(path, loc.origin + dir).href;
@@ -124,34 +135,53 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
         const shaderCode = await shaderResponse.text();
         const shaderModule = device.createShaderModule({ code: shaderCode });
-
+      // Create the pipeline layout and module
         pipeline = device.createRenderPipeline({
           layout: 'auto',
           vertex: { module: shaderModule, entryPoint: vertexEntry },
           fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
           primitive: { topology: 'triangle-list' },
         });
+        pipelineRef.current = pipeline;
 
-        // Uniforms struct layout (64 bytes / 16 floats):
-        //   [0]  time           [1]  breathPhase   [2]  intensity     [3]  chakraPhase
-        //   [4]  theme          [5]  mandalaStyle   [6]  phaseProgress [7]  strengthLevel
-        //   [8]  mouse.x        [9]  mouse.y        [10] mouseStrength [11] padding
-        //   [12] resolution.x   [13] resolution.y   [14] padding       [15] padding
+        // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
+        //   [0]  time           @byte  0
+        //   [1]  breathPhase    @byte  4
+        //   [2]  intensity      @byte  8
+        //   [3]  chakraPhase    @byte 12
+        //   [4]  theme          @byte 16
+        //   [5]  mandalaStyle   @byte 20
+        //   [6]  phaseProgress  @byte 24
+        //   [7]  strengthLevel  @byte 28   // 0.0=light, 1.0=regular, 2.0=strong
+        //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
+        //   [9]  mouse.y        @byte 36
+        //   [10] mouseStrength  @byte 40
+        //   [11] padding        @byte 44   // 16-byte alignment padding
+        //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
+        //   [13] resolution.y   @byte 52
+        //   [14] padding        @byte 56
+        //   [15] padding        @byte 60
+        //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
         uniformBuffer = device.createBuffer({
           size: 64,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
+        uniformBufferRef.current = uniformBuffer;
 
         bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
         });
+        bindGroupRef.current = bindGroup;
       } catch (err) {
-        console.error('[WebGPUShader] Setup failed:', err);
+        console.error('[WebGPUShader] WebGPU pipeline setup failed:', err);
+        // Leave canvas black; the rest of the UI still works.
         return;
       }
 
-      // Force a final size measurement in case CSS shifted during async shader load
+      // Force a final size measurement + reconfigure now that the (potentially
+      // slow) shader fetch + pipeline creation is complete. This guarantees the
+      // canvas has its real layout size even if the early measurement was 0.
       resize();
 
       const loop = () => {

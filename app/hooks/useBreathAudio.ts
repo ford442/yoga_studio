@@ -9,7 +9,8 @@ export const useBreathAudio = (currentPhase: BreathPhase, isRunning: boolean) =>
 
   const getAudioContext = () => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      audioContextRef.current = new (AudioContextCtor || AudioContext)();
     }
     return audioContextRef.current;
   };

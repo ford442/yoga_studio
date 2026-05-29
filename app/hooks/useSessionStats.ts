@@ -12,33 +12,27 @@ const STORAGE_KEY = 'sacred-breath-stats';
 const getTodayKey = () => new Date().toISOString().split('T')[0];
 
 export const useSessionStats = () => {
-  const [stats, setStats] = useState<SessionStats>({
-    todayMinutes: 0,
-    todayBreaths: 0,
-    currentStreak: 0,
-    lastPracticeDate: '',
-  });
-
-  // Load from localStorage on mount
-  useEffect(() => {
+  const [stats, setStats] = useState<SessionStats>(() => {
+    const today = getTodayKey();
+    if (typeof window === 'undefined') {
+      return { todayMinutes: 0, todayBreaths: 0, currentStreak: 0, lastPracticeDate: today };
+    }
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      const today = getTodayKey();
-
-      // Reset daily counters if new day
       if (parsed.lastPracticeDate !== today) {
-        setStats({
+        // Reset daily counters if new day (streak preserved)
+        return {
           todayMinutes: 0,
           todayBreaths: 0,
           currentStreak: parsed.currentStreak,
           lastPracticeDate: today,
-        });
-      } else {
-        setStats(parsed);
+        };
       }
+      return parsed;
     }
-  }, []);
+    return { todayMinutes: 0, todayBreaths: 0, currentStreak: 0, lastPracticeDate: today };
+  });
 
   // Save to localStorage whenever stats change
   useEffect(() => {
