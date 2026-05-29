@@ -17,4 +17,5 @@ export interface SessionMode {
   breath: BreathTiming;
   theme: number;
   mandalaStyle: number;
+  strengthLevel?: number; // 0.0=light, 1.0=regular (default), 2.0=strong
 }

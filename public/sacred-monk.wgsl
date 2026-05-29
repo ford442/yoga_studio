@@ -8,10 +8,14 @@ struct Uniforms {
     chakraPhase: f32,
     theme: f32,
     mandalaStyle: f32,
+    phaseProgress: f32,      // 0..1 progress within the current breath phase
+    strengthLevel: f32,      // 0.0=light, 1.0=regular, 2.0=strong
     mouse: vec2<f32>,        // -1..1 or (-2,-2) = inactive
     mouseStrength: f32,      // 0..1 strength of current touch
-    phaseProgress: f32,      // 0..1 progress within the current breath phase
+    padding0: f32,           // 16-byte alignment padding
     resolution: vec2<f32>,
+    padding1: f32,
+    padding2: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;

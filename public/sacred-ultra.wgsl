@@ -21,7 +21,7 @@
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// Uniforms — must match WebGPUShader.tsx exactly (48 bytes)
+// Uniforms — must match WebGPUShader.tsx exactly (64 bytes)
 // ---------------------------------------------------------------------------
 struct Uniforms {
     time: f32,
@@ -30,10 +30,14 @@ struct Uniforms {
     chakraPhase: f32,
     theme: f32,
     mandalaStyle: f32,
+    phaseProgress: f32,      // 0..1 progress within the current breath phase
+    strengthLevel: f32,      // 0.0=light, 1.0=regular, 2.0=strong
     mouse: vec2<f32>,
     mouseStrength: f32,
-    phaseProgress: f32,
+    padding0: f32,           // 16-byte alignment padding
     resolution: vec2<f32>,
+    padding1: f32,
+    padding2: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;

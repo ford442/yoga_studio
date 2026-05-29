@@ -12,6 +12,7 @@ interface WebGPUShaderProps {
   mouse?: { x: number; y: number };
   mouseStrength?: number;
   timeScale?: number;
+  strengthLevel?: number; // 0.0=light, 1.0=regular, 2.0=strong
   className?: string;
   shaderPath?: string;
   vertexEntry?: string;
@@ -28,6 +29,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   mouse = { x: -2, y: -2 },
   mouseStrength = 0,
   timeScale = 1.0,
+  strengthLevel = 1.0, // 0=light, 1=regular, 2=strong
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
@@ -42,8 +44,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const startTimeRef = useRef(Date.now());
 
   // Mutable refs for animated values so WebGPU only initializes once
-  const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale });
-  useEffect(() => { propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale }; }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale]);
+  const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
+  useEffect(() => { propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel }; }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,15 +94,19 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       //   [3]  chakraPhase    @byte 12
       //   [4]  theme          @byte 16
       //   [5]  mandalaStyle   @byte 20
-      //   [6]  mouse.x        @byte 24  (vec2<f32>, align 8)
-      //   [7]  mouse.y        @byte 28
-      //   [8]  mouseStrength  @byte 32
-      //   [9]  phaseProgress  @byte 36
-      //   [10] resolution.x   @byte 40  (vec2<f32>, align 8)
-      //   [11] resolution.y   @byte 44
-      //   Total struct size: 48 bytes
+      //   [6]  phaseProgress  @byte 24
+      //   [7]  strengthLevel  @byte 28   // 0.0=light, 1.0=regular, 2.0=strong
+      //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
+      //   [9]  mouse.y        @byte 36
+      //   [10] mouseStrength  @byte 40
+      //   [11] padding        @byte 44   // 16-byte alignment padding
+      //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
+      //   [13] resolution.y   @byte 52
+      //   [14] padding        @byte 56
+      //   [15] padding        @byte 60
+      //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
       const uniformBuffer = device.createBuffer({
-        size: 48,
+        size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       uniformBufferRef.current = uniformBuffer;
@@ -114,25 +120,29 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const loop = () => {
         if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
 
-        const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts } = propsRef.current;
+        const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts, strengthLevel: sl } = propsRef.current;
         const now = (Date.now() - startTimeRef.current) / 1000;
         const currentTime = now * ts;
         const w = canvas.width;
         const h = canvas.height;
 
         const uniforms = new Float32Array([
-          currentTime,  //  [0]  time
-          bp,           //  [1]  breathPhase
-          int,          //  [2]  intensity
-          cp,           //  [3]  chakraPhase
-          th,           //  [4]  theme
-          ms,           //  [5]  mandalaStyle
-          m.x,          //  [6]  mouse.x
-          m.y,          //  [7]  mouse.y
-          msr,          //  [8]  mouseStrength
-          pp,           //  [9]  phaseProgress
-          w,            // [10]  resolution.x
-          h,            // [11]  resolution.y
+          currentTime,   //  [0] time
+          bp,            //  [1] breathPhase
+          int,           //  [2] intensity
+          cp,            //  [3] chakraPhase
+          th,            //  [4] theme
+          ms,            //  [5] mandalaStyle
+          pp,            //  [6] phaseProgress
+          sl,            //  [7] strengthLevel  (0=light, 1=regular, 2=strong)
+          m.x,           //  [8] mouse.x
+          m.y,           //  [9] mouse.y
+          msr,           // [10] mouseStrength
+          0,             // [11] padding (16-byte alignment)
+          w,             // [12] resolution.x
+          h,             // [13] resolution.y
+          0,             // [14] padding
+          0,             // [15] padding
         ]);
         device.queue.writeBuffer(uniformBuffer, 0, uniforms);
 

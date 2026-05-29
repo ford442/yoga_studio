@@ -146,6 +146,7 @@ export default function Home() {
           mouse={mouse}
           mouseStrength={mouseStrength}
           timeScale={1.0}
+          strengthLevel={selectedMode.strengthLevel ?? 1.0}
           shaderPath={selectedMode.shaderPath}
           vertexEntry={selectedMode.vertexEntry}
           fragmentEntry={selectedMode.fragmentEntry}

@@ -13,6 +13,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 4, hold1: 4, exhale: 6, hold2: 2 },
     theme: 0,
     mandalaStyle: 0,
+    strengthLevel: 1.0,
   },
   {
     id: 'lotus-heart',
@@ -26,6 +27,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 5, hold1: 5, exhale: 5, hold2: 0 },
     theme: 0,
     mandalaStyle: 0,
+    strengthLevel: 1.0,
   },
   {
     id: 'prana-flow',
@@ -39,6 +41,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 4, hold1: 3, exhale: 7, hold2: 2 },
     theme: 1,
     mandalaStyle: 2,
+    strengthLevel: 1.0,
   },
   {
     id: 'classic-mandala',
@@ -52,6 +55,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
     theme: 0,
     mandalaStyle: 1,
+    strengthLevel: 1.0,
   },
   {
     id: 'deep-release',
@@ -65,6 +69,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 4, hold1: 7, exhale: 8, hold2: 0 },
     theme: 2,
     mandalaStyle: 0,
+    strengthLevel: 1.0,
   },
   {
     id: 'grounding',
@@ -78,6 +83,7 @@ export const SESSION_MODES: SessionMode[] = [
     breath: { inhale: 4, hold1: 0, exhale: 6, hold2: 8 },
     theme: 2,
     mandalaStyle: 0,
+    strengthLevel: 1.0,
   },
 ];
 
