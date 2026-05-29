@@ -305,6 +305,66 @@ The `out/` directory contains a complete static site. Upload it to:
 - **AWS S3 + CloudFront** - Static hosting with CDN
 - **Traditional hosting** - FTP/SFTP upload
 
+### Reverse Proxy Configuration
+
+When serving the application at a sub-path (e.g., `https://example.com/yoga/`), ensure your reverse proxy **strips the path prefix** before forwarding to the static content. This prevents doubled paths in asset URLs.
+
+#### Important: basePath Configuration
+
+The `next.config.ts` does **NOT** include a `basePath` setting. This is intentional:
+
+- **Why?** When a reverse proxy (nginx, Caddy, etc.) serves the app at a sub-path, it typically strips the prefix:
+  ```
+  Request: https://example.com/yoga/index.html
+  ↓ (reverse proxy strips /yoga)
+  Served as: /index.html
+  ```
+- **If both were set**: Having `basePath: '/yoga'` in Next.js config + reverse proxy path handling would cause doubled paths:
+  ```
+  https://example.com/yoga/yoga/_next/static/...  ❌ WRONG
+  ```
+- **With current setup**: Asset paths resolve correctly:
+  ```
+  https://example.com/yoga/_next/static/...  ✅ CORRECT
+  ```
+
+#### Example: Nginx Configuration
+
+```nginx
+location /yoga/ {
+    # Strip /yoga/ prefix before passing to static content
+    rewrite ^/yoga/(.*) /$1 break;
+    
+    # Serve static files from the deployment directory
+    root /path/to/deployment/root;
+    
+    # Handle client-side routing (SPA)
+    try_files $uri /index.html;
+    
+    # Cache static assets with long expiry
+    location ~* ^/.*\.(js|css|png|jpg|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+```
+
+#### Example: Caddy Configuration
+
+```
+example.com/yoga/* {
+    uri strip_prefix /yoga
+    file_server {
+        root /path/to/deployment/root
+    }
+    
+    # Handle client-side routing
+    @notStatic {
+        not path_regexp ^/.*\.(js|css|png|jpg|svg|woff|woff2)$
+    }
+    rewrite @notStatic /index.html
+}
+
 ## Practices Supported
 
 ### Primary Pranayama
