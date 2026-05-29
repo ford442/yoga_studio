@@ -142,8 +142,6 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
           primitive: { topology: 'triangle-list' },
         });
-        pipelineRef.current = pipeline;
-
         // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
         //   [0]  time           @byte  0
         //   [1]  breathPhase    @byte  4
@@ -166,13 +164,11 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           size: 64,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        uniformBufferRef.current = uniformBuffer;
-
         bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
         });
-        bindGroupRef.current = bindGroup;
+
       } catch (err) {
         console.error('[WebGPUShader] WebGPU pipeline setup failed:', err);
         // Leave canvas black; the rest of the UI still works.
