@@ -78,18 +78,43 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       context.configure({ device, format, alphaMode: 'premultiplied' });
 
-      const shaderCode = await fetch(shaderPath).then(r => r.text());
-      const shaderModule = device.createShaderModule({ code: shaderCode });
+      let pipeline: GPURenderPipeline | null = null;
+      let uniformBuffer: GPUBuffer | null = null;
+      let bindGroup: GPUBindGroup | null = null;
 
-      const pipeline = device.createRenderPipeline({
-        layout: 'auto',
-        vertex: { module: shaderModule, entryPoint: vertexEntry },
-        fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
-        primitive: { topology: 'triangle-list' },
-      });
-      pipelineRef.current = pipeline;
+      try {
+        // Resolve shader URL relative to the current page directory.
+        // This is critical for sub-path deployments (e.g. /yoga/) behind a reverse proxy
+        // that strips the prefix. A bare relative fetch('sacred-xxx.wgsl') resolves
+        // incorrectly if the page URL lacks a trailing slash (pathname=/yoga vs /yoga/).
+        // We derive the directory from window.location so the visible prefix is always used.
+        const getShaderUrl = (path: string): string => {
+          const loc = window.location;
+          let dir = loc.pathname;
+          if (!dir.endsWith('/')) {
+            // Treat as directory (e.g. /yoga -> /yoga/)
+            dir = dir.replace(/[^/]*$/, '') + '/';
+          }
+          return new URL(path, loc.origin + dir).href;
+        };
+        const shaderUrl = getShaderUrl(shaderPath);
+        const shaderResponse = await fetch(shaderUrl);
+        if (!shaderResponse.ok) {
+          console.error(`[WebGPUShader] Failed to fetch shader at ${shaderUrl}: ${shaderResponse.status} ${shaderResponse.statusText}`);
+          throw new Error(`Shader load failed: ${shaderResponse.status}`);
+        }
+        const shaderCode = await shaderResponse.text();
+        const shaderModule = device.createShaderModule({ code: shaderCode });
 
-      // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
+        pipeline = device.createRenderPipeline({
+          layout: 'auto',
+          vertex: { module: shaderModule, entryPoint: vertexEntry },
+          fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
+          primitive: { topology: 'triangle-list' },
+        });
+        pipelineRef.current = pipeline;
+
+        // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
       //   [0]  time           @byte  0
       //   [1]  breathPhase    @byte  4
       //   [2]  intensity      @byte  8
@@ -107,17 +132,22 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       //   [14] padding        @byte 56
       //   [15] padding        @byte 60
       //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
-      const uniformBuffer = device.createBuffer({
+      uniformBuffer = device.createBuffer({
         size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       uniformBufferRef.current = uniformBuffer;
 
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      bindGroup = device.createBindGroup({
+        layout: pipeline!.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: uniformBuffer! } }],
       });
       bindGroupRef.current = bindGroup;
+      } catch (err) {
+        console.error('[WebGPUShader] WebGPU pipeline setup failed:', err);
+        // Leave canvas black; the rest of the UI still works.
+        return;
+      }
 
       const loop = () => {
         if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
