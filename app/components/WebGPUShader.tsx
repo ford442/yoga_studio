@@ -29,7 +29,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   mouseStrength = 0,
   timeScale = 1.0,
   className = '',
-  shaderPath = '/yoga/sacred-lotus-final.wgsl',
+  shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
   fragmentEntry = 'main',
 }) => {
@@ -38,7 +38,6 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const pipelineRef = useRef<GPURenderPipeline | null>(null);
   const uniformBufferRef = useRef<GPUBuffer | null>(null);
   const bindGroupRef = useRef<GPUBindGroup | null>(null);
-  const vertexBufferRef = useRef<GPUBuffer | null>(null);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef(Date.now());
 
@@ -112,18 +111,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       });
       bindGroupRef.current = bindGroup;
 
-      const vertices = new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]);
-      const vertexBuffer = device.createBuffer({
-        size: vertices.byteLength,
-        usage: GPUBufferUsage.VERTEX,
-        mappedAtCreation: true,
-      });
-      new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
-      vertexBuffer.unmap();
-      vertexBufferRef.current = vertexBuffer;
-
       const loop = () => {
-        if (!device || !pipeline || !uniformBuffer || !context || !bindGroup || !vertexBuffer) return;
+        if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
 
         const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts } = propsRef.current;
         const now = (Date.now() - startTimeRef.current) / 1000;
@@ -155,7 +144,6 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         });
 
         pass.setPipeline(pipeline);
-        pass.setVertexBuffer(0, vertexBuffer);
         pass.setBindGroup(0, bindGroup);
         pass.draw(6);
         pass.end();
@@ -171,7 +159,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       return () => window.removeEventListener('resize', onResize);
     };
 
-    const cleanupPromise = init();
+    init();
 
     return () => {
       cancelled = true;
