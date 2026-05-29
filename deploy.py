@@ -94,7 +94,7 @@ def main():
         dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
         for filename in sorted(files):
             local_file = Path(root) / filename
-            rel_path = str(local_file.relative_to(build_path))
+            rel_path = f"{PROJECT_NAME}/{local_file.relative_to(build_path)}"
             if upload_single_file(local_file, rel_path):
                 uploaded += 1
             else:
