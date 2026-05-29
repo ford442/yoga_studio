@@ -42,6 +42,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const bindGroupRef = useRef<GPUBindGroup | null>(null);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Mutable refs for animated values so WebGPU only initializes once
   const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
@@ -69,14 +70,39 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const context = canvas.getContext('webgpu')!;
       const format = navigator.gpu.getPreferredCanvasFormat();
 
+      // Robust resize + reconfigure. We measure after layout and reconfigure the
+      // swapchain whenever the canvas backing store size changes. This is essential
+      // for reliable startup (async init + large shader fetch can race layout) and
+      // for window resizes / DPR changes / container resizes.
       const resize = () => {
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(canvas.clientWidth * dpr);
-        canvas.height = Math.floor(canvas.clientHeight * dpr);
+        const w = Math.floor(canvas.clientWidth * dpr);
+        const h = Math.floor(canvas.clientHeight * dpr);
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+          // Reconfigure is REQUIRED after changing canvas dimensions.
+          context.configure({ device, format, alphaMode: 'premultiplied' });
+        }
       };
+
+      // Initial measurement (post-paint from useEffect). May still be 0 in some
+      // timing/race cases; we will force another measurement after shader load.
       resize();
 
       context.configure({ device, format, alphaMode: 'premultiplied' });
+
+      // ResizeObserver catches initial size (when it stabilizes) + all future changes.
+      const ro = new ResizeObserver(() => resize());
+      ro.observe(canvas);
+      resizeObserverRef.current = ro;
+
+      if (cancelled) {
+        ro.disconnect();
+        resizeObserverRef.current = null;
+        device.destroy();
+        return;
+      }
 
       let pipeline: GPURenderPipeline | null = null;
       let uniformBuffer: GPUBuffer | null = null;
@@ -149,6 +175,11 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         return;
       }
 
+      // Force a final size measurement + reconfigure now that the (potentially
+      // slow) shader fetch + pipeline creation is complete. This guarantees the
+      // canvas has its real layout size even if the early measurement was 0.
+      resize();
+
       const loop = () => {
         if (!device || !pipeline || !uniformBuffer || !context || !bindGroup) return;
 
@@ -196,10 +227,6 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       };
 
       loop();
-
-      const onResize = () => { resize(); };
-      window.addEventListener('resize', onResize);
-      return () => window.removeEventListener('resize', onResize);
     };
 
     init();
@@ -207,6 +234,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     return () => {
       cancelled = true;
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       deviceRef.current?.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
