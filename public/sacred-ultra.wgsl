@@ -34,7 +34,7 @@ struct Uniforms {
     strengthLevel: f32,      // 0.0=light, 1.0=regular, 2.0=strong
     mouse: vec2<f32>,
     mouseStrength: f32,
-    padding0: f32,           // 16-byte alignment padding
+    chakraFocus: f32,        // -1=none, 0..6=root..crown (repurposed padding slot)
     resolution: vec2<f32>,
     padding1: f32,
     padding2: f32,
@@ -60,6 +60,15 @@ fn vs(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
 const PI: f32 = 3.14159265359;
 const TAU: f32 = 6.28318530718;
 const GOLDEN_ANGLE: f32 = 2.39996323;
+const CHAKRA = array<vec3<f32>, 7>(
+    vec3<f32>(0.90, 0.12, 0.18), // root
+    vec3<f32>(0.98, 0.45, 0.12), // sacral
+    vec3<f32>(0.98, 0.85, 0.20), // solar
+    vec3<f32>(0.25, 0.85, 0.45), // heart
+    vec3<f32>(0.20, 0.55, 0.95), // throat
+    vec3<f32>(0.35, 0.25, 0.80), // third-eye
+    vec3<f32>(0.65, 0.30, 0.90), // crown
+);
 
 // ---------------------------------------------------------------------------
 // Math helpers
@@ -116,6 +125,25 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
     return sum;
 }
 
+fn fbmWarp(p: vec2<f32>, t: f32, octaves: i32) -> f32 {
+    let q = vec2<f32>(
+        fbm2(p * 0.85 + vec2<f32>(1.7, -2.3), t * 0.7),
+        fbm2(p * 0.85 + vec2<f32>(-3.1, 2.1), t * 0.7)
+    );
+
+    var sum = 0.0;
+    var amp = 0.5;
+    var freq = 1.0;
+    for (var i = 0; i < 6; i++) {
+        if (i >= octaves) { break; }
+        let warped = (p + q * 0.8) * freq + vec2<f32>(t * 0.12, -t * 0.09);
+        sum += amp * noise2(warped);
+        amp *= 0.5;
+        freq *= 2.17;
+    }
+    return sum;
+}
+
 // ---------------------------------------------------------------------------
 // SDF primitives
 // ---------------------------------------------------------------------------
@@ -159,6 +187,33 @@ fn deriveBreathExpand() -> f32 {
         expand = 0.0;
     }
     return expand * expand * (3.0 - 2.0 * expand);
+}
+
+fn chakraColor(index: f32) -> vec3<f32> {
+    let idx = u32(clamp(index, 0.0, 6.0));
+    return CHAKRA[idx];
+}
+
+fn breathColor() -> vec3<f32> {
+    let s = smoothstep(0.0, 1.0, u.phaseProgress);
+    if (u.chakraPhase < 0.5) {
+        return mix(CHAKRA[0], CHAKRA[1], s);          // inhale: root -> sacral
+    } else if (u.chakraPhase < 1.5) {
+        return mix(CHAKRA[2], CHAKRA[6], s);          // hold1: solar -> crown
+    } else if (u.chakraPhase < 2.5) {
+        return mix(CHAKRA[3], CHAKRA[4], s);          // exhale: heart -> throat
+    }
+    return mix(CHAKRA[5], CHAKRA[5] * 0.15, s);       // hold2: indigo -> stillness
+}
+
+fn focusedBreathColor() -> vec3<f32> {
+    let base = breathColor();
+    if (u.chakraFocus < 0.0) {
+        return base;
+    }
+    let focus = chakraColor(u.chakraFocus);
+    let focusMix = 0.30 + 0.10 * u.intensity;
+    return mix(base, focus, focusMix);
 }
 
 // ---------------------------------------------------------------------------
@@ -304,23 +359,45 @@ fn lightShafts(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     return col * 0.38;
 }
 
+fn godRays(uv: vec2<f32>, t: f32, intensity: f32, expand: f32) -> vec3<f32> {
+    let r = length(uv);
+    let dir = normalize(uv + vec2<f32>(1e-4, 1e-4));
+    let steps = 10;
+    var acc = 0.0;
+
+    var phaseScale = 0.0;
+    if (u.chakraPhase < 0.5) {
+        phaseScale = u.phaseProgress;
+    } else if (u.chakraPhase < 1.5) {
+        phaseScale = 1.0;
+    } else if (u.chakraPhase < 2.5) {
+        phaseScale = 1.0 - u.phaseProgress * 0.8;
+    } else {
+        phaseScale = 0.0;
+    }
+
+    for (var i = 0; i < steps; i++) {
+        let s = (f32(i) + 0.5) / f32(steps);
+        let sp = uv - dir * s * 0.9;
+        let sa = atan2(sp.y, sp.x);
+        let n = fbm2(sp * 3.0 + vec2<f32>(0.0, t * 0.08), t * 0.12);
+        let shafts = pow(max(0.0, cos(sa * 6.0 - t * 0.22 + n * 1.7)), 4.0);
+        acc += shafts * (1.0 - s) * (0.6 + 0.4 * n);
+    }
+
+    let falloff = exp(-r * 1.45) * (0.45 + expand * 0.55);
+    let strength = intensity * phaseScale;
+    let rayCol = vec3<f32>(0.55, 0.45, 0.85);
+    return rayCol * (acc / f32(steps)) * falloff * strength * 1.35;
+}
+
 // ============================================================================
 // MODULE 2 — SACRED GEOMETRY RINGS & PRANA PARTICLES
 // ============================================================================
 
 fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
-
-    var phaseColor: vec3<f32>;
-    if (u.chakraPhase < 0.5) {
-        phaseColor = vec3<f32>(0.2, 0.9, 1.0);
-    } else if (u.chakraPhase < 1.5) {
-        phaseColor = vec3<f32>(1.0, 0.9, 0.2);
-    } else if (u.chakraPhase < 2.5) {
-        phaseColor = vec3<f32>(1.0, 0.4, 0.2);
-    } else {
-        phaseColor = vec3<f32>(0.2, 0.9, 0.6);
-    }
+    let phaseColor = focusedBreathColor();
 
     let isYantra = u.mandalaStyle > 0.5 && u.mandalaStyle < 1.5;
     let isFlower = u.mandalaStyle > 1.5;
@@ -407,6 +484,14 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
     return col;
 }
 
+fn layeredSacredGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    col += sacredGeometryRings(uv / 0.30, t * 1.30 + 1.7, breath, expand) * 0.22;
+    col += sacredGeometryRings(uv / 0.60, t * 0.90 + 0.8, breath, expand) * 0.45;
+    col += sacredGeometryRings(uv,        t,             breath, expand) * 1.00;
+    return col;
+}
+
 fn pranaParticles(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let outward = u.chakraPhase < 1.5;
@@ -446,19 +531,7 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let chestPos = vec2<f32>(0.0,  0.10);
     let hipsPos  = vec2<f32>(0.0, -0.10);
 
-    var phaseIdx: u32 = 0u;
-    if (u.chakraPhase < 0.5)       { phaseIdx = 0u; }
-    else if (u.chakraPhase < 1.5)  { phaseIdx = 1u; }
-    else if (u.chakraPhase < 2.5)  { phaseIdx = 2u; }
-    else                           { phaseIdx = 3u; }
-
-    let phaseColors = array<vec3<f32>, 4>(
-        vec3<f32>(0.20, 0.90, 1.00),
-        vec3<f32>(1.00, 0.90, 0.20),
-        vec3<f32>(1.00, 0.40, 0.20),
-        vec3<f32>(0.20, 0.90, 0.60)
-    );
-    let phaseColor = phaseColors[phaseIdx];
+    let phaseColor = focusedBreathColor();
 
     var themeColor = vec3<f32>(0.85, 0.90, 1.00);
     if (u.theme < 0.5) {
@@ -664,6 +737,8 @@ fn chakraColumn(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     }
 
     col *= intensityMult;
+    let palette = focusedBreathColor();
+    col = mix(col, col * (0.60 + palette * 0.95), 0.28);
     return col;
 }
 
@@ -672,19 +747,7 @@ fn progressRing(uv: vec2<f32>, breath: f32, expand: f32) -> vec3<f32> {
     let r = length(uv);
     let a = atan2(uv.y, uv.x);
 
-    var phaseIdx: u32 = 0u;
-    if (u.chakraPhase < 0.5)       { phaseIdx = 0u; }
-    else if (u.chakraPhase < 1.5)  { phaseIdx = 1u; }
-    else if (u.chakraPhase < 2.5)  { phaseIdx = 2u; }
-    else                           { phaseIdx = 3u; }
-
-    let phaseColors = array<vec3<f32>, 4>(
-        vec3<f32>(0.20, 0.90, 1.00),
-        vec3<f32>(1.00, 0.90, 0.20),
-        vec3<f32>(1.00, 0.40, 0.20),
-        vec3<f32>(0.20, 0.90, 0.60)
-    );
-    let phaseColor  = phaseColors[phaseIdx];
+    let phaseColor  = focusedBreathColor();
     let glowStrength = 0.8 + 0.4 * u.intensity;
 
     let normalizedAngle = (a + PI) / TAU;
@@ -710,7 +773,7 @@ fn progressRing(uv: vec2<f32>, breath: f32, expand: f32) -> vec3<f32> {
     let cycleAngle = u.breathPhase;
     let inCycleArc = select(0.0, 1.0, normalizedAngle < cycleAngle);
 
-    var cycleColor = vec3<f32>(0.60, 0.70, 1.00);
+    var cycleColor = mix(vec3<f32>(0.60, 0.70, 1.00), focusedBreathColor(), 0.35);
     if (u.theme < 0.5) {
         cycleColor = vec3<f32>(0.50, 0.70, 1.00);
     } else if (u.theme < 1.5) {
@@ -745,16 +808,7 @@ fn figureAura(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let p = (uv - vec2<f32>(0.0, -0.05)) / 0.75;
 
-    var auraColor = vec3<f32>(0.2, 0.85, 1.0);
-    if (u.chakraPhase < 0.5) {
-        auraColor = mix(vec3<f32>(0.2, 0.60, 1.0), vec3<f32>(0.3, 0.90, 1.0), u.phaseProgress);
-    } else if (u.chakraPhase < 1.5) {
-        auraColor = vec3<f32>(1.0, 0.85, 0.3);
-    } else if (u.chakraPhase < 2.5) {
-        auraColor = mix(vec3<f32>(1.0, 0.60, 0.3), vec3<f32>(0.3, 0.80, 0.9), u.phaseProgress);
-    } else {
-        auraColor = vec3<f32>(0.3, 0.90, 0.7);
-    }
+    var auraColor = focusedBreathColor();
 
     if (u.theme < 0.5) {
         auraColor *= vec3<f32>(0.8, 0.9, 1.0);
@@ -928,6 +982,14 @@ fn lotusLayer(
         outc += tipGlow * 0.42 * lightCol;
     }
 
+    let detailAA = clamp(1.0 - length(fwidth(uv)) * 42.0, 0.0, 1.0);
+    let warpDetail = fbmWarp(uv * (9.0 + n * 0.35) + vec2<f32>(petalId * 0.21, t * 0.18), t, 5);
+    let iri = sin(tNorm * 38.0 + u.phaseProgress * TAU) *
+              sin(edgeAbs * 60.0 - t * 0.7 + warpDetail * 2.2);
+    let microDetail = 0.90 + 0.14 * iri + 0.16 * (warpDetail - 0.5);
+    outc *= mix(1.0, microDetail, detailAA);
+    outc += mask * detailAA * (0.012 + 0.02 * warpDetail) * lightCol;
+
     return outc * depth * facing;
 }
 
@@ -1061,6 +1123,7 @@ fn ribbonStrand(
 
     let warp1 = fbm2(uv * 1.6 + vec2<f32>(orbitR * 4.0, phase * 2.0 + t * 0.12), t * 0.30);
     let warp2 = fbm2(uv * 3.1 - vec2<f32>(t * 0.08, orbitR * 2.0), t * 0.22);
+    let warpHi = fbmWarp(uv * 4.6 + vec2<f32>(phase * 0.8, t * 0.16), t * 0.42, 5);
 
     let spiralPhase = a * n + t * speed + twist * (r - orbitR) + phase + warp1 * 0.65;
     let weave = sin(spiralPhase * 0.85 + warp2 * 1.6) * width * 1.7;
@@ -1079,6 +1142,11 @@ fn ribbonStrand(
     let sideBias = pow(abs(cos(a)), 0.45) * 0.30 + 0.70;
 
     var ribbon = (core + glow) * centerFade * sideBias * depth + filament * centerFade;
+    let detailAA = clamp(1.0 - length(fwidth(uv)) * 52.0, 0.0, 1.0);
+    let iri = sin((r + warpHi * 0.08) * 44.0 + u.phaseProgress * TAU) *
+              sin(abs(radialDist) * (92.0 + u.intensity * 22.0) - t * 0.9);
+    let ribbonMicro = 1.0 + detailAA * (0.10 * (warpHi - 0.5) + 0.06 * iri);
+    ribbon *= ribbonMicro;
 
     let colorShift = sin(spiralPhase * 0.35 + t * 0.4 + phase) * 0.5 + 0.5;
     let flowColor = mix(color, color * vec3<f32>(1.15, 0.85, 1.25), colorShift * 0.35);
@@ -1094,6 +1162,7 @@ fn energyRibbons(
 ) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let expand = deriveBreathExpand();
+    let phasePalette = focusedBreathColor();
 
     let holdPulse = 1.0 + 0.08 * sin(t * 3.5) * expand * intensity;
     let flowSpeed = 1.0 + expand * 1.4;
@@ -1147,6 +1216,7 @@ fn energyRibbons(
     else if (chakraPhase < 1.5) { col *= vec3<f32>(1.10, 0.94, 0.98); }
     else if (chakraPhase < 2.5) { col *= vec3<f32>(1.04, 0.98, 0.90); }
     else                        { col *= vec3<f32>(0.94, 0.98, 1.04); }
+    col = mix(col, col * (0.55 + phasePalette * 1.05), 0.33);
 
     let r = length(driftUV);
     let a = atan2(driftUV.y, driftUV.x);
@@ -1192,7 +1262,14 @@ fn acesTonemap(x: vec3<f32>) -> vec3<f32> {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-fn applyColorGrading(col: vec3<f32>, uv: vec2<f32>, t: f32, expand: f32, theme: f32) -> vec3<f32> {
+fn applyColorGrading(
+    col: vec3<f32>,
+    uv: vec2<f32>,
+    t: f32,
+    expand: f32,
+    theme: f32,
+    phasePalette: vec3<f32>
+) -> vec3<f32> {
     var graded = col;
 
     let sat = 1.0 + expand * 0.10;
@@ -1218,7 +1295,7 @@ fn applyColorGrading(col: vec3<f32>, uv: vec2<f32>, t: f32, expand: f32, theme: 
     var bloom = max(graded - bloomThreshold, vec3<f32>(0.0));
     let bloomSpread = smoothstep(0.0, 1.0, brightness) * 0.25;
     bloom += bloom * bloomSpread;
-    graded += bloom * 0.35;
+    graded += bloom * (0.22 + 0.13 * phasePalette);
 
     let grain = hash21(uv * 500.0 + t * 100.0) * 0.015;
     graded += grain;
@@ -1263,16 +1340,18 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // LAYER 1 — Background atmosphere
     // ------------------------------------------------------------
     var col = backgroundAtmosphere(uv, t, breath, expand);
+    let phasePalette = focusedBreathColor();
 
     // ------------------------------------------------------------
     // LAYER 2 — Volumetric light shafts
     // ------------------------------------------------------------
     col += lightShafts(uv * 0.85, t, breath, expand);
+    col += godRays(uv * 0.95, t, u.intensity, expand);
 
     // ------------------------------------------------------------
     // LAYER 3 — Sacred geometry rings
     // ------------------------------------------------------------
-    col += sacredGeometryRings(uv, t, breath, expand);
+    col += layeredSacredGeometry(uv, t, breath, expand);
 
     // ------------------------------------------------------------
     // LAYER 4 — Prana particles
@@ -1313,7 +1392,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // LAYER 11 — Global breath aura
     // ------------------------------------------------------------
     let globalAura = exp(-r * 2.8) * (0.06 + expand * 0.10) * u.intensity;
-    col += globalAura * vec3<f32>(0.58, 0.48, 0.88);
+    col += globalAura * mix(vec3<f32>(0.58, 0.48, 0.88), phasePalette, 0.55);
 
     // ------------------------------------------------------------
     // LAYER 12 — Exhale release wave
@@ -1322,13 +1401,16 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     let waveMask = exp(-r * 2.0) *
                    smoothstep(0.35, 0.75, releaseWave) *
                    (1.0 - expand) * 0.038;
-    col += waveMask * vec3<f32>(0.52, 0.42, 0.82);
+    col += waveMask * mix(vec3<f32>(0.52, 0.42, 0.82), phasePalette, 0.45);
 
     // ------------------------------------------------------------
     // LAYER 13 — Atmospheric breath haze
     // ------------------------------------------------------------
     let haze = exp(-r * 1.3) * (0.12 + (1.0 - breath) * 0.22);
-    col = mix(col, vec3<f32>(0.045, 0.022, 0.14), haze * 0.30);
+    let hold2Mask = smoothstep(2.5, 2.9, u.chakraPhase);
+    let exhaleMask = smoothstep(1.5, 2.5, u.chakraPhase) * (1.0 - hold2Mask);
+    let exhaleHaze = (exhaleMask * 0.08 + hold2Mask * 0.18) * (1.0 - expand);
+    col = mix(col, vec3<f32>(0.045, 0.022, 0.14), haze * 0.30 + exhaleHaze);
 
     // ------------------------------------------------------------
     // POST — Vignette
@@ -1339,7 +1421,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // ------------------------------------------------------------
     // POST — Cinematic color grading
     // ------------------------------------------------------------
-    col = applyColorGrading(col, uv, t, expand, u.theme);
+    col = applyColorGrading(col, uv, t, expand, u.theme, phasePalette);
 
     return vec4<f32>(col, 1.0);
 }

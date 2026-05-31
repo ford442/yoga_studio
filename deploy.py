@@ -41,7 +41,7 @@ DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NA
 # Set via environment: export DEPLOY_TOKEN="your_long_token_from_vps_env"
 DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6da4a1c2a9d9cadc0"
 # ============================================================
-
+DEPLOY_TARGET: str ="go"
 
 def build_zip(build_path: Path) -> bytes:
     """Zip the contents of build_path into an in-memory archive."""

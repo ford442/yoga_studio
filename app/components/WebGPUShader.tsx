@@ -13,6 +13,7 @@ interface WebGPUShaderProps {
   mouseStrength?: number;
   timeScale?: number;
   strengthLevel?: number; // 0.0=light, 1.0=regular, 2.0=strong
+  chakraFocus?: number; // -1=none, 0..6=root..crown
   className?: string;
   shaderPath?: string;
   vertexEntry?: string;
@@ -30,6 +31,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   mouseStrength = 0,
   timeScale = 1.0,
   strengthLevel = 1.0,
+  chakraFocus = -1,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
@@ -42,10 +44,10 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Mutable refs for animated values so WebGPU only initializes once
-  const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel });
+  const propsRef = useRef({ breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus });
   useEffect(() => {
-    propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel };
-  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel]);
+    propsRef.current = { breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus };
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +156,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
         //   [9]  mouse.y        @byte 36
         //   [10] mouseStrength  @byte 40
-        //   [11] padding        @byte 44   // 16-byte alignment padding
+        //   [11] chakraFocus    @byte 44   // -1=none, 0..6=root..crown
         //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
         //   [13] resolution.y   @byte 52
         //   [14] padding        @byte 56
@@ -189,7 +191,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           return;
         }
 
-        const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts, strengthLevel: sl } = propsRef.current;
+        const { breathPhase: bp, intensity: int, chakraPhase: cp, phaseProgress: pp, theme: th, mandalaStyle: ms, mouse: m, mouseStrength: msr, timeScale: ts, strengthLevel: sl, chakraFocus: cf } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
         const now = (Date.now() - start) / 1000;
         const currentTime = now * ts;
@@ -208,7 +210,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           m.x,           //  [8] mouse.x
           m.y,           //  [9] mouse.y
           msr,           // [10] mouseStrength
-          0,             // [11] padding
+          cf,            // [11] chakraFocus
           w,             // [12] resolution.x
           h,             // [13] resolution.y
           0,             // [14] padding

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import WebGPUShader from './components/WebGPUShader';
 import InstallPrompt from './components/InstallPrompt';
 import ExportStats from './components/ExportStats';
 import CompletionScreen from './components/CompletionScreen';
 import SessionModeSwitcher from './components/SessionModeSwitcher';
+import ParticleBurst from './components/ParticleBurst';
 import { useBreathTimer, type SessionDuration } from './hooks/useBreathTimer';
 import { useBreathAudio } from './hooks/useBreathAudio';
 import { useSessionStats } from './hooks/useSessionStats';
@@ -15,6 +16,8 @@ import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
 import type { SessionMode } from './types/sessionMode';
 
 const chakraLabels = ['inhale', 'hold1', 'exhale', 'hold2'];
+type QuickStartDuration = 'free' | 5 | 10 | 15;
+type LastSession = { modeId: string; duration: QuickStartDuration };
 
 export default function Home() {
   const {
@@ -40,15 +43,72 @@ export default function Home() {
   const [showCompletion, setShowCompletion] = useState(false);
   const [completedInfo, setCompletedInfo] = useState({ minutes: 5, breaths: 0 });
   const [selectedMode, setSelectedMode] = useState<SessionMode>(DEFAULT_MODE);
+  const [favoriteModeIds, setFavoriteModeIds] = useState<string[]>([]);
+  const [lastSession, setLastSession] = useState<LastSession | null>(null);
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
   const lastRippleRef = useRef(0);
   const prevSessionDurationRef = useRef<SessionDuration>(null);
 
+  const sortedModes = useMemo(() => {
+    if (!favoriteModeIds.length) return SESSION_MODES;
+    const favoriteSet = new Set(favoriteModeIds);
+    return [...SESSION_MODES].sort((a, b) => {
+      const aFav = favoriteSet.has(a.id) ? 1 : 0;
+      const bFav = favoriteSet.has(b.id) ? 1 : 0;
+      if (aFav !== bFav) return bFav - aFav;
+      return SESSION_MODES.findIndex((mode) => mode.id === a.id) - SESSION_MODES.findIndex((mode) => mode.id === b.id);
+    });
+  }, [favoriteModeIds]);
+
+  const persistLastSession = (modeId: string, duration: QuickStartDuration) => {
+    const next = { modeId, duration };
+    setLastSession(next);
+    localStorage.setItem('sacred-breath-last-session', JSON.stringify(next));
+  };
+
   const handleModeSelect = (mode: SessionMode) => {
     setSelectedMode(mode);
     updateSettings(mode.breath);
+  };
+
+  const handleModeStart = (mode: SessionMode, duration: QuickStartDuration) => {
+    setSelectedMode(mode);
+    updateSettings(mode.breath);
+    persistLastSession(mode.id, duration);
+    if (duration === 'free') {
+      if (!isRunning) toggleFree();
+      return;
+    }
+    startSession(duration);
+  };
+
+  const handleQuickStart = (duration: 5 | 10 | 15) => {
+    persistLastSession(selectedMode.id, duration);
+    startSession(duration);
+  };
+
+  const handleBeginPause = () => {
+    if (!isRunning) {
+      persistLastSession(selectedMode.id, 'free');
+    }
+    toggleFree();
+  };
+
+  const handleNudge = (key: 'inhale' | 'exhale', delta: number) => {
+    const next = Math.max(1, Math.min(15, settings[key] + delta));
+    updateSettings({ [key]: next });
+  };
+
+  const toggleFavoriteMode = (modeId: string) => {
+    setFavoriteModeIds((prev) => {
+      const next = prev.includes(modeId)
+        ? prev.filter((id) => id !== modeId)
+        : [...prev, modeId];
+      localStorage.setItem('sacred-breath-favorites', JSON.stringify(next));
+      return next;
+    });
   };
 
   // Detect full breath cycle completion (hold2 → inhale transition)
@@ -73,6 +133,36 @@ export default function Home() {
     }
     prevSessionDurationRef.current = sessionDuration;
   }, [isRunning, sessionDuration, totalBreaths]);
+
+  useEffect(() => {
+    const rawFavorites = localStorage.getItem('sacred-breath-favorites');
+    if (rawFavorites) {
+      try {
+        const parsed = JSON.parse(rawFavorites);
+        if (Array.isArray(parsed)) {
+          setFavoriteModeIds(parsed.filter((id): id is string => typeof id === 'string'));
+        }
+      } catch {
+        console.warn('Invalid sacred-breath-favorites localStorage payload');
+      }
+    }
+
+    const rawLast = localStorage.getItem('sacred-breath-last-session');
+    if (rawLast) {
+      try {
+        const parsed = JSON.parse(rawLast);
+        if (
+          parsed &&
+          typeof parsed.modeId === 'string' &&
+          (parsed.duration === 'free' || parsed.duration === 5 || parsed.duration === 10 || parsed.duration === 15)
+        ) {
+          setLastSession(parsed as LastSession);
+        }
+      } catch {
+        console.warn('Invalid sacred-breath-last-session localStorage payload');
+      }
+    }
+  }, []);
   const elapsedInCycle = (breathPhase * totalCycle) % totalCycle;
   let remaining = 0;
   if (currentPhase === 'inhale') remaining = settings.inhale - elapsedInCycle;
@@ -112,8 +202,15 @@ export default function Home() {
     hold2: 'text-violet-400',
   };
 
+  const burstColors: Record<string, string> = {
+    inhale: '#fa7e1e',
+    hold1: '#f4d35e',
+    exhale: '#2ecc71',
+    hold2: '#5b3cc4',
+  };
+
   return (
-    <main className="min-h-screen bg-[#05010a] text-white flex flex-col items-center justify-center relative overflow-hidden">
+    <main className="min-h-dvh bg-[#05010a] text-white relative overflow-hidden">
       <div
         className="absolute inset-0 z-0"
         onPointerMove={(e) => {
@@ -154,6 +251,7 @@ export default function Home() {
           mouseStrength={mouseStrength}
           timeScale={1.0}
           strengthLevel={selectedMode.strengthLevel ?? 1.0}
+          chakraFocus={selectedMode.chakraFocusIndex}
           shaderPath={selectedMode.shaderPath}
           vertexEntry={selectedMode.vertexEntry}
           fragmentEntry={selectedMode.fragmentEntry}
@@ -161,33 +259,54 @@ export default function Home() {
         />
       </div>
 
-      <div className="relative z-10 w-full max-w-md mx-auto px-6 py-12 flex flex-col items-center text-center">
-        <h1 className="text-4xl font-light tracking-[4px] mb-2 text-white/90">SACRED BREATH</h1>
-        <p className="text-white/40 text-sm tracking-widest mb-6">meditate • align • flow</p>
+      <div
+        className="pointer-events-none fixed inset-0 z-[5]"
+        style={{ background: 'radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.42) 100%)' }}
+      />
 
-        {/* Session duration buttons */}
-        <div className="flex gap-3 mb-8">
-          {[5, 10, 15].map(min => (
-            <button
-              key={min}
-              onClick={() => startSession(min as 5 | 10 | 15)}
-              className="flex-1 py-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-3xl text-sm tracking-widest transition-all active:scale-95"
-            >
-              {min} MIN
-            </button>
-          ))}
+      <ParticleBurst
+        phase={currentPhase}
+        isRunning={isRunning}
+        color={selectedMode.accentColor ?? burstColors[currentPhase]}
+      />
+
+      <div className="fixed top-0 inset-x-0 z-20 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-2 bg-gradient-to-b from-black/55 to-transparent">
+        <div className="max-w-md mx-auto flex items-start justify-between gap-3">
+          <div className="rounded-2xl bg-black/20 backdrop-blur-md border border-white/10 px-3 py-2">
+            <h1 className="text-lg font-light tracking-[3px] text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.8)]">SACRED BREATH</h1>
+            <p className="text-white/75 text-[10px] tracking-widest [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">meditate • align • flow</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="rounded-2xl bg-black/20 backdrop-blur-md border border-white/10 px-2.5 py-2 leading-none">
+              <div className="text-cyan-300/95 text-sm tabular-nums [text-shadow:0_1px_8px_rgba(0,0,0,0.8)]">{stats.todayMinutes}</div>
+              <div className="text-white/75 text-[9px] tracking-wider mt-1 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">MIN TODAY</div>
+            </div>
+            <div className="rounded-2xl bg-black/20 backdrop-blur-md border border-white/10 px-2.5 py-2 leading-none">
+              <div className="text-purple-300/95 text-sm tabular-nums [text-shadow:0_1px_8px_rgba(0,0,0,0.8)]">{stats.todayBreaths}</div>
+              <div className="text-white/75 text-[9px] tracking-wider mt-1 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">BREATHS</div>
+            </div>
+            <div className="rounded-2xl bg-black/20 backdrop-blur-md border border-white/10 px-2.5 py-2 leading-none">
+              <div className="text-orange-300/95 text-sm tabular-nums [text-shadow:0_1px_8px_rgba(0,0,0,0.8)]">{stats.currentStreak}🔥</div>
+              <div className="text-white/75 text-[9px] tracking-wider mt-1 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">STREAK</div>
+            </div>
+            <ExportStats
+              todayMinutes={stats.todayMinutes}
+              todayBreaths={stats.todayBreaths}
+              currentStreak={stats.currentStreak}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center pointer-events-none px-4">
+        <div className={`text-5xl font-light uppercase tracking-[6px] transition-all duration-700 [text-shadow:0_2px_12px_rgba(0,0,0,0.85)] ${phaseColors[currentPhase]}`}>
+          {currentPhase}
+        </div>
+        <div className="text-7xl font-mono font-light text-white/95 mt-2 tabular-nums [text-shadow:0_2px_16px_rgba(0,0,0,0.9)]">
+          {Math.max(0, remaining).toFixed(0).padStart(2, '0')}
         </div>
 
-        <div className="mb-8">
-          <div className={`text-5xl font-light uppercase tracking-[6px] transition-all duration-700 ${phaseColors[currentPhase]}`}>
-            {currentPhase}
-          </div>
-          <div className="text-7xl font-mono font-light text-white/80 mt-2 tabular-nums">
-            {Math.max(0, remaining).toFixed(0).padStart(2, '0')}
-          </div>
-        </div>
-
-        <div className="relative w-64 h-64 mb-10">
+        <div className="relative w-64 h-64 mt-6">
           <svg className="w-64 h-64 -rotate-90" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="45" fill="none" stroke="#1a0f2e" strokeWidth="8" />
             <circle
@@ -207,63 +326,75 @@ export default function Home() {
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Live Session Stats */}
-        <div className="flex justify-center gap-8 mb-8 text-sm">
-          <div className="text-center">
-            <div className="text-2xl font-light text-cyan-400 tabular-nums">{stats.todayMinutes}</div>
-            <div className="text-[10px] text-white/40 tracking-widest">MIN TODAY</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-light text-purple-400 tabular-nums">{stats.todayBreaths}</div>
-            <div className="text-[10px] text-white/40 tracking-widest">BREATHS</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-light text-orange-400 tabular-nums flex items-center justify-center gap-1">
-              {stats.currentStreak} <span className="text-lg">🔥</span>
-            </div>
-            <div className="text-[10px] text-white/40 tracking-widest">STREAK</div>
-          </div>
-        </div>
+      <div className="fixed bottom-0 inset-x-0 z-20 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-black/70 to-transparent backdrop-blur-md">
+        <div className="max-w-md mx-auto flex flex-col gap-3">
+          {!isRunning && lastSession && (
+            <button
+              onClick={() => {
+                const mode = SESSION_MODES.find((entry) => entry.id === lastSession.modeId);
+                if (!mode) return;
+                handleModeStart(mode, lastSession.duration);
+              }}
+              className="w-full py-2 rounded-xl bg-black/25 border border-white/20 hover:bg-black/35 transition-all text-[10px] tracking-widest text-white/90 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]"
+            >
+              ↻ RESUME {SESSION_MODES.find((entry) => entry.id === lastSession.modeId)?.label.toUpperCase() ?? 'LAST MODE'} · {lastSession.duration === 'free' ? 'FREE' : `${lastSession.duration} MIN`}
+            </button>
+          )}
 
-        <div className="w-full mb-6">
           <SessionModeSwitcher
-            modes={SESSION_MODES}
+            modes={sortedModes}
             selectedModeId={selectedMode.id}
+            isRunning={isRunning}
+            activeBreath={settings}
+            favoriteModeIds={favoriteModeIds}
             onSelect={handleModeSelect}
+            onStart={handleModeStart}
+            onNudge={handleNudge}
+            onToggleFavorite={toggleFavoriteMode}
           />
-        </div>
 
-        <div className="mb-6">
-          <ExportStats
-            todayMinutes={stats.todayMinutes}
-            todayBreaths={stats.todayBreaths}
-            currentStreak={stats.currentStreak}
-          />
-        </div>
+          <div className="flex gap-2">
+            {[5, 10, 15].map(min => (
+              <button
+                key={min}
+                onClick={() => handleQuickStart(min as 5 | 10 | 15)}
+                className="flex-1 py-3 bg-black/20 backdrop-blur-md hover:bg-black/30 border border-white/20 rounded-2xl text-xs tracking-widest transition-all active:scale-95 text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]"
+              >
+                {min} MIN
+              </button>
+            ))}
+          </div>
 
-        <div className="flex items-center gap-4">
-          <button onClick={toggleFree} className="px-10 py-4 text-xl font-light tracking-widest bg-gradient-to-r from-cyan-500 to-purple-600 rounded-3xl hover:brightness-110 transition-all active:scale-95 shadow-2xl shadow-purple-500/30">
-            {isRunning ? 'PAUSE' : 'BEGIN'}
-          </button>
-          <button onClick={reset} className="px-8 py-4 text-sm font-light tracking-widest border border-white/30 rounded-3xl hover:bg-white/10 transition-all">RESET</button>
-          <button
-            onClick={toggleVoice}
-            className={`px-4 py-4 text-2xl border rounded-3xl transition-all ${voiceSettings.enabled ? 'border-white/30 hover:bg-white/10' : 'border-white/10 opacity-40'}`}
-            title={voiceSettings.enabled ? "Voice guidance on" : "Voice guidance off"}
-          >
-            🗣️
-          </button>
-
-          <button
-            onClick={toggleSanskrit}
-            className={`px-4 py-4 text-xs font-light border rounded-3xl transition-all ${voiceSettings.useSanskrit ? 'border-purple-400 text-purple-400' : 'border-white/30 hover:bg-white/10'}`}
-            title={voiceSettings.useSanskrit ? "Sanskrit mode" : "English mode"}
-          >
-            {voiceSettings.useSanskrit ? 'सं' : 'EN'}
-          </button>
-
-          <button onClick={() => setShowDrawer(true)} className="px-4 py-4 text-2xl border border-white/30 rounded-3xl hover:bg-white/10 transition-all">⚙️</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBeginPause}
+              className="flex-1 py-4 text-base font-light tracking-widest bg-gradient-to-r from-cyan-500 to-purple-600 rounded-3xl hover:brightness-110 transition-all active:scale-95 shadow-2xl shadow-purple-500/30 text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]"
+            >
+              {isRunning ? 'PAUSE' : 'BEGIN'}
+            </button>
+            <button onClick={reset} className="px-4 py-4 text-sm font-light tracking-widest border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
+              ↺
+            </button>
+            <button
+              onClick={toggleVoice}
+              className={`px-4 py-4 text-xl border rounded-3xl transition-all backdrop-blur-md [text-shadow:0_1px_6px_rgba(0,0,0,0.8)] ${voiceSettings.enabled ? 'bg-black/20 border-white/30 hover:bg-black/30' : 'bg-black/10 border-white/10 opacity-40'}`}
+              title={voiceSettings.enabled ? 'Voice guidance on' : 'Voice guidance off'}
+            >
+              🗣️
+            </button>
+            <button
+              onClick={toggleSanskrit}
+              className={`px-4 py-4 text-xs font-light border rounded-3xl transition-all backdrop-blur-md [text-shadow:0_1px_6px_rgba(0,0,0,0.8)] ${voiceSettings.useSanskrit ? 'bg-black/30 border-purple-300 text-purple-200' : 'bg-black/20 border-white/30 hover:bg-black/30 text-white/95'}`}
+              title={voiceSettings.useSanskrit ? 'Sanskrit mode' : 'English mode'}
+            >
+              {voiceSettings.useSanskrit ? 'सं' : 'EN'}
+            </button>
+            <button onClick={() => setShowDrawer(true)} className="px-4 py-4 text-xl border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
+              ⚙️
+            </button>
+          </div>
         </div>
       </div>
 

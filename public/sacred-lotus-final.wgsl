@@ -44,6 +44,15 @@
 
 const PI: f32 = 3.14159265359;
 const TAU: f32 = 6.28318530718;
+const CHAKRA = array<vec3<f32>, 7>(
+    vec3<f32>(0.90, 0.12, 0.18),
+    vec3<f32>(0.98, 0.45, 0.12),
+    vec3<f32>(0.98, 0.85, 0.20),
+    vec3<f32>(0.25, 0.85, 0.45),
+    vec3<f32>(0.20, 0.55, 0.95),
+    vec3<f32>(0.35, 0.25, 0.80),
+    vec3<f32>(0.65, 0.30, 0.90),
+);
 
 struct Uniforms {
     time: f32,
@@ -104,6 +113,14 @@ fn hash22(p: vec2<f32>) -> vec2<f32> {
         dot(p, vec2<f32>(269.5, 183.3))
     );
     return fract(sin(k) * 43758.5453123);
+}
+
+fn chakraFocusTint() -> vec3<f32> {
+    if (u.padding0 < 0.0) {
+        return vec3<f32>(0.58, 0.48, 0.88);
+    }
+    let idx = u32(clamp(u.padding0, 0.0, 6.0));
+    return CHAKRA[idx];
 }
 
 // =================================================================
@@ -672,7 +689,7 @@ fn acesTonemap(x: vec3<f32>) -> vec3<f32> {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-fn applyColorGrading(col: vec3<f32>, expand: f32, theme: f32) -> vec3<f32> {
+fn applyColorGrading(col: vec3<f32>, expand: f32, theme: f32, focusTint: vec3<f32>) -> vec3<f32> {
     var graded = col;
 
     // 1. Breath-driven saturation (peak inhale slightly more vivid).
@@ -697,10 +714,15 @@ fn applyColorGrading(col: vec3<f32>, expand: f32, theme: f32) -> vec3<f32> {
         graded = mix(graded, graded * vec3<f32>(0.82, 1.06, 1.12), 0.20);   // Ocean
     }
 
-    // 5. Filmic tone map (replaces ad-hoc S-curve + Reinhard shoulder).
+    // 5. Focus-tinted highlight bleed and filmic tone map.
+    let bright = dot(graded, vec3<f32>(0.333));
+    let glowMask = smoothstep(0.45, 1.2, bright) * (0.05 + expand * 0.06);
+    graded += glowMask * focusTint * 0.18;
+
+    // 6. Filmic tone map (replaces ad-hoc S-curve + Reinhard shoulder).
     graded = acesTonemap(graded * 1.05);
 
-    // 6. Gentle gamma lift so deep space stays ethereal, not crushed.
+    // 7. Gentle gamma lift so deep space stays ethereal, not crushed.
     graded = pow(graded, vec3<f32>(0.90));
 
     return max(graded, vec3<f32>(0.0));
@@ -717,6 +739,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     let expand = deriveBreathExpand(breath, u.chakraPhase);
     let t = u.time;
     let r = length(uv);
+    let focusTint = chakraFocusTint();
 
     // ------------------------------------------------------------
     // Interactive mouse ripple (preserved from original app)
@@ -743,14 +766,14 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
 
     // LAYER 5 — Global breath aura
     let globalAura = exp(-r * 2.8) * (0.06 + expand * 0.10) * u.intensity;
-    col += globalAura * vec3<f32>(0.58, 0.48, 0.88);
+    col += globalAura * mix(vec3<f32>(0.58, 0.48, 0.88), focusTint, 0.55);
 
     // LAYER 6 — Exhale release wave (subtle traveling ripple)
     let releaseWave = sin(r * 10.0 - breath * 15.708 - t * 1.2) * 0.5 + 0.5;
     let waveMask = exp(-r * 2.0) *
                    smoothstep(0.35, 0.75, releaseWave) *
                    (1.0 - expand) * 0.038;
-    col += waveMask * vec3<f32>(0.52, 0.42, 0.82);
+    col += waveMask * mix(vec3<f32>(0.52, 0.42, 0.82), focusTint, 0.40);
 
     // LAYER 7 — Atmospheric breath haze (depth + cohesion)
     let haze = exp(-r * 1.3) * (0.12 + (1.0 - breath) * 0.22);
@@ -761,7 +784,8 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col *= vig * 1.28;
 
     // POST — saturation, temperature, bloom bleed, theme, tone map
-    col = applyColorGrading(col, expand, u.theme);
+    col = applyColorGrading(col, expand, u.theme, focusTint);
+    col = mix(col, col * (0.62 + focusTint * 0.90), 0.20);
 
     return vec4<f32>(col, 1.0);
 }

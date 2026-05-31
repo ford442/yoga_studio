@@ -11,6 +11,8 @@ export interface SessionMode {
   emoji: string;
   description: string;
   chakraFocus: string;
+  chakraFocusIndex: number; // -1=none, 0..6=root..crown
+  accentColor?: string; // Optional UI accent for mode card glow/border
   shaderPath: string;
   vertexEntry: string;
   fragmentEntry: string;

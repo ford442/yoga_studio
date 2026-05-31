@@ -20,6 +20,16 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
+const CHAKRA = array<vec3<f32>, 7>(
+    vec3<f32>(0.90, 0.12, 0.18),
+    vec3<f32>(0.98, 0.45, 0.12),
+    vec3<f32>(0.98, 0.85, 0.20),
+    vec3<f32>(0.25, 0.85, 0.45),
+    vec3<f32>(0.20, 0.55, 0.95),
+    vec3<f32>(0.35, 0.25, 0.80),
+    vec3<f32>(0.65, 0.30, 0.90),
+);
+
 @vertex
 fn vs(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
     let pos = array<vec2<f32>, 6>(
@@ -37,6 +47,14 @@ fn sdSegment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
 
 fn sdCircle(p: vec2<f32>, r: f32) -> f32 {
     return length(p) - r;
+}
+
+fn chakraFocusTint() -> vec3<f32> {
+    if (u.padding0 < 0.0) {
+        return vec3<f32>(1.0);
+    }
+    let idx = u32(clamp(u.padding0, 0.0, 6.0));
+    return CHAKRA[idx];
 }
 
 fn mandala(uv: vec2<f32>, t: f32, breath: f32) -> vec3<f32> {
@@ -138,6 +156,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
 
     if (u.theme > 0.5 && u.theme < 1.5) { neon *= vec3<f32>(1.35, 1.0, 0.75); }
     else if (u.theme > 1.5) { neon *= vec3<f32>(0.75, 1.2, 1.25); }
+    neon = mix(neon, chakraFocusTint() * 1.15, 0.35);
 
     col += g1 * neon * 1.45;
     col += g2 * neon * 1.15;
@@ -157,6 +176,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     col *= vig * 1.32;
 
     col = pow(col, vec3<f32>(0.83));
+    col = mix(col, col * (0.6 + chakraFocusTint() * 0.95), 0.30);
 
     return vec4<f32>(col, 1.0);
 }
