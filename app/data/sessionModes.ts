@@ -97,6 +97,22 @@ export const SESSION_MODES: SessionMode[] = [
     mandalaStyle: 0,
     strengthLevel: 1.0,
   },
+  {
+    id: 'nervous-system-reg',
+    label: 'Nervous System Regulation',
+    emoji: '🫁',
+    description: 'Slow diaphragmatic pacing designed to shift the autonomic nervous system out of sympathetic stress states.',
+    chakraFocus: 'Heart',
+    chakraFocusIndex: 3,
+    accentColor: '#48cae4',
+    shaderPath: 'yoga-regular.wgsl',
+    vertexEntry: 'vs_main',
+    fragmentEntry: 'fs_main',
+    breath: { inhale: 4, hold1: 4, exhale: 6, hold2: 0 },
+    theme: 3,
+    mandalaStyle: 1,
+    strengthLevel: 1.0,
+  },
 ];
 
 export const DEFAULT_MODE = SESSION_MODES[0];

@@ -14,6 +14,7 @@ import { useVoiceGuidance } from './hooks/useVoiceGuidance';
 import { useRippleAudio } from './hooks/useRippleAudio';
 import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
 import type { SessionMode } from './types/sessionMode';
+import BreathingAvatar from './components/BreathingAvatar';
 
 const chakraLabels = ['inhale', 'hold1', 'exhale', 'hold2'];
 type QuickStartDuration = 'free' | 5 | 10 | 15;
@@ -202,6 +203,13 @@ export default function Home() {
     hold2: 'text-violet-400',
   };
 
+  const muscleCues: Record<string, string> = {
+    inhale: 'Tighten muscles · Raise arms slowly',
+    hold1:  'Keep muscles tightened · Hold posture',
+    exhale: 'Relax muscles · Lower arms gently',
+    hold2:  'Stay relaxed · Absolute stillness',
+  };
+
   const burstColors: Record<string, string> = {
     inhale: '#fa7e1e',
     hold1: '#f4d35e',
@@ -320,9 +328,18 @@ export default function Home() {
               className={`transition-all duration-300 ${phaseColors[currentPhase]}`}
             />
           </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-24 h-24 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 flex items-center justify-center text-6xl">
-              🧘‍♂️
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="w-28 h-28 flex items-center justify-center">
+              <BreathingAvatar
+                currentPhase={currentPhase}
+                phaseProgress={phaseProgress}
+                totalBreaths={totalBreaths}
+              />
+            </div>
+            <div className="absolute -bottom-8 w-64 text-center">
+              <p className="text-[11px] uppercase tracking-[2px] text-white/50 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/5 animate-pulse">
+                {muscleCues[currentPhase]}
+              </p>
             </div>
           </div>
         </div>
