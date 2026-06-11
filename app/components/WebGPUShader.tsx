@@ -550,27 +550,30 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           chakraFocus: cf,
         } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
-        const currentTime = ((Date.now() - start) / 1000) * ts;
+        const now = (Date.now() - start) / 1000;
+        const currentTime = now * ts;
+        // Slower, un-synchronized secondary clock for background/aura layers.
+        const fieldTime = currentTime * 0.37;
         const w = canvas.width;
         const h = canvas.height;
 
         const uniforms = new Float32Array([
-          currentTime, //  [0] time
-          bp,          //  [1] breathPhase
-          int,         //  [2] intensity
-          cp,          //  [3] chakraPhase
-          th,          //  [4] theme
-          ms,          //  [5] mandalaStyle
-          pp,          //  [6] phaseProgress
-          sl,          //  [7] strengthLevel
-          m.x,         //  [8] mouse.x
-          m.y,         //  [9] mouse.y
-          msr,         // [10] mouseStrength
-          cf,          // [11] chakraFocus
-          w,           // [12] resolution.x
-          h,           // [13] resolution.y
-          0,           // [14] padding
-          0,           // [15] padding
+          currentTime,   //  [0] time
+          bp,            //  [1] breathPhase
+          int,           //  [2] intensity
+          cp,            //  [3] chakraPhase
+          th,            //  [4] theme
+          ms,            //  [5] mandalaStyle
+          pp,            //  [6] phaseProgress
+          sl,            //  [7] strengthLevel
+          m.x,           //  [8] mouse.x
+          m.y,           //  [9] mouse.y
+          msr,           // [10] mouseStrength
+          cf,            // [11] chakraFocus
+          w,             // [12] resolution.x
+          h,             // [13] resolution.y
+          fieldTime,     // [14] fieldTime (slow secondary clock for background)
+          0,             // [15] padding
         ]);
 
         try {

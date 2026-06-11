@@ -65,9 +65,9 @@ struct Uniforms {
     strengthLevel: f32,      // 0.0=light, 1.0=regular, 2.0=strong
     mouse: vec2<f32>,        // -1..1 or (-2,-2) = inactive
     mouseStrength: f32,      // 0..1 touch strength
-    padding0: f32,           // 16-byte alignment padding
+    padding0: f32,           // 16-byte alignment padding (repurposed: chakraFocus)
     resolution: vec2<f32>,
-    padding1: f32,
+    fieldTime: f32,          // slow, un-synchronized secondary clock for background/aura layers
     padding2: f32,
 }
 
@@ -155,10 +155,21 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
 // BREATH HELPERS
 // =================================================================
 
-// Derive a smooth 0..1 "expand" factor from the 4-phase breath cycle.
-// Prefers the externally-supplied u.phaseProgress (accurate per-phase
-// progress from the JS timer) when it is available (non-negative).
-// Falls back to the approximate internal derivation from breathPhase.
+// Layered, slowly-drifting oscillator used in place of bare sin(t * f).
+// The frequency itself wanders on a slow secondary cycle (seeded per-caller)
+// so independent layers never lock into the same rhythm — this is what
+// keeps the piece feeling like living tissue rather than a clockwork loop.
+fn organicPulse(t: f32, baseFreq: f32, seed: f32) -> f32 {
+    let drift = sin(t * 0.05 + seed) * cos(t * 0.033 + seed * 1.7);
+    let f = baseFreq * (1.0 + drift * 0.18);
+    return 0.5 + 0.5 * sin(t * f + sin(t * f * 0.31 + seed) * 0.6);
+}
+
+// Derive a smooth 0..1 "expand" factor from the 4-phase breath cycle,
+// shaped to read like a chest/lung filling and releasing rather than a
+// linear UI slider: slow to start, accelerating through the middle,
+// easing near full; quick initial release on exhale, gentle settle at
+// the bottom; and a faint stirring during holds rather than dead stillness.
 // 0 = resting/closed, 1 = fully open/peak.
 fn deriveBreathExpand(breath: f32, chakraPhase: f32) -> f32 {
     // Use the accurate per-phase progress supplied by the JS timer.
@@ -166,15 +177,22 @@ fn deriveBreathExpand(breath: f32, chakraPhase: f32) -> f32 {
 
     var expand = 0.0;
     if (chakraPhase < 0.5) {
-        expand = pp;          // inhale  : opening with breath
+        // inhale: cubic ease blended toward sqrt to lift the early curve —
+        // the chest "catches" sooner and glides into the peak.
+        let eased = pp * pp * (3.0 - 2.0 * pp);
+        expand = mix(eased, sqrt(eased), 0.35);
     } else if (chakraPhase < 1.5) {
-        expand = 1.0;         // hold1   : fully open, peak prana
+        // hold (full): not flat — a faint shimmer of fullness breathing in place.
+        expand = 1.0 - 0.015 * (1.0 - sin(u.time * 0.9));
     } else if (chakraPhase < 2.5) {
-        expand = 1.0 - pp;    // exhale  : releasing, closing
+        // exhale: faster initial release, long gentle settle at the tail.
+        let e = 1.0 - pp;
+        expand = pow(e, 1.35);
     } else {
-        expand = 0.0;         // hold2   : resting, seed-state
+        // hold (empty): resting state still stirs faintly with ambient life.
+        expand = 0.04 + 0.04 * sin(u.time * 0.6);
     }
-    return expand * expand * (3.0 - 2.0 * expand);
+    return clamp(expand, 0.0, 1.0);
 }
 
 // =================================================================
@@ -437,9 +455,10 @@ fn sacredSymbol(
     let r = length(uv);
     let a = atan2(uv.y, uv.x);
 
-    // Breathing pulse: slow heartbeat plus the breath openness itself.
-    let beat = 0.5 + 0.5 * sin(t * 1.4);
-    let symPulse = 1.0 + 0.06 * sin(t * 2.8) * (0.5 + intensity) + expand * 0.05;
+    // Breathing pulse: a wandering heartbeat (never locks to other layers'
+    // rhythms) plus the breath openness itself.
+    let beat = organicPulse(t, 1.4, 4.81);
+    let symPulse = 1.0 + 0.06 * sin(t * 2.8 + beat) * (0.5 + intensity) + expand * 0.05;
     let sx = 0.150 * symPulse * (1.0 + expand * 0.12);
     let sy = 0.082 * symPulse * (1.0 + expand * 0.06);
 
@@ -512,8 +531,9 @@ fn lotusAndSymbol(
     let effExpand = expand + shimmer;
     let glowMult = 0.78 + effExpand * 0.62 + intensity * 0.25;
 
-    // Layer colors flow from warm rose-violet (inner) through rich violet
-    // to cool periwinkle (outer), creating natural temperature depth.
+    // Layer colors radiate from warm rose-violet (inner) through rich violet
+    // to amber/coral and golden-rose (outer) — warmth radiating outward into
+    // a cooler aura, like a body's heat dissipating into the space around it.
     col += lotusLayer(uv, t, 8.0, 0.42, 0.16, 0.06,
                       0.000 + t * 0.020, effExpand,
                       vec3<f32>(0.95, 0.62, 0.75)) * glowMult;
@@ -524,11 +544,11 @@ fn lotusAndSymbol(
 
     col += lotusLayer(uv, t, 16.0, 0.76, 0.24, 0.14,
                       0.131 + t * 0.008, effExpand,
-                      vec3<f32>(0.55, 0.68, 0.92)) * glowMult;
+                      vec3<f32>(0.97, 0.55, 0.42)) * glowMult;
 
     col += lotusLayer(uv, t, 20.0, 0.92, 0.28, 0.18,
                       0.000 - t * 0.005, effExpand * 0.7,
-                      vec3<f32>(0.62, 0.75, 0.88)) * glowMult * 0.55;
+                      vec3<f32>(0.95, 0.70, 0.45)) * glowMult * 0.55;
 
     // Central sacred symbol
     col += sacredSymbol(uv, t, effExpand, intensity, chakraPhase);
@@ -551,6 +571,26 @@ fn lotusAndSymbol(
 // breathes along the arc, a bright filament sits inside a soft glow,
 // and depth shading dims the back of each weave.
 // =================================================================
+// Depth helpers: give each orbital ring its own sense of distance from the
+// viewer. Inner rings (small orbitR) sit "close" — sharp and fast-panning;
+// outer rings sit "far" — softer-edged and drifting more slowly, the way a
+// background recedes behind a foreground subject.
+fn ribbonLayerDepth(orbitR: f32) -> f32 {
+    return 1.0 / (1.0 + orbitR * 1.3);   // 1.0 = near, → 0.0 = far
+}
+
+fn ribbonParallaxUV(uv: vec2<f32>, orbitR: f32) -> vec2<f32> {
+    let layerDepth = ribbonLayerDepth(orbitR);
+    let drift = vec2<f32>(sin(u.fieldTime * 0.07), cos(u.fieldTime * 0.05))
+                * (1.0 - layerDepth) * 0.02;
+    return uv + drift;
+}
+
+fn ribbonLayerBlur(orbitR: f32) -> f32 {
+    let layerDepth = ribbonLayerDepth(orbitR);
+    return mix(1.45, 1.0, layerDepth);   // far rings widen (blur), near stay crisp
+}
+
 fn ribbonStrand(
     uv: vec2<f32>, t: f32,
     orbitR: f32, n: f32, speed: f32, twist: f32, phase: f32, width: f32,
@@ -608,52 +648,60 @@ fn energyRibbons(
     var col = vec3<f32>(0.0);
     let expand = deriveBreathExpand(breath, chakraPhase);
 
-    let holdPulse = 1.0 + 0.08 * sin(t * 3.5) * expand * intensity;
+    let holdPulse = 1.0 + 0.08 * (organicPulse(t, 3.5, 7.45) * 2.0 - 1.0) * expand * intensity;
     let flowSpeed = 1.0 + expand * 1.4;
     let radiusShift = 1.0 - expand * 0.18;
     let glowMult = 0.55 + expand * 0.95 + intensity * 0.28;
 
     // Upward drift during inhale (prana rising)
-    let driftUV = uv + vec2<f32>(0.0, expand * 0.04);
+    let baseDriftUV = uv + vec2<f32>(0.0, expand * 0.04);
 
     // Ribbon colors share the lotus palette for energetic continuity.
-    // --- Layer 1: Inner prana streams ---
+    // --- Layer 1: Inner prana streams (closest — sharp, fast parallax) ---
     let r1 = 0.32 * radiusShift;
-    col += ribbonStrand(driftUV, t, r1, 4.0, flowSpeed * 1.0, 6.0, 0.00,
-                        0.038, vec3<f32>(0.92, 0.48, 0.68), expand, intensity)
+    let uv1 = ribbonParallaxUV(baseDriftUV, r1);
+    let blur1 = ribbonLayerBlur(r1);
+    col += ribbonStrand(uv1, t, r1, 4.0, flowSpeed * 1.0, 6.0, 0.00,
+                        0.038 * blur1, vec3<f32>(0.92, 0.48, 0.68), expand, intensity)
            * glowMult * holdPulse;
-    col += ribbonStrand(driftUV, t, r1, 4.0, flowSpeed * 1.0, 6.0, 3.14159,
-                        0.038, vec3<f32>(0.78, 0.42, 0.72), expand, intensity)
+    col += ribbonStrand(uv1, t, r1, 4.0, flowSpeed * 1.0, 6.0, 3.14159,
+                        0.038 * blur1, vec3<f32>(0.78, 0.42, 0.72), expand, intensity)
            * glowMult * holdPulse;
 
     // --- Layer 2: Mid energy rings ---
     let r2 = 0.58 * radiusShift;
-    col += ribbonStrand(driftUV, t, r2, 6.0, flowSpeed * 1.2, 9.0, 0.60,
-                        0.045, vec3<f32>(0.48, 0.68, 0.92), expand, intensity)
+    let uv2 = ribbonParallaxUV(baseDriftUV, r2);
+    let blur2 = ribbonLayerBlur(r2);
+    col += ribbonStrand(uv2, t, r2, 6.0, flowSpeed * 1.2, 9.0, 0.60,
+                        0.045 * blur2, vec3<f32>(0.48, 0.68, 0.92), expand, intensity)
            * glowMult * 0.90 * holdPulse;
-    col += ribbonStrand(driftUV, t, r2, 6.0, flowSpeed * 1.2, 9.0, 2.80,
-                        0.045, vec3<f32>(0.55, 0.82, 0.72), expand, intensity)
+    col += ribbonStrand(uv2, t, r2, 6.0, flowSpeed * 1.2, 9.0, 2.80,
+                        0.045 * blur2, vec3<f32>(0.55, 0.82, 0.72), expand, intensity)
            * glowMult * 0.90 * holdPulse;
-    col += ribbonStrand(driftUV, t, r2, 6.0, flowSpeed * 1.2, 9.0, 4.50,
-                        0.045, vec3<f32>(0.88, 0.52, 0.78), expand, intensity)
+    col += ribbonStrand(uv2, t, r2, 6.0, flowSpeed * 1.2, 9.0, 4.50,
+                        0.045 * blur2, vec3<f32>(0.88, 0.52, 0.78), expand, intensity)
            * glowMult * 0.90 * holdPulse;
 
-    // --- Layer 3: Outer cosmic streams ---
+    // --- Layer 3: Outer cosmic streams (further — softer, slower parallax) ---
     let r3 = 0.92 * radiusShift;
-    col += ribbonStrand(driftUV, t, r3, 8.0, flowSpeed * 0.85, 12.0, 1.10,
-                        0.052, vec3<f32>(0.42, 0.62, 0.92), expand, intensity)
+    let uv3 = ribbonParallaxUV(baseDriftUV, r3);
+    let blur3 = ribbonLayerBlur(r3);
+    col += ribbonStrand(uv3, t, r3, 8.0, flowSpeed * 0.85, 12.0, 1.10,
+                        0.052 * blur3, vec3<f32>(0.42, 0.62, 0.92), expand, intensity)
            * glowMult * 0.72 * holdPulse;
-    col += ribbonStrand(driftUV, t, r3, 8.0, flowSpeed * 0.85, 12.0, 3.90,
-                        0.052, vec3<f32>(0.68, 0.48, 0.88), expand, intensity)
+    col += ribbonStrand(uv3, t, r3, 8.0, flowSpeed * 0.85, 12.0, 3.90,
+                        0.052 * blur3, vec3<f32>(0.68, 0.48, 0.88), expand, intensity)
            * glowMult * 0.72 * holdPulse;
 
-    // --- Layer 4: Far aura whisps ---
+    // --- Layer 4: Far aura whisps (most distant — softest, slowest drift) ---
     let r4 = 1.35 * radiusShift;
-    col += ribbonStrand(driftUV, t, r4, 3.5, flowSpeed * 0.45, 5.0, 0.00,
-                        0.075, vec3<f32>(0.52, 0.60, 0.88), expand, intensity)
+    let uv4 = ribbonParallaxUV(baseDriftUV, r4);
+    let blur4 = ribbonLayerBlur(r4);
+    col += ribbonStrand(uv4, t, r4, 3.5, flowSpeed * 0.45, 5.0, 0.00,
+                        0.075 * blur4, vec3<f32>(0.52, 0.60, 0.88), expand, intensity)
            * glowMult * 0.38 * holdPulse;
-    col += ribbonStrand(driftUV, t, r4, 3.5, flowSpeed * 0.45, 5.0, 2.09,
-                        0.075, vec3<f32>(0.58, 0.52, 0.82), expand, intensity)
+    col += ribbonStrand(uv4, t, r4, 3.5, flowSpeed * 0.45, 5.0, 2.09,
+                        0.075 * blur4, vec3<f32>(0.58, 0.52, 0.82), expand, intensity)
            * glowMult * 0.38 * holdPulse;
 
     // Breath-driven temperature shift for ribbons
@@ -663,8 +711,8 @@ fn energyRibbons(
     else                        { col *= vec3<f32>(0.94, 0.98, 1.04); }
 
     // Connecting bridges — faint arcs linking inner and outer streams
-    let r = length(driftUV);
-    let a = atan2(driftUV.y, driftUV.x);
+    let r = length(baseDriftUV);
+    let a = atan2(baseDriftUV.y, baseDriftUV.x);
     let bridgePhase = a * 2.0 + t * 0.6 + expand * 2.0;
     let bridgeMask = exp(-(r - 0.70) * (r - 0.70) / 0.015) *
                      smoothstep(0.4, 0.8, sin(bridgePhase) * 0.5 + 0.5);
@@ -697,8 +745,9 @@ fn applyColorGrading(col: vec3<f32>, expand: f32, theme: f32, focusTint: vec3<f3
     let luma = dot(graded, vec3<f32>(0.299, 0.587, 0.114));
     graded = mix(vec3<f32>(luma), graded, sat);
 
-    // 2. Breath colour temperature (inhale warmer, exhale cooler).
-    let warmth = expand * 0.05;
+    // 2. Breath colour temperature (inhale warmer, exhale cooler) — pushed
+    //    further so the "filling with light" sensation reads more strongly.
+    let warmth = expand * 0.14;
     graded *= vec3<f32>(1.0 + warmth, 1.0 + warmth * 0.25, 1.0 - warmth * 0.35);
 
     // 3. Chromatic bloom bleed — bright areas warm slightly, bleeding
@@ -752,8 +801,10 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
         uv += toMouse * ripple * 2.2;
     }
 
-    // LAYER 1 — Background atmosphere
-    var col = backgroundAtmosphere(uv, t, breath, expand);
+    // LAYER 1 — Background atmosphere, driven by its own slow, un-synchronized
+    // clock so the space around the figure keeps drifting independently —
+    // most noticeable as held stillness in the foreground during breath holds.
+    var col = backgroundAtmosphere(uv, u.fieldTime, breath, expand);
 
     // LAYER 2 — Volumetric light shafts
     col += lightShafts(uv * 0.85, t, breath, expand);
