@@ -19,6 +19,16 @@ export interface SessionMode {
   breath: BreathTiming;
   theme: number;
   mandalaStyle: number;
+  /** Figure posture enum. Mirrors the pose values decoded in the active WGSL shaders.
+   *  0 = seated lotus (padmasana)
+   *  1 = standing tadasana / mountain arms overhead
+   *  2 = tai-chi flowing single whip
+   *  3 = heart-opening arms-wide
+   *  4 = chinmudra seated (wisdom seal)
+   *  5 = warrior II (virabhadrasana)
+   *  6 = tree pose (vrksasana)
+   */
+  figurePose: number;
   strengthLevel?: number; // 0.0=light, 1.0=regular (default), 2.0=strong
   geometryDensity?: number; // 0.0=sparse, 1.0=default, 3.0=rich geometry detail
   interference?: number;    // 0.0=still layers, 1.0=strong moire / recursive motion

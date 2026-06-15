@@ -38,6 +38,8 @@ struct Uniforms {
     resolution: vec2<f32>,
     geometryDensity: f32,    // detail multiplier for geometry/petals/ring counts
     interference: f32,       // moire / recursive layer motion strength
+    figurePose: f32,         // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
+    _padding: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -609,13 +611,301 @@ fn pranaParticles(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> 
 // MODULE 3 — HUMAN FIGURE & ENERGY SYSTEMS (Agent: Figure & Energy Specialist)
 // ============================================================================
 
+// Figure pose enum (matches SessionMode.figurePose from the React app)
+//   0 = seated lotus (padmasana)
+//   1 = standing tadasana / mountain arms overhead
+//   2 = tai-chi flowing single whip
+//   3 = heart-opening arms-wide
+//   4 = chinmudra seated (wisdom seal)
+//   5 = warrior II (virabhadrasana)
+//   6 = tree pose (vrksasana)
+
+fn poseAwareHands(t: f32, expand: f32) -> array<vec2<f32>, 2> {
+    var hands: array<vec2<f32>, 2>;
+    let pose = i32(u.figurePose + 0.5);
+    let pp = u.phaseProgress;
+    let ease = pp * pp * (3.0 - 2.0 * pp);
+    let animAmp = 0.01 * u.intensity * (0.6 + 0.4 * u.strengthLevel);
+
+    var leftHand  = vec2<f32>(-0.25, -0.05);
+    var rightHand = vec2<f32>( 0.25, -0.05);
+
+    if (pose == 0) {
+        // Lotus: arms rise from the lap to overhead
+        if (u.chakraPhase < 0.5) {
+            let overshoot = 0.015 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.20, 0.52), ease) + vec2<f32>(0.0, overshoot);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.20, 0.52), ease) + vec2<f32>(0.0, overshoot);
+        } else if (u.chakraPhase < 1.5) {
+            let sway = sin(t * 2.0) * animAmp;
+            let pulse = 1.0 + 0.02 * sin(t * 3.0) * u.intensity;
+            leftHand  = vec2<f32>(-0.20 + sway, 0.52 * pulse);
+            rightHand = vec2<f32>( 0.20 - sway, 0.52 * pulse);
+        } else if (u.chakraPhase < 2.5) {
+            let settle = 0.012 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
+            leftHand  = mix(vec2<f32>(-0.20, 0.52), vec2<f32>(-0.25, -0.05), ease) - vec2<f32>(0.0, settle);
+            rightHand = mix(vec2<f32>( 0.20, 0.52), vec2<f32>( 0.25, -0.05), ease) - vec2<f32>(0.0, settle);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
+            rightHand = vec2<f32>( 0.25 - idle, -0.05);
+        }
+    } else if (pose == 1) {
+        // Tadasana: arms straight up, close to ears
+        if (u.chakraPhase < 0.5) {
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.10, 0.62), ease);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.10, 0.62), ease);
+        } else if (u.chakraPhase < 1.5) {
+            let sway = sin(t * 2.0) * animAmp;
+            leftHand  = vec2<f32>(-0.10 + sway, 0.62);
+            rightHand = vec2<f32>( 0.10 - sway, 0.62);
+        } else if (u.chakraPhase < 2.5) {
+            leftHand  = mix(vec2<f32>(-0.10, 0.62), vec2<f32>(-0.25, -0.05), ease);
+            rightHand = mix(vec2<f32>( 0.10, 0.62), vec2<f32>( 0.25, -0.05), ease);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
+            rightHand = vec2<f32>( 0.25 - idle, -0.05);
+        }
+    } else if (pose == 2) {
+        // Tai-chi single whip: one hand high and open, one low and rounded
+        let flow = sin(t * 0.8 + expand * PI) * 0.04 * u.intensity;
+        if (u.chakraPhase < 0.5) {
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.32, 0.48), ease) + vec2<f32>(0.0, flow);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.22, 0.05), ease) - vec2<f32>(0.0, flow);
+        } else if (u.chakraPhase < 1.5) {
+            leftHand  = vec2<f32>(-0.32 + flow, 0.48);
+            rightHand = vec2<f32>( 0.22 - flow, 0.05);
+        } else if (u.chakraPhase < 2.5) {
+            leftHand  = mix(vec2<f32>(-0.32, 0.48), vec2<f32>(-0.25, -0.05), ease) - vec2<f32>(0.0, flow);
+            rightHand = mix(vec2<f32>( 0.22, 0.05), vec2<f32>( 0.25, -0.05), ease) + vec2<f32>(0.0, flow);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
+            rightHand = vec2<f32>( 0.25 - idle, -0.05);
+        }
+    } else if (pose == 3) {
+        // Heart-opening: arms sweep wide, proud chest
+        if (u.chakraPhase < 0.5) {
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.65, 0.32), ease);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.65, 0.32), ease);
+        } else if (u.chakraPhase < 1.5) {
+            let pulse = 1.0 + 0.02 * sin(t * 2.5) * u.intensity;
+            leftHand  = vec2<f32>(-0.65, 0.32 * pulse);
+            rightHand = vec2<f32>( 0.65, 0.32 * pulse);
+        } else if (u.chakraPhase < 2.5) {
+            leftHand  = mix(vec2<f32>(-0.65, 0.32), vec2<f32>(-0.25, -0.05), ease);
+            rightHand = mix(vec2<f32>( 0.65, 0.32), vec2<f32>( 0.25, -0.05), ease);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
+            rightHand = vec2<f32>( 0.25 - idle, -0.05);
+        }
+    } else if (pose == 4) {
+        // Chinmudra: hands rest on knees, gentle breath micro-movement
+        let breathe = 0.02 * sin(pp * PI) * select(0.0, 1.0, u.chakraPhase < 1.5);
+        leftHand  = vec2<f32>(-0.22, -0.22 + breathe);
+        rightHand = vec2<f32>( 0.22, -0.22 + breathe);
+    } else if (pose == 5) {
+        // Warrior II: arms horizontal, strong and wide
+        if (u.chakraPhase < 0.5) {
+            let reach = ease * 0.20;
+            leftHand  = vec2<f32>(-0.62 - reach, 0.30);
+            rightHand = vec2<f32>( 0.62 + reach, 0.30);
+        } else if (u.chakraPhase < 1.5) {
+            let sway = sin(t * 2.0) * animAmp;
+            leftHand  = vec2<f32>(-0.62 + sway, 0.30);
+            rightHand = vec2<f32>( 0.62 - sway, 0.30);
+        } else if (u.chakraPhase < 2.5) {
+            let reach = ease * 0.20;
+            leftHand  = vec2<f32>(-0.62 + reach, 0.30);
+            rightHand = vec2<f32>( 0.62 - reach, 0.30);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.62 + idle, 0.30);
+            rightHand = vec2<f32>( 0.62 - idle, 0.30);
+        }
+    } else if (pose == 6) {
+        // Tree pose: hands at heart center, subtle rise with inhale
+        if (u.chakraPhase < 0.5) {
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.08, 0.28), ease);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.08, 0.28), ease);
+        } else if (u.chakraPhase < 1.5) {
+            let sway = sin(t * 1.8) * animAmp * 0.6;
+            leftHand  = vec2<f32>(-0.08 + sway, 0.28);
+            rightHand = vec2<f32>( 0.08 - sway, 0.28);
+        } else if (u.chakraPhase < 2.5) {
+            leftHand  = mix(vec2<f32>(-0.08, 0.28), vec2<f32>(-0.25, -0.05), ease);
+            rightHand = mix(vec2<f32>( 0.08, 0.28), vec2<f32>( 0.25, -0.05), ease);
+        } else {
+            let idle = sin(t * 1.5) * animAmp;
+            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
+            rightHand = vec2<f32>( 0.25 - idle, -0.05);
+        }
+    }
+
+    if (pose != 2) {
+        let sway = sin(t * 1.5) * animAmp;
+        leftHand.x  += sway;
+        rightHand.x -= sway;
+    }
+
+    hands[0] = leftHand;
+    hands[1] = rightHand;
+    return hands;
+}
+
+// ---------------------------------------------------------------------------
+// Graceful human figure helpers
+// ---------------------------------------------------------------------------
+
+fn handMudra(
+    p: vec2<f32>, handPos: vec2<f32>, side: f32,
+    t: f32, expand: f32, phaseColor: vec3<f32>
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let strengthBase = smoothstep(1.0, 2.0, u.strengthLevel) + 0.35 * smoothstep(0.75, 1.0, u.intensity);
+    let holdGlow = select(0.0, 1.0, u.chakraPhase > 0.5 && u.chakraPhase < 2.5);
+    let strength = strengthBase + holdGlow * 0.25;
+    if (strength < 0.05) { return col; }
+
+    // Tiny thumb-to-index circle (chinmudra / finger presence)
+    let thumbTip = handPos + vec2<f32>(side * 0.011, -0.005);
+    let indexTip = handPos + vec2<f32>(side * 0.007,  0.009);
+    let mudraCenter = (thumbTip + indexTip) * 0.5;
+    let mudraD = abs(sdCircle(p - mudraCenter, 0.0085)) - 0.0018;
+    col += exp(-abs(mudraD) * 130.0) * phaseColor * 0.55 * strength;
+
+    // Subtle palm arc
+    let palmA = handPos + vec2<f32>(side * 0.016, 0.002);
+    let palmB = handPos + vec2<f32>(side * 0.010, 0.013);
+    let palmD = sdSegment(p, palmA, palmB) - 0.0025;
+    col += exp(-abs(palmD) * 110.0) * phaseColor * 0.30 * strength;
+
+    return col;
+}
+
+fn ribcageBreath(
+    p: vec2<f32>, chestPos: vec2<f32>,
+    expand: f32, themeColor: vec3<f32>
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let breathAmp = 0.005 * expand;
+    let leftRib  = sdSegment(p, chestPos + vec2<f32>(-0.055 - breathAmp, 0.020),
+                                   chestPos + vec2<f32>(-0.085 - breathAmp, -0.040)) - 0.018;
+    let rightRib = sdSegment(p, chestPos + vec2<f32>( 0.055 + breathAmp, 0.020),
+                                   chestPos + vec2<f32>( 0.085 + breathAmp, -0.040)) - 0.018;
+    col += exp(-abs(leftRib)  * 45.0) * themeColor * 0.16;
+    col += exp(-abs(rightRib) * 45.0) * themeColor * 0.16;
+    return col;
+}
+
+fn flowingRobe(
+    p: vec2<f32>, chestPos: vec2<f32>, hipsPos: vec2<f32>,
+    hands: array<vec2<f32>, 2>, expand: f32, t: f32,
+    themeColor: vec3<f32>
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let robeStrength = smoothstep(0.8, 2.0, u.strengthLevel) + 0.22 * u.intensity;
+    if (robeStrength < 0.05) { return col; }
+
+    let sway = sin(t * 1.2) * 0.006 * u.intensity;
+    let armLift = max(0.0, (hands[0].y + hands[1].y) * 0.5 + 0.05);
+
+    // Inner robe lines hugging torso
+    let leftInner  = sdSegment(p, chestPos + vec2<f32>(-0.085 + sway, 0.015),
+                                     hipsPos + vec2<f32>(-0.075, 0.0)) - 0.032;
+    let rightInner = sdSegment(p, chestPos + vec2<f32>( 0.085 - sway, 0.015),
+                                     hipsPos + vec2<f32>( 0.075, 0.0)) - 0.032;
+    col += exp(-abs(leftInner)  * 32.0) * themeColor * 0.13 * robeStrength;
+    col += exp(-abs(rightInner) * 32.0) * themeColor * 0.13 * robeStrength;
+
+    // Outer robe lines that drift with arm motion
+    let leftOuter  = sdSegment(p, chestPos + vec2<f32>(-0.115, -0.005),
+                                     hipsPos + vec2<f32>(-0.125 + armLift * 0.04, -0.055)) - 0.022;
+    let rightOuter = sdSegment(p, chestPos + vec2<f32>( 0.115, -0.005),
+                                     hipsPos + vec2<f32>( 0.125 - armLift * 0.04, -0.055)) - 0.022;
+    col += exp(-abs(leftOuter)  * 30.0) * themeColor * 0.09 * robeStrength;
+    col += exp(-abs(rightOuter) * 30.0) * themeColor * 0.09 * robeStrength;
+
+    return col;
+}
+
+fn lotusSeat(
+    p: vec2<f32>, hipsPos: vec2<f32>,
+    expand: f32, themeColor: vec3<f32>
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+
+    // Overlapping curved thighs and shins
+    let leftThigh  = sdSegment(p, hipsPos + vec2<f32>(-0.03, -0.02), vec2<f32>(-0.18, -0.22)) - 0.028;
+    let leftShin   = sdSegment(p, vec2<f32>(-0.18, -0.22), vec2<f32>( 0.04, -0.28)) - 0.024;
+    let rightThigh = sdSegment(p, hipsPos + vec2<f32>( 0.03, -0.02), vec2<f32>( 0.18, -0.22)) - 0.028;
+    let rightShin  = sdSegment(p, vec2<f32>( 0.18, -0.22), vec2<f32>(-0.04, -0.28)) - 0.024;
+    col += exp(-abs(leftThigh)  * 35.0) * themeColor * 0.42;
+    col += exp(-abs(leftShin)   * 35.0) * themeColor * 0.38;
+    col += exp(-abs(rightThigh) * 35.0) * themeColor * 0.42;
+    col += exp(-abs(rightShin)  * 35.0) * themeColor * 0.38;
+
+    // Subtle petal-like platform under hips
+    let platformD = abs(sdCircle(p - (hipsPos + vec2<f32>(0.0, -0.02)), 0.13 + expand * 0.008)) - 0.014;
+    col += exp(-abs(platformD) * 55.0) * themeColor * 0.22;
+
+    // Knee highlights
+    let leftKnee  = sdCircle(p - vec2<f32>(-0.18, -0.22), 0.018);
+    let rightKnee = sdCircle(p - vec2<f32>( 0.18, -0.22), 0.018);
+    col += exp(-abs(leftKnee)  * 60.0) * themeColor * 0.18;
+    col += exp(-abs(rightKnee) * 60.0) * themeColor * 0.18;
+
+    return col;
+}
+
+fn groundedFeet(
+    p: vec2<f32>, footL: vec2<f32>, footR: vec2<f32>,
+    pose: i32, themeColor: vec3<f32>
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    if (pose == 6) {
+        // Tree pose: rooted foot + lifted-heel balance line
+        let rooted = sdSegment(p, footL, footL + vec2<f32>(-0.045, 0.0)) - 0.020;
+        let lifted = sdSegment(p, footR, footR + vec2<f32>( 0.025, 0.0)) - 0.014;
+        col += exp(-abs(rooted) * 42.0) * themeColor * 0.32;
+        col += exp(-abs(lifted) * 42.0) * themeColor * 0.22;
+    } else {
+        // Grounded foot lines
+        let leftFoot  = sdSegment(p, footL, footL + vec2<f32>(-0.055, 0.0)) - 0.032;
+        let rightFoot = sdSegment(p, footR, footR + vec2<f32>( 0.055, 0.0)) - 0.032;
+        col += exp(-abs(leftFoot)  * 40.0) * themeColor * 0.28;
+        col += exp(-abs(rightFoot) * 40.0) * themeColor * 0.28;
+    }
+    return col;
+}
+
+fn sushumnaNadi(
+    p: vec2<f32>, expand: f32, t: f32
+) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    if (p.y < -0.52 || p.y > 0.62) { return col; }
+
+    let nadiD = abs(p.x) - 0.0035;
+    let nadiPulse = 1.0 + 0.2 * u.intensity * sin(t * 3.0);
+    var nadiColor = vec3<f32>(0.9, 0.95, 1.0);
+
+    if (u.chakraFocus >= 0.0) {
+        nadiColor = mix(nadiColor, chakraColor(u.chakraFocus), 0.45);
+    } else if (u.chakraPhase < 0.5) {
+        nadiColor = mix(nadiColor, vec3<f32>(1.0, 0.85, 0.4), u.phaseProgress * 0.35);
+    } else if (u.chakraPhase > 1.5 && u.chakraPhase < 2.5) {
+        nadiColor = mix(vec3<f32>(1.0, 0.85, 0.4), vec3<f32>(0.4, 0.85, 1.0), u.phaseProgress * 0.35);
+    }
+
+    col += exp(-abs(nadiD) * 65.0) * nadiColor * 0.32 * nadiPulse * (0.6 + expand * 0.4);
+    return col;
+}
+
 fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let p = (uv - vec2<f32>(0.0, -0.05)) / 0.75;
-
-    let headPos  = vec2<f32>(0.0,  0.30 + expand * 0.012);
-    let chestPos = vec2<f32>(0.0,  0.10 + expand * 0.015);
-    let hipsPos  = vec2<f32>(0.0, -0.10);
 
     let phaseColor = focusedBreathColor();
 
@@ -629,52 +919,27 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     }
 
     let figurePulse = 1.0 + 0.02 * u.intensity * sin(t * 2.0);
-    let animAmp = 0.01 * u.intensity * (0.6 + 0.4 * u.strengthLevel);
-    let isLotus  = u.mandalaStyle < 0.5;
-    let isTaiChi = u.mandalaStyle > 1.5;
+    let pose = i32(u.figurePose + 0.5);
+    let hands = poseAwareHands(t, expand);
 
-    // Arm animation — smooth eased motion with tiny overshoot/settle
-    var leftHand  = vec2<f32>(-0.25, -0.05);
-    var rightHand = vec2<f32>( 0.25, -0.05);
+    // Arm height drives head drishti tilt
+    let armHeight = (hands[0].y + hands[1].y) * 0.5 - 0.25;
 
-    if (isTaiChi) {
-        let flow = sin(t * 0.8) * 0.03 * u.intensity;
-        leftHand  = vec2<f32>(-0.25,  0.45 + flow);
-        rightHand = vec2<f32>( 0.25, -0.15 - flow);
-    } else {
-        if (u.chakraPhase < 0.5) {
-            let pp = u.phaseProgress;
-            let rise = pp * pp * (3.0 - 2.0 * pp);
-            let overshoot = 0.015 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
-            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.20, 0.52), rise) + vec2<f32>(0.0, overshoot);
-            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.20, 0.52), rise) + vec2<f32>(0.0, overshoot);
-        } else if (u.chakraPhase < 1.5) {
-            let sway = sin(t * 2.0) * animAmp;
-            let pulse = 1.0 + 0.02 * sin(t * 3.0) * u.intensity;
-            leftHand  = vec2<f32>(-0.20 + sway, 0.52 * pulse);
-            rightHand = vec2<f32>( 0.20 - sway, 0.52 * pulse);
-        } else if (u.chakraPhase < 2.5) {
-            let pp = u.phaseProgress;
-            let lower = pp * pp * (3.0 - 2.0 * pp);
-            let settle = 0.012 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
-            leftHand  = mix(vec2<f32>(-0.20, 0.52), vec2<f32>(-0.25, -0.05), lower) - vec2<f32>(0.0, settle);
-            rightHand = mix(vec2<f32>( 0.20, 0.52), vec2<f32>( 0.25, -0.05), lower) - vec2<f32>(0.0, settle);
-        } else {
-            let idle = sin(t * 1.5) * animAmp;
-            leftHand  = vec2<f32>(-0.25 + idle, -0.05);
-            rightHand = vec2<f32>( 0.25 - idle, -0.05);
-        }
-    }
+    let headBase  = vec2<f32>(0.0, 0.30 + expand * 0.012);
+    let chestPos  = vec2<f32>(0.0, 0.10 + expand * 0.015);
+    let hipsPos   = vec2<f32>(0.0, -0.10);
+    let shoulderY = 0.04 + expand * 0.012;
+    let shoulderL = chestPos + vec2<f32>(-0.055, shoulderY);
+    let shoulderR = chestPos + vec2<f32>( 0.055, shoulderY);
 
-    if (!isTaiChi) {
-        let sway = sin(t * 1.5) * animAmp;
-        leftHand.x  += sway;
-        rightHand.x -= sway;
-    }
-
-    // Head
+    // Head with subtle tilt & chin tuck
+    let tilt = clamp(armHeight * 0.05, -0.010, 0.010) * (0.5 + 0.5 * sin(t * 0.7));
+    let headPos = headBase + vec2<f32>(tilt, 0.0);
     let headD = sdCircle((p - headPos) / figurePulse, 0.055);
     col += exp(-abs(headD) * 35.0) * themeColor * 0.5;
+
+    let chinD = sdCircle(p - (headPos + vec2<f32>(tilt * 0.5, -0.046)), 0.018);
+    col += exp(-abs(chinD) * 55.0) * themeColor * 0.20;
 
     // Torso — chest expands on inhale, hips stay grounded
     let chestD = sdCircle((p - chestPos) / figurePulse, 0.075 * (1.0 + expand * 0.12));
@@ -682,40 +947,74 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let torsoD = smin(chestD, hipsD, 0.08);
     col += exp(-abs(torsoD) * 30.0) * themeColor * 0.4;
 
+    // Independent ribcage breath + shoulder lift
+    col += ribcageBreath(p, chestPos, expand, themeColor);
+
+    // Flowing robe silhouette
+    col += flowingRobe(p, chestPos, hipsPos, hands, expand, t, themeColor);
+
     // Arms
-    let leftArmD  = sdSegment(p, chestPos + vec2<f32>(-0.055, 0.04), leftHand)  - 0.022;
-    let rightArmD = sdSegment(p, chestPos + vec2<f32>( 0.055, 0.04), rightHand) - 0.022;
+    let leftArmD  = sdSegment(p, shoulderL, hands[0]) - 0.022;
+    let rightArmD = sdSegment(p, shoulderR, hands[1]) - 0.022;
     col += exp(-abs(leftArmD)  * 35.0) * themeColor * 0.45;
     col += exp(-abs(rightArmD) * 35.0) * themeColor * 0.45;
 
-    // Hands
+    // Hands + mudra detail
     let handGlow = 0.6 + 0.4 * u.intensity;
-    let leftHandD  = sdCircle(p - leftHand,  0.025);
-    let rightHandD = sdCircle(p - rightHand, 0.025);
+    let leftHandD  = sdCircle(p - hands[0],  0.025);
+    let rightHandD = sdCircle(p - hands[1], 0.025);
     col += exp(-abs(leftHandD)  * 45.0) * phaseColor * handGlow;
     col += exp(-abs(rightHandD) * 45.0) * phaseColor * handGlow;
+    col += handMudra(p, hands[0], -1.0, t, expand, phaseColor);
+    col += handMudra(p, hands[1],  1.0, t, expand, phaseColor);
 
-    // Legs
-    if (isLotus) {
-        let leftThigh  = sdSegment(p, hipsPos + vec2<f32>(-0.03, -0.02), vec2<f32>(-0.18, -0.22)) - 0.025;
-        let leftShin   = sdSegment(p, vec2<f32>(-0.18, -0.22), vec2<f32>( 0.04, -0.28)) - 0.022;
-        let rightThigh = sdSegment(p, hipsPos + vec2<f32>( 0.03, -0.02), vec2<f32>( 0.18, -0.22)) - 0.025;
-        let rightShin  = sdSegment(p, vec2<f32>( 0.18, -0.22), vec2<f32>(-0.04, -0.28)) - 0.022;
-        col += exp(-abs(leftThigh)  * 35.0) * themeColor * 0.40;
-        col += exp(-abs(leftShin)   * 35.0) * themeColor * 0.35;
-        col += exp(-abs(rightThigh) * 35.0) * themeColor * 0.40;
-        col += exp(-abs(rightShin)  * 35.0) * themeColor * 0.35;
-    } else if (isTaiChi) {
-        let leftLeg  = sdSegment(p, hipsPos, vec2<f32>(-0.22, -0.42)) - 0.028;
-        let rightLeg = sdSegment(p, hipsPos, vec2<f32>( 0.18, -0.35)) - 0.028;
-        col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
-        col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+    // Legs, seat, and feet depend on pose
+    if (pose == 0 || pose == 4) {
+        col += lotusSeat(p, hipsPos, expand, themeColor);
     } else {
-        let leftLeg  = sdSegment(p, hipsPos, vec2<f32>(-0.12, -0.45)) - 0.028;
-        let rightLeg = sdSegment(p, hipsPos, vec2<f32>( 0.12, -0.45)) - 0.028;
-        col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
-        col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        var footL = vec2<f32>(0.0);
+        var footR = vec2<f32>(0.0);
+        if (pose == 1) {
+            footL = vec2<f32>(-0.10, -0.50);
+            footR = vec2<f32>( 0.10, -0.50);
+            let leftLeg  = sdSegment(p, hipsPos, footL) - 0.028;
+            let rightLeg = sdSegment(p, hipsPos, footR) - 0.028;
+            col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
+            col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        } else if (pose == 2) {
+            footL = vec2<f32>(-0.22, -0.42);
+            footR = vec2<f32>( 0.18, -0.35);
+            let leftLeg  = sdSegment(p, hipsPos, footL) - 0.028;
+            let rightLeg = sdSegment(p, hipsPos, footR) - 0.028;
+            col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
+            col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        } else if (pose == 3) {
+            footL = vec2<f32>(-0.13, -0.48);
+            footR = vec2<f32>( 0.13, -0.48);
+            let leftLeg  = sdSegment(p, hipsPos, footL) - 0.028;
+            let rightLeg = sdSegment(p, hipsPos, footR) - 0.028;
+            col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
+            col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        } else if (pose == 5) {
+            footL = vec2<f32>(-0.28, -0.38);
+            footR = vec2<f32>( 0.28, -0.48);
+            let leftLeg  = sdSegment(p, hipsPos, footL) - 0.028;
+            let rightLeg = sdSegment(p, hipsPos, footR) - 0.028;
+            col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
+            col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        } else if (pose == 6) {
+            footL = vec2<f32>( 0.0, -0.50);
+            footR = vec2<f32>( 0.18, -0.12);
+            let leftLeg  = sdSegment(p, hipsPos, footL) - 0.028;
+            let rightLeg = sdSegment(p, hipsPos, footR) - 0.025;
+            col += exp(-abs(leftLeg)  * 35.0) * themeColor * 0.40;
+            col += exp(-abs(rightLeg) * 35.0) * themeColor * 0.40;
+        }
+        col += groundedFeet(p, footL, footR, pose, themeColor);
     }
+
+    // Energetic spine / sushumna nadi
+    col += sushumnaNadi(p, expand, t);
 
     // Body glow
     let bodyCenterD = sdCircle(p - vec2<f32>(0.0, 0.05), 0.15);

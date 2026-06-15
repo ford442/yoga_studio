@@ -255,6 +255,7 @@ export default function Home() {
           phaseProgress={phaseProgress}
           theme={selectedMode.theme}
           mandalaStyle={selectedMode.mandalaStyle}
+          figurePose={selectedMode.figurePose}
           mouse={mouse}
           mouseStrength={mouseStrength}
           timeScale={1.0}
@@ -336,6 +337,7 @@ export default function Home() {
                 currentPhase={currentPhase}
                 phaseProgress={phaseProgress}
                 totalBreaths={totalBreaths}
+                figurePose={selectedMode.figurePose}
               />
             </div>
             <div className="absolute -bottom-8 w-64 text-center">

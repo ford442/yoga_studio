@@ -121,7 +121,7 @@ public/
 
 ### Uniform Buffer Layout
 
-The React side writes a 64-byte uniform buffer (16 × `f32`) every frame. All three active shaders (`sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`) must declare an identical `struct Uniforms`.
+The React side writes a 72-byte uniform buffer (18 × `f32`) every frame. All three active shaders (`sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`) must declare an identical `struct Uniforms`.
 
 ```
 offset  0  time            f32
@@ -140,9 +140,11 @@ offset 48  resolution.x    f32
 offset 52  resolution.y    f32
 offset 56  geometryDensity f32   // 0.0=sparse, 1.0=default, 3.0=rich geometry detail
 offset 60  interference    f32   // 0.0=still layers, 1.0=strong moire / recursive motion
+offset  64  figurePose      f32   // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
+offset  68  padding         f32   // struct padded to 72 bytes for 8-byte alignment
 ```
 
-**Critical:** When adding or reordering uniforms, update **all three** active WGSL files + `WebGPUShader.tsx` buffer size (64) + Float32Array write order in lockstep. WebGPU will hard crash (blank canvas) on size or layout mismatch.
+**Critical:** When adding or reordering uniforms, update **all three** active WGSL files + `WebGPUShader.tsx` buffer size (72) + Float32Array write order in lockstep. WebGPU will hard crash (blank canvas) on size or layout mismatch.
 
 The shader defines its own `struct Uniforms` at the top of each active `.wgsl` file. Do **not** duplicate this struct elsewhere.
 

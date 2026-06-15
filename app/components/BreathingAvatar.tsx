@@ -6,66 +6,95 @@ interface BreathingAvatarProps {
   currentPhase: string;
   phaseProgress: number;
   totalBreaths: number;
+  figurePose?: number; // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
 }
 
 const BreathingAvatar: React.FC<BreathingAvatarProps> = ({
   currentPhase,
   phaseProgress,
   totalBreaths,
+  figurePose = 0,
 }) => {
   const isAlternatingCycle = totalBreaths % 2 !== 0;
 
-  // Resting angle = 35° (arms slightly out from sides), raised = 180° (overhead)
-  let leftArmAngle = 35;
-  let rightArmAngle = 35;
+  // Pose-specific resting/peak arm angles (degrees)
+  // left/right arms rotate from their respective shoulders; 0 = straight down,
+  // 90 = horizontal, 180 = overhead.
+  const poseRest = [
+    [35, 35],     // 0 lotus
+    [45, 45],     // 1 tadasana
+    [40, 40],     // 2 tai-chi
+    [55, 55],     // 3 heart-open
+    [30, 30],     // 4 chinmudra
+    [70, 70],     // 5 warrior
+    [55, 55],     // 6 tree
+  ];
+  const posePeak = [
+    [180, 180],   // 0 lotus
+    [185, 185],   // 1 tadasana
+    [175, 110],   // 2 tai-chi (asymmetric)
+    [95, 95],     // 3 heart-open
+    [55, 55],     // 4 chinmudra
+    [95, 95],     // 5 warrior
+    [95, 95],     // 6 tree
+  ];
+
+  const [leftRest, rightRest] = poseRest[figurePose] ?? poseRest[0];
+  const [leftPeak, rightPeak] = posePeak[figurePose] ?? posePeak[0];
+
+  let leftArmAngle = leftRest;
+  let rightArmAngle = rightRest;
+
+  const leftRange = leftPeak - leftRest;
+  const rightRange = rightPeak - rightRest;
 
   if (!isAlternatingCycle) {
     // Both arms move together
     switch (currentPhase) {
       case 'inhale':
-        leftArmAngle = 35 + phaseProgress * 145;
-        rightArmAngle = 35 + phaseProgress * 145;
+        leftArmAngle = leftRest + phaseProgress * leftRange;
+        rightArmAngle = rightRest + phaseProgress * rightRange;
         break;
       case 'hold1':
-        leftArmAngle = 180;
-        rightArmAngle = 180;
+        leftArmAngle = leftPeak;
+        rightArmAngle = rightPeak;
         break;
       case 'exhale':
-        leftArmAngle = 180 - phaseProgress * 145;
-        rightArmAngle = 180 - phaseProgress * 145;
+        leftArmAngle = leftPeak - phaseProgress * leftRange;
+        rightArmAngle = rightPeak - phaseProgress * rightRange;
         break;
       default: // hold2
-        leftArmAngle = 35;
-        rightArmAngle = 35;
+        leftArmAngle = leftRest;
+        rightArmAngle = rightRest;
     }
   } else {
     // Staggered: left sweeps up first half of inhale, right follows second half
     switch (currentPhase) {
       case 'inhale':
         if (phaseProgress < 0.5) {
-          leftArmAngle = 35 + phaseProgress * 2 * 145;
-          rightArmAngle = 35;
+          leftArmAngle = leftRest + phaseProgress * 2 * leftRange;
+          rightArmAngle = rightRest;
         } else {
-          leftArmAngle = 180;
-          rightArmAngle = 35 + (phaseProgress - 0.5) * 2 * 145;
+          leftArmAngle = leftPeak;
+          rightArmAngle = rightRest + (phaseProgress - 0.5) * 2 * rightRange;
         }
         break;
       case 'hold1':
-        leftArmAngle = 180;
-        rightArmAngle = 180;
+        leftArmAngle = leftPeak;
+        rightArmAngle = rightPeak;
         break;
       case 'exhale':
         if (phaseProgress < 0.5) {
-          leftArmAngle = 180 - phaseProgress * 2 * 145;
-          rightArmAngle = 180;
+          leftArmAngle = leftPeak - phaseProgress * 2 * leftRange;
+          rightArmAngle = rightPeak;
         } else {
-          leftArmAngle = 35;
-          rightArmAngle = 180 - (phaseProgress - 0.5) * 2 * 145;
+          leftArmAngle = leftRest;
+          rightArmAngle = rightPeak - (phaseProgress - 0.5) * 2 * rightRange;
         }
         break;
       default: // hold2
-        leftArmAngle = 35;
-        rightArmAngle = 35;
+        leftArmAngle = leftRest;
+        rightArmAngle = rightRest;
     }
   }
 

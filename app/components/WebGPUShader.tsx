@@ -9,6 +9,7 @@ interface WebGPUShaderProps {
   phaseProgress?: number;
   theme?: number;
   mandalaStyle?: number;
+  figurePose?: number; // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
   mouse?: { x: number; y: number };
   mouseStrength?: number;
   timeScale?: number;
@@ -32,6 +33,7 @@ type ShaderPropsRef = Required<Pick<
   | 'phaseProgress'
   | 'theme'
   | 'mandalaStyle'
+  | 'figurePose'
   | 'mouse'
   | 'mouseStrength'
   | 'timeScale'
@@ -64,6 +66,7 @@ uniform float uIntensity;
 uniform float uChakraPhase;
 uniform float uTheme;
 uniform float uMandalaStyle;
+uniform float uFigurePose;
 uniform float uPhaseProgress;
 uniform float uStrengthLevel;
 uniform vec2 uMouse;
@@ -147,15 +150,21 @@ float monkSilhouette(vec2 p, float breath) {
   float pulse = 1.0 + breath * 0.055;
   p /= pulse;
 
+  float shoulderY = 0.06 + breath * 0.008;
+  float ribReach = breath * 0.006;
+
   float head = smoothstep(0.035, -0.01, circle(p - vec2(0.0, 0.30), 0.085));
+  float chin = smoothstep(0.022, -0.01, circle(p - vec2(0.0, 0.245), 0.028));
   float torso = smoothstep(0.050, -0.01, lineSegment(p, vec2(0.0, 0.20), vec2(0.0, -0.13)));
-  float shoulders = smoothstep(0.055, -0.01, lineSegment(p, vec2(-0.23, 0.06), vec2(0.23, 0.06)));
-  float arms = smoothstep(0.050, -0.01, lineSegment(p, vec2(-0.23, 0.06), vec2(-0.44, -0.19)));
-  arms += smoothstep(0.050, -0.01, lineSegment(p, vec2(0.23, 0.06), vec2(0.44, -0.19)));
+  float ribL = smoothstep(0.035, -0.01, lineSegment(p, vec2(-0.055 - ribReach, 0.05), vec2(-0.10 - ribReach, -0.06)));
+  float ribR = smoothstep(0.035, -0.01, lineSegment(p, vec2( 0.055 + ribReach, 0.05), vec2( 0.10 + ribReach, -0.06)));
+  float shoulders = smoothstep(0.055, -0.01, lineSegment(p, vec2(-0.23, shoulderY), vec2(0.23, shoulderY)));
+  float arms = smoothstep(0.050, -0.01, lineSegment(p, vec2(-0.23, shoulderY), vec2(-0.44, -0.19)));
+  arms += smoothstep(0.050, -0.01, lineSegment(p, vec2(0.23, shoulderY), vec2(0.44, -0.19)));
   float legs = smoothstep(0.055, -0.01, lineSegment(p, vec2(-0.02, -0.12), vec2(-0.33, -0.36)));
   legs += smoothstep(0.055, -0.01, lineSegment(p, vec2(0.02, -0.12), vec2(0.33, -0.36)));
   float seat = smoothstep(0.035, -0.01, lineSegment(p, vec2(-0.38, -0.36), vec2(0.38, -0.36)));
-  return clamp(head + torso + shoulders + arms + legs + seat, 0.0, 1.0);
+  return clamp(head + chin + torso + ribL + ribR + shoulders + arms + legs + seat, 0.0, 1.0);
 }
 
 void main() {
@@ -246,6 +255,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   phaseProgress = 0,
   theme = 0,
   mandalaStyle = 0,
+  figurePose = 0,
   mouse = { x: -2, y: -2 },
   mouseStrength = 0,
   timeScale = 1.0,
@@ -272,6 +282,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     phaseProgress,
     theme,
     mandalaStyle,
+    figurePose,
     mouse,
     mouseStrength,
     timeScale,
@@ -289,6 +300,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       phaseProgress,
       theme,
       mandalaStyle,
+      figurePose,
       mouse,
       mouseStrength,
       timeScale,
@@ -297,7 +309,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       geometryDensity,
       interference,
     };
-  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference]);
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, figurePose, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference]);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,6 +366,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         chakraPhase: gl.getUniformLocation(glProgram, 'uChakraPhase'),
         theme: gl.getUniformLocation(glProgram, 'uTheme'),
         mandalaStyle: gl.getUniformLocation(glProgram, 'uMandalaStyle'),
+        figurePose: gl.getUniformLocation(glProgram, 'uFigurePose'),
         phaseProgress: gl.getUniformLocation(glProgram, 'uPhaseProgress'),
         strengthLevel: gl.getUniformLocation(glProgram, 'uStrengthLevel'),
         mouse: gl.getUniformLocation(glProgram, 'uMouse'),
@@ -388,6 +401,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           phaseProgress: pp,
           theme: th,
           mandalaStyle: ms,
+          figurePose: fp,
           mouse: m,
           mouseStrength: msr,
           timeScale: ts,
@@ -407,6 +421,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         gl.uniform1f(uniforms.chakraPhase, cp);
         gl.uniform1f(uniforms.theme, th);
         gl.uniform1f(uniforms.mandalaStyle, ms);
+        gl.uniform1f(uniforms.figurePose, fp);
         gl.uniform1f(uniforms.phaseProgress, pp);
         gl.uniform1f(uniforms.strengthLevel, sl);
         gl.uniform2f(uniforms.mouse, m.x, m.y);
@@ -528,9 +543,11 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         //   [13] resolution.y   @byte 52
         //   [14] geometryDensity @byte 56  // 0.0=sparse, 1.0=default, 3.0=rich
         //   [15] interference    @byte 60  // 0.0=still, 1.0=strong moire/interference
-        //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
+        //   [16] figurePose      @byte 64  // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
+        //   [17] padding         @byte 68  (struct padded to 72 bytes for 8-byte alignment)
+        //   Total struct size: 72 bytes (WebGPU uniform buffer alignment)
         uniformBuffer = device.createBuffer({
-          size: 64,
+          size: 72,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         bindGroup = device.createBindGroup({
@@ -563,6 +580,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           phaseProgress: pp,
           theme: th,
           mandalaStyle: ms,
+          figurePose: fp,
           mouse: m,
           mouseStrength: msr,
           timeScale: ts,
@@ -594,6 +612,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           h,             // [13] resolution.y
           gd,            // [14] geometryDensity
           ir,            // [15] interference
+          fp,            // [16] figurePose
+          0.0,           // [17] padding
         ]);
 
         try {
