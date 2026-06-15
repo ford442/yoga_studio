@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="dawnGlow" cx="50%" cy="18%" r="65%">
+      <stop offset="0%" stop-color="#ffd89b"/>
+      <stop offset="35%" stop-color="#c97b3a"/>
+      <stop offset="70%" stop-color="#4a2818"/>
+      <stop offset="100%" stop-color="#120810"/>
+    </radialGradient>
+    <linearGradient id="pillar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1a0e08"/>
+      <stop offset="30%" stop-color="#6b4423"/>
+      <stop offset="50%" stop-color="#c49a6c"/>
+      <stop offset="70%" stop-color="#5c3820"/>
+      <stop offset="100%" stop-color="#150a06"/>
+    </linearGradient>
+    <filter id="softBlur" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#dawnGlow)"/>
+  <rect x="180" y="0" width="120" height="1080" fill="url(#pillar)" opacity="0.85"/>
+  <rect x="1620" y="0" width="120" height="1080" fill="url(#pillar)" opacity="0.85"/>
+  <rect x="860" y="0" width="200" height="1080" fill="url(#pillar)" opacity="0.7"/>
+  <ellipse cx="960" cy="920" rx="700" ry="120" fill="#0a0508" opacity="0.6"/>
+  <ellipse cx="960" cy="200" rx="500" ry="280" fill="#ffe4b5" opacity="0.25" filter="url(#softBlur)"/>
+  <path d="M0 700 Q480 620 960 680 T1920 650 L1920 1080 L0 1080 Z" fill="#1a0c08" opacity="0.5"/>
+</svg>

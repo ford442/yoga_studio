@@ -1,3 +1,5 @@
+import type { EnvironmentId } from './environment';
+
 export interface BreathTiming {
   inhale: number;
   hold1: number;
@@ -13,6 +15,8 @@ export interface SessionMode {
   chakraFocus: string;
   chakraFocusIndex: number; // -1=none, 0..6=root..crown
   accentColor?: string; // Optional UI accent for mode card glow/border
+  /** Default photographic environment when override is "auto" */
+  backgroundId?: EnvironmentId;
   shaderPath: string;
   vertexEntry: string;
   fragmentEntry: string;

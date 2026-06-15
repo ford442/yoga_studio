@@ -15,6 +15,11 @@ import { useRippleAudio } from './hooks/useRippleAudio';
 import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
 import type { SessionMode } from './types/sessionMode';
 import BreathingAvatar from './components/BreathingAvatar';
+import EnvironmentBackground from './components/EnvironmentBackground';
+import InstructorVideoGuide from './components/InstructorVideoGuide';
+import { useEnvironment } from './hooks/useEnvironment';
+import { useInstructorVideo } from './hooks/useInstructorVideo';
+import { ENVIRONMENTS } from './data/environments';
 
 const chakraLabels = ['inhale', 'hold1', 'exhale', 'hold2'];
 type QuickStartDuration = 'free' | 5 | 10 | 15;
@@ -49,6 +54,15 @@ export default function Home() {
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
+  const { override: environmentOverride, activeId: activeEnvironmentId, setOverride: setEnvironmentOverride } =
+    useEnvironment(selectedMode.backgroundId);
+  const {
+    settings: instructorSettings,
+    canUseInstructor,
+    updateSettings: updateInstructorSettings,
+    toggleEnabled: toggleInstructorEnabled,
+  } = useInstructorVideo();
+  const hasEnvironment = activeEnvironmentId !== 'none';
   const lastRippleRef = useRef(0);
   const prevSessionDurationRef = useRef<SessionDuration>(null);
 
@@ -219,8 +233,29 @@ export default function Home() {
 
   return (
     <main className="min-h-dvh bg-[#05010a] text-white relative overflow-hidden">
+      <EnvironmentBackground
+        environmentId={activeEnvironmentId}
+        theme={selectedMode.theme}
+        chakraPhase={chakraPhase}
+      />
+
+      {canUseInstructor && (
+        <InstructorVideoGuide
+          enabled={instructorSettings.enabled}
+          layout={instructorSettings.layout}
+          pipSize={instructorSettings.pipSize}
+          pipCorner={instructorSettings.pipCorner}
+          pipDragOffset={instructorSettings.pipDragOffset}
+          audioEnabled={instructorSettings.audioEnabled}
+          voiceGuidanceEnabled={voiceSettings.enabled}
+          figurePose={selectedMode.figurePose}
+          isRunning={isRunning}
+          onDragOffset={(pipDragOffset) => updateInstructorSettings({ pipDragOffset })}
+        />
+      )}
+
       <div
-        className="absolute inset-0 z-0"
+        className={`absolute inset-0 z-[2] ${hasEnvironment ? 'mix-blend-screen' : ''}`}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const dpr = window.devicePixelRatio || 1;
@@ -412,6 +447,19 @@ export default function Home() {
             >
               {voiceSettings.useSanskrit ? 'सं' : 'EN'}
             </button>
+            {canUseInstructor && (
+              <button
+                onClick={toggleInstructorEnabled}
+                className={`px-4 py-4 text-xl border rounded-3xl transition-all backdrop-blur-md [text-shadow:0_1px_6px_rgba(0,0,0,0.8)] ${
+                  instructorSettings.enabled
+                    ? 'bg-cyan-500/25 border-cyan-300/60 text-cyan-100'
+                    : 'bg-black/20 border-white/30 hover:bg-black/30 text-white/95 opacity-60'
+                }`}
+                title={instructorSettings.enabled ? 'Hide instructor guide' : 'Show instructor guide'}
+              >
+                🧘
+              </button>
+            )}
             <button onClick={() => setShowDrawer(true)} className="px-4 py-4 text-xl border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
               ⚙️
             </button>
@@ -433,6 +481,114 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
           <div className="bg-[#0f081f] w-full max-w-md mx-auto rounded-t-3xl p-6 text-white">
             <h2 className="text-2xl font-light mb-6">Customize Breath</h2>
+
+            <div className="mb-8">
+              <p className="text-sm text-white/60 mb-3 tracking-wider">ENVIRONMENT</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <button
+                  onClick={() => setEnvironmentOverride('auto')}
+                  className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                    environmentOverride === 'auto'
+                      ? 'bg-purple-500/30 border-purple-300 text-purple-100'
+                      : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                  }`}
+                >
+                  AUTO (MODE)
+                </button>
+                {ENVIRONMENTS.map((env) => (
+                  <button
+                    key={env.id}
+                    onClick={() => setEnvironmentOverride(env.id)}
+                    className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                      environmentOverride === env.id
+                        ? 'bg-purple-500/30 border-purple-300 text-purple-100'
+                        : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    {env.emoji} {env.label.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-white/45 leading-relaxed">
+                {environmentOverride === 'auto'
+                  ? `Following ${selectedMode.label} — ${ENVIRONMENTS.find((e) => e.id === (selectedMode.backgroundId ?? 'none'))?.label ?? 'Cosmic Void'}`
+                  : 'Manual environment — persists across sessions'}
+              </p>
+            </div>
+
+            {canUseInstructor && (
+              <div className="mb-8">
+                <p className="text-sm text-white/60 mb-3 tracking-wider">INSTRUCTOR GUIDE</p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    onClick={() => updateInstructorSettings({ enabled: !instructorSettings.enabled })}
+                    className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                      instructorSettings.enabled
+                        ? 'bg-cyan-500/30 border-cyan-300 text-cyan-100'
+                        : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    {instructorSettings.enabled ? 'ON' : 'OFF'}
+                  </button>
+                  {(['pip', 'underlay'] as const).map((layout) => (
+                    <button
+                      key={layout}
+                      onClick={() => updateInstructorSettings({ layout })}
+                      className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                        instructorSettings.layout === layout
+                          ? 'bg-purple-500/30 border-purple-300 text-purple-100'
+                          : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                      }`}
+                    >
+                      {layout === 'pip' ? 'PICTURE IN PICTURE' : 'SOFT UNDERLAY'}
+                    </button>
+                  ))}
+                </div>
+                {instructorSettings.layout === 'pip' && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {(['sm', 'md', 'lg'] as const).map((pipSize) => (
+                      <button
+                        key={pipSize}
+                        onClick={() => updateInstructorSettings({ pipSize })}
+                        className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                          instructorSettings.pipSize === pipSize
+                            ? 'bg-purple-500/30 border-purple-300 text-purple-100'
+                            : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        {pipSize.toUpperCase()}
+                      </button>
+                    ))}
+                    {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((pipCorner) => (
+                      <button
+                        key={pipCorner}
+                        onClick={() => updateInstructorSettings({ pipCorner, pipDragOffset: { x: 0, y: 0 } })}
+                        className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                          instructorSettings.pipCorner === pipCorner
+                            ? 'bg-purple-500/30 border-purple-300 text-purple-100'
+                            : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        {pipCorner.replace('-', ' ').toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <label className="flex items-center gap-3 text-sm text-white/70 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={instructorSettings.audioEnabled}
+                    onChange={(e) => updateInstructorSettings({ audioEnabled: e.target.checked })}
+                    className="accent-cyan-400"
+                  />
+                  Instructor audio (muted when voice guidance is on)
+                </label>
+                <p className="text-[11px] text-white/45 leading-relaxed">
+                  Drag the PiP window to reposition. Video pauses when practice is paused.
+                </p>
+              </div>
+            )}
+
             {(['inhale', 'hold1', 'exhale', 'hold2'] as const).map((key) => (
               <div key={key} className="flex items-center gap-4 mb-6">
                 <span className="w-20 capitalize text-white/70">{key}</span>

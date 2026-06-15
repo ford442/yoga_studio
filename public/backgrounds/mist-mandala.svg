@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="mistBg" cx="50%" cy="45%" r="75%">
+      <stop offset="0%" stop-color="#c8d4e8"/>
+      <stop offset="40%" stop-color="#8899b0"/>
+      <stop offset="75%" stop-color="#3a4558"/>
+      <stop offset="100%" stop-color="#121820"/>
+    </radialGradient>
+    <radialGradient id="bokeh" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fog" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#mistBg)"/>
+  <g filter="url(#fog)" opacity="0.6">
+    <circle cx="960" cy="540" r="280" fill="none" stroke="#e8eef5" stroke-width="1.5" opacity="0.4"/>
+    <circle cx="960" cy="540" r="200" fill="none" stroke="#d0dae8" stroke-width="1" opacity="0.35"/>
+    <circle cx="960" cy="540" r="120" fill="none" stroke="#b8c8dc" stroke-width="0.8" opacity="0.3"/>
+    <circle cx="960" cy="540" r="60" fill="none" stroke="#a0b8d0" stroke-width="0.6" opacity="0.25"/>
+  </g>
+  <circle cx="300" cy="200" r="80" fill="url(#bokeh)" opacity="0.35"/>
+  <circle cx="1600" cy="300" r="100" fill="url(#bokeh)" opacity="0.3"/>
+  <circle cx="500" cy="800" r="60" fill="url(#bokeh)" opacity="0.25"/>
+  <circle cx="1400" cy="750" r="90" fill="url(#bokeh)" opacity="0.28"/>
+  <ellipse cx="960" cy="540" rx="400" ry="400" fill="#e0e8f0" opacity="0.06" filter="url(#fog)"/>
+</svg>

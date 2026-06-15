@@ -103,3 +103,27 @@ body {
   box-shadow: 0 0 12px 2px currentColor;
   animation: phase-burst-settle 1200ms ease-in forwards;
 }
+
+@keyframes env-ken-burns {
+  0% {
+    transform: scale(1.06) translate(0%, 0%);
+  }
+  50% {
+    transform: scale(1.12) translate(-1.2%, -0.8%);
+  }
+  100% {
+    transform: scale(1.08) translate(0.6%, 0.4%);
+  }
+}
+
+.env-ken-burns {
+  animation: env-ken-burns 90s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .env-ken-burns {
+    animation: none;
+    transform: scale(1.08);
+  }
+}

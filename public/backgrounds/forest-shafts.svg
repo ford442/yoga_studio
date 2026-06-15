@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="forestSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a3d2e"/>
+      <stop offset="40%" stop-color="#0d2818"/>
+      <stop offset="100%" stop-color="#050f08"/>
+    </linearGradient>
+    <linearGradient id="shaft" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#e8f5c8" stop-opacity="0.7"/>
+      <stop offset="60%" stop-color="#a8d86a" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#1a4020" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="mist" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#forestSky)"/>
+  <ellipse cx="400" cy="0" rx="180" ry="900" fill="url(#shaft)" transform="rotate(-8 400 0)" opacity="0.55"/>
+  <ellipse cx="960" cy="0" rx="220" ry="1000" fill="url(#shaft)" opacity="0.65"/>
+  <ellipse cx="1480" cy="0" rx="160" ry="850" fill="url(#shaft)" transform="rotate(6 1480 0)" opacity="0.45"/>
+  <rect x="0" y="0" width="280" height="1080" fill="#061408" opacity="0.7"/>
+  <rect x="1640" y="0" width="280" height="1080" fill="#061408" opacity="0.7"/>
+  <ellipse cx="200" cy="900" rx="350" ry="200" fill="#0a1a0c" opacity="0.8"/>
+  <ellipse cx="1720" cy="880" rx="400" ry="220" fill="#0a1a0c" opacity="0.8"/>
+  <ellipse cx="960" cy="500" rx="600" ry="300" fill="#2d5a30" opacity="0.12" filter="url(#mist)"/>
+</svg>

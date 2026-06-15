@@ -19,6 +19,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.2,
     interference: 0.45,
+    backgroundId: 'cosmic-bokeh',
   },
   {
     id: 'lotus-heart',
@@ -38,6 +39,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.0,
     interference: 0.6,
+    backgroundId: 'mist-mandala',
   },
   {
     id: 'prana-flow',
@@ -57,6 +59,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.6,
     interference: 0.7,
+    backgroundId: 'forest-shafts',
   },
   {
     id: 'classic-mandala',
@@ -76,6 +79,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.4,
     interference: 0.5,
+    backgroundId: 'temple-dawn',
   },
   {
     id: 'deep-release',
@@ -95,6 +99,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.1,
     interference: 0.35,
+    backgroundId: 'cosmic-bokeh',
   },
   {
     id: 'grounding',
@@ -114,6 +119,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.1,
     interference: 0.35,
+    backgroundId: 'forest-shafts',
   },
   {
     id: 'nervous-system-reg',
@@ -133,6 +139,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.3,
     interference: 0.55,
+    backgroundId: 'candle-altar',
   },
 ];
 
