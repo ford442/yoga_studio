@@ -14,6 +14,8 @@ interface WebGPUShaderProps {
   timeScale?: number;
   strengthLevel?: number; // 0.0=light, 1.0=regular, 2.0=strong
   chakraFocus?: number; // -1=none, 0..6=root..crown
+  geometryDensity?: number; // 0.0=sparse, 1.0=default, 3.0=rich
+  interference?: number;    // 0.0=still, 1.0=strong moire/interference
   className?: string;
   shaderPath?: string;
   vertexEntry?: string;
@@ -35,6 +37,8 @@ type ShaderPropsRef = Required<Pick<
   | 'timeScale'
   | 'strengthLevel'
   | 'chakraFocus'
+  | 'geometryDensity'
+  | 'interference'
 >>;
 
 const WEBGL_VERTEX_SHADER = `#version 300 es
@@ -65,6 +69,8 @@ uniform float uStrengthLevel;
 uniform vec2 uMouse;
 uniform float uMouseStrength;
 uniform float uChakraFocus;
+uniform float uGeometryDensity;
+uniform float uInterference;
 uniform vec2 uResolution;
 
 out vec4 outColor;
@@ -119,11 +125,13 @@ float mandala(vec2 p, float style, float breath, float time) {
   float a = atan(p.y, p.x);
   float petals = mix(8.0, 12.0, step(0.5, style));
   petals = mix(petals, 16.0, step(1.5, style));
+  petals *= 0.7 + uGeometryDensity * 0.55;
 
-  float angular = 0.5 + 0.5 * cos(a * petals + time * 0.35);
+  float angular = 0.5 + 0.5 * cos(a * petals + time * 0.35 + uInterference * a * 2.0);
   float ring1 = smoothstep(0.018, 0.0, abs(r - (0.42 + breath * 0.05)));
   float ring2 = smoothstep(0.014, 0.0, abs(r - 0.68));
   float ring3 = smoothstep(0.010, 0.0, abs(r - 0.92));
+  float ring4 = smoothstep(0.008, 0.0, abs(r - (0.28 + breath * 0.04))) * step(0.6, uGeometryDensity);
   float lotus = smoothstep(0.35, 0.95, angular) * smoothstep(0.74, 0.20, abs(r - 0.58));
   float yantra = smoothstep(0.025, 0.0, abs(fract((a / TAU + 0.5) * 6.0 + r * 1.6) - 0.5));
   float flower = smoothstep(0.52, 1.0, angular) * smoothstep(0.34, 0.0, abs(r - (0.30 + 0.24 * angular)));
@@ -131,7 +139,7 @@ float mandala(vec2 p, float style, float breath, float time) {
   float body = lotus;
   body = mix(body, yantra, step(0.5, style) * (1.0 - step(1.5, style)));
   body = mix(body, flower, step(1.5, style));
-  return (ring1 + ring2 * 0.75 + ring3 * 0.55 + body * 0.45) * smoothstep(1.28, 0.14, r);
+  return (ring1 + ring2 * 0.75 + ring3 * 0.55 + ring4 * 0.45 + body * 0.45) * smoothstep(1.28, 0.14, r);
 }
 
 float monkSilhouette(vec2 p, float breath) {
@@ -243,6 +251,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   timeScale = 1.0,
   strengthLevel = 1.0,
   chakraFocus = -1,
+  geometryDensity = 1.0,
+  interference = 0.5,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
@@ -267,6 +277,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     timeScale,
     strengthLevel,
     chakraFocus,
+    geometryDensity,
+    interference,
   });
 
   useEffect(() => {
@@ -282,8 +294,10 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       timeScale,
       strengthLevel,
       chakraFocus,
+      geometryDensity,
+      interference,
     };
-  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus]);
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference]);
 
   useEffect(() => {
     let cancelled = false;
@@ -345,6 +359,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         mouse: gl.getUniformLocation(glProgram, 'uMouse'),
         mouseStrength: gl.getUniformLocation(glProgram, 'uMouseStrength'),
         chakraFocus: gl.getUniformLocation(glProgram, 'uChakraFocus'),
+        geometryDensity: gl.getUniformLocation(glProgram, 'uGeometryDensity'),
+        interference: gl.getUniformLocation(glProgram, 'uInterference'),
         resolution: gl.getUniformLocation(glProgram, 'uResolution'),
       };
 
@@ -377,6 +393,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           timeScale: ts,
           strengthLevel: sl,
           chakraFocus: cf,
+          geometryDensity: gd,
+          interference: ir,
         } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
         const currentTime = ((Date.now() - start) / 1000) * ts;
@@ -394,6 +412,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         gl.uniform2f(uniforms.mouse, m.x, m.y);
         gl.uniform1f(uniforms.mouseStrength, msr);
         gl.uniform1f(uniforms.chakraFocus, cf);
+        gl.uniform1f(uniforms.geometryDensity, gd);
+        gl.uniform1f(uniforms.interference, ir);
         gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
 
         gl.clearColor(0, 0, 0, 1);
@@ -506,8 +526,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         //   [11] chakraFocus    @byte 44   // -1=none, 0..6=root..crown
         //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
         //   [13] resolution.y   @byte 52
-        //   [14] padding        @byte 56
-        //   [15] padding        @byte 60
+        //   [14] geometryDensity @byte 56  // 0.0=sparse, 1.0=default, 3.0=rich
+        //   [15] interference    @byte 60  // 0.0=still, 1.0=strong moire/interference
         //   Total struct size: 64 bytes (WebGPU uniform buffer alignment)
         uniformBuffer = device.createBuffer({
           size: 64,
@@ -548,12 +568,12 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           timeScale: ts,
           strengthLevel: sl,
           chakraFocus: cf,
+          geometryDensity: gd,
+          interference: ir,
         } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
         const now = (Date.now() - start) / 1000;
         const currentTime = now * ts;
-        // Slower, un-synchronized secondary clock for background/aura layers.
-        const fieldTime = currentTime * 0.37;
         const w = canvas.width;
         const h = canvas.height;
 
@@ -572,8 +592,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           cf,            // [11] chakraFocus
           w,             // [12] resolution.x
           h,             // [13] resolution.y
-          fieldTime,     // [14] fieldTime (slow secondary clock for background)
-          0,             // [15] padding
+          gd,            // [14] geometryDensity
+          ir,            // [15] interference
         ]);
 
         try {

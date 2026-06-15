@@ -1,0 +1,75 @@
+[    5783ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_06e2d03d._.js:2297
+[    6246ms] [ERROR] In HTML, %s cannot be a descendant of <%s>.
+This will cause a hydration error.%s <button> button 
+
+  ...
+    <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<SegmentViewNode>} forbidden={undefined} ...>
+      <RedirectBoundary>
+        <RedirectErrorBoundary router={{...}}>
+          <InnerLayoutRouter url="/" tree={[...]} params={{}} cacheNode={{rsc:<Fragment>, ...}} segmentPath={[...]} ...>
+            <SegmentViewNode type="page" pagePath="/yoga_stud...">
+              <SegmentTrieNode>
+              <ClientPageRoot Component={function Home} serverProvidedParams={{...}}>
+                <Home params={Promise} searchParams={Promise}>
+                  <main className="min-h-dvh ...">
+                    <div>
+                    <div>
+                    <ParticleBurst>
+                    <div>
+                    <div>
+                    <div className="fixed bott...">
+                      <div className="max-w-md m...">
+                        <SessionModeSwitcher modes={[...]} selectedModeId="sacred-ultra" isRunning={false} ...>
+                          <div className="w-full rou...">
+                            <p>
+                            <div className="flex gap-2...">
+>                             <button
+>                               onClick={function onClick}
+>                               style={{--mode-accent:"#9b8cff",boxShadow:"0 0 12px 2..."}}
+>                               className="relative overflow-hidden flex-shrink-0 snap-start flex flex-col items-cente..."
+>                             >
+                                <span>
+                                <span>
+                                <span>
+                                <div className="w-full mt-...">
+                                  <div>
+                                  <div className="flex gap-1.5">
+>                                   <button
+>                                     onClick={function onClick}
+>                                     className="flex-1 py-1.5 rounded-lg bg-white/12 border border-white/15 text-[9px..."
+>                                   >
+                                    ...
+                                  ...
+                              ...
+                        ...
+                    ...
+            ...
+          ...
+ @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_06e2d03d._.js:3127
+[    6247ms] [ERROR] <%s> cannot contain a nested %s.
+See this log for the ancestor stack trace. button <button> @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_06e2d03d._.js:3127
+[    6658ms] Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+    at throwOnHydrationMismatch (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:3348:56)
+    at beginWork (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:6775:918)
+    at runWithFiberInDEV (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:965:74)
+    at performUnitOfWork (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:9562:97)
+    at workLoopConcurrentByScheduler (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:9558:58)
+    at renderRootConcurrent (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:9541:71)
+    at performWorkOnRoot (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:9068:150)
+    at performWorkOnRootViaSchedulerTask (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_react-dom_3f7ea9f8._.js:10230:9)
+    at MessagePort.performWorkUntilDeadline (http://localhost:3001/_next/static/chunks/c24f8_next_dist_compiled_4b3a8179._.js:2647:64)
+[    6701ms] [WARNING] No available adapters. @ http://localhost:3001/:0
+[    6701ms] [WARNING] [WebGPUShader] WebGPU is unavailable. Falling back to WebGL2. undefined @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_06e2d03d._.js:2297
+[    6701ms] [WARNING] No available adapters. @ http://localhost:3001/:0
+[    6701ms] [WARNING] [WebGPUShader] WebGPU is unavailable. Falling back to WebGL2. undefined @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_06e2d03d._.js:2297
+[  246065ms] [ERROR] WebSocket connection to 'ws://localhost:3001/_next/webpack-hmr?id=ARDHCbv2Y8NOXgy6fhIEV' failed: WebSocket opening handshake timed out @ http://localhost:3001/_next/static/chunks/c24f8_next_dist_client_79c07944._.js:10886

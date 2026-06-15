@@ -1,0 +1,76 @@
+- main [ref=e2]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - heading "SACRED BREATH" [level=1] [ref=e8]
+      - paragraph [ref=e9]: meditate • align • flow
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]: "0"
+        - generic [ref=e13]: MIN TODAY
+      - generic [ref=e14]:
+        - generic [ref=e15]: "0"
+        - generic [ref=e16]: BREATHS
+      - generic [ref=e17]:
+        - generic [ref=e18]: 0🔥
+        - generic [ref=e19]: STREAK
+      - button "📤 SHARE PRACTICE" [ref=e20]
+  - generic:
+    - generic: inhale
+    - generic: "04"
+    - generic:
+      - img
+      - generic:
+        - generic:
+          - img
+        - generic:
+          - paragraph: Tighten muscles · Raise arms slowly
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - paragraph [ref=e24]: SESSION MODE
+      - generic [ref=e25]:
+        - button "✨ SACRED ULTRA All 4-4-6-2" [ref=e26]:
+          - generic [ref=e27]: ✨
+          - generic [ref=e28]: SACRED ULTRA
+          - generic [ref=e29]: All
+          - generic [ref=e37]: 4-4-6-2
+        - button "FREE" [ref=e38]
+        - button "5 MIN" [ref=e39]
+        - button "10 MIN" [ref=e40]
+        - button "15 MIN" [ref=e41]
+      - generic [ref=e42]:
+        - button "Decrease inhale" [ref=e43]: I−
+        - generic [ref=e44]: I 4
+        - button "Increase inhale" [ref=e45]: I+
+        - button "Decrease exhale" [ref=e46]: E−
+        - generic [ref=e47]: E 6
+        - button "Increase exhale" [ref=e48]: E+
+        - button "Favorite mode" [ref=e49]: ☆
+      - paragraph [ref=e50]: "The master composition: lotus, figure, chakras, ribbons, geometry, and cinematic post-processing."
+    - button "🪷 LOTUS HEART" [ref=e51]:
+      - generic [ref=e52]: 🪷
+      - generic [ref=e53]: LOTUS HEART
+    - button "🌊 PRANA FLOW" [ref=e54]:
+      - generic [ref=e55]: 🌊
+      - generic [ref=e56]: PRANA FLOW
+    - button "🔯 SACRED GEOMETRY" [ref=e57]:
+      - generic [ref=e58]: 🔯
+      - generic [ref=e59]: SACRED GEOMETRY
+    - button "🌌 DEEP RELEASE" [ref=e60]:
+      - generic [ref=e61]: 🌌
+      - generic [ref=e62]: DEEP RELEASE
+    - button "🌿 GROUNDING" [ref=e63]:
+      - generic [ref=e64]: 🌿
+      - generic [ref=e65]: GROUNDING
+    - button "🫁 NERVOUS SYSTEM REGULATION" [ref=e66]:
+      - generic [ref=e67]: 🫁
+      - generic [ref=e68]: NERVOUS SYSTEM REGULATION
+  - generic [ref=e69]:
+    - button "5 MIN" [ref=e70]
+    - button "10 MIN" [ref=e71]
+    - button "15 MIN" [ref=e72]
+  - generic [ref=e73]:
+    - button "BEGIN" [ref=e74]
+    - button "↺" [ref=e75]
+    - button "🗣️" [ref=e76]
+    - button "EN" [ref=e77]
+    - button "⚙️" [ref=e78]

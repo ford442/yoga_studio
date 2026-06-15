@@ -65,10 +65,10 @@ struct Uniforms {
     strengthLevel: f32,      // 0.0=light, 1.0=regular, 2.0=strong
     mouse: vec2<f32>,        // -1..1 or (-2,-2) = inactive
     mouseStrength: f32,      // 0..1 touch strength
-    padding0: f32,           // 16-byte alignment padding (repurposed: chakraFocus)
+    chakraFocus: f32,        // -1=none, 0..6=root..crown (repurposed padding0)
     resolution: vec2<f32>,
-    fieldTime: f32,          // slow, un-synchronized secondary clock for background/aura layers
-    padding2: f32,
+    geometryDensity: f32,    // detail multiplier for geometry/petals/ring counts
+    interference: f32,       // moire / recursive layer motion strength
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -116,11 +116,17 @@ fn hash22(p: vec2<f32>) -> vec2<f32> {
 }
 
 fn chakraFocusTint() -> vec3<f32> {
-    if (u.padding0 < 0.0) {
+    if (u.chakraFocus < 0.0) {
         return vec3<f32>(0.58, 0.48, 0.88);
     }
-    let idx = u32(clamp(u.padding0, 0.0, 6.0));
+    let idx = u32(clamp(u.chakraFocus, 0.0, 6.0));
     return CHAKRA[idx];
+}
+
+// Slow background clock — previously a uniform, now derived so the slot can
+// be used for geometryDensity/interference.
+fn fieldTime() -> f32 {
+    return u.time * 0.37;
 }
 
 // =================================================================
@@ -149,6 +155,67 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
         freq *= 2.3;
     }
     return sum;
+}
+
+const GOLDEN_ANGLE: f32 = 2.39996323;
+
+// -----------------------------------------------------------------
+// Micro-geometry helpers: fine dot lattices, vesica chains, seeds
+// -----------------------------------------------------------------
+fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
+    let r = length(uv);
+    var col = vec3<f32>(0.0);
+    let ringCount = i32(clamp(3.0 + density * 4.0, 3.0, 9.0));
+    let dotCountBase = 8.0 + density * 12.0;
+    for (var i = 0; i < ringCount; i++) {
+        let fi = f32(i);
+        let rr = 0.05 + fi * 0.045 * (1.0 + density * 0.15);
+        let band = exp(-abs(r - rr) * 40.0);
+        let dots = i32(clamp(dotCountBase + fi * 4.0, 4.0, 36.0));
+        for (var d = 0; d < dots; d++) {
+            let fd = f32(d);
+            let ang = fd * TAU / f32(dots) + t * 0.15 * (1.0 + fi * 0.25);
+            let p = vec2<f32>(cos(ang), sin(ang)) * rr;
+            let dd = length(uv - p) - 0.0045 * (1.0 + density * 0.25);
+            let glow = exp(-abs(dd) * 150.0);
+            let c = 0.6 + 0.4 * cos(vec3<f32>(0.0, 2.0, 4.0) + fd * 0.35 + fi * 0.5);
+            col += glow * c * 0.10 * band;
+        }
+    }
+    return col;
+}
+
+fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f32, density: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let count = i32(clamp(n * density, 3.0, 20.0));
+    for (var i = 0; i < count; i++) {
+        let fi = f32(i);
+        let a = fi * TAU / f32(count) + t * 0.25;
+        let r = radius * (0.85 + 0.15 * sin(t + fi));
+        let c1 = center + vec2<f32>(cos(a), sin(a)) * r;
+        let c2 = center + vec2<f32>(cos(a + TAU / f32(count) * 0.5), sin(a + TAU / f32(count) * 0.5)) * r * 0.7;
+        let d1 = length(uv - c1) - 0.014 * density;
+        let d2 = length(uv - c2) - 0.014 * density;
+        let vesica = abs(max(d1, d2));
+        col += exp(-vesica * 80.0) * vec3<f32>(1.0, 0.92, 0.72) * 0.11;
+    }
+    return col;
+}
+
+fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let n = clamp(count + i32(density * 18.0), 6, 48);
+    for (var i = 0; i < n; i++) {
+        let fi = f32(i);
+        let r = 0.015 + sqrt(fi) * 0.014 * density;
+        let a = fi * GOLDEN_ANGLE + t * 0.25;
+        let p = center + vec2<f32>(cos(a), sin(a)) * r;
+        let d = length(uv - p) - 0.003 * (1.0 + density * 0.3);
+        let glow = exp(-abs(d) * 180.0);
+        let c = 0.6 + 0.4 * cos(vec3<f32>(0.0, 2.0, 4.0) + fi * 0.25);
+        col += glow * c * 0.14;
+    }
+    return col;
 }
 
 // =================================================================
@@ -384,14 +451,15 @@ fn lotusLayer(
     let baseR = base * (1.0 - expand * 0.08);
 
     // --- gentle outward droop/curl ---------------------------------
-    let droop = max(0.0, r - baseR) * 0.12 * (n / 12.0) * (1.0 - expand * 0.35);
+    let droop = max(0.0, r - baseR) * 0.12 * (min(n, 24.0) / 12.0) * (1.0 - expand * 0.35);
     let aD = a + droop;
 
     // --- leaf profile: half-width as a function of length ----------
     // tNorm 0 at base, 1 at tip. sin(PI*t) -> 0 at both ends, fat mid.
     let tNorm = clamp((r - baseR) / max(tip - baseR, 1e-3), 0.0, 1.0);
     let profile = pow(sin(tNorm * PI), 0.65);
-    let w = widVar * (0.10 + 0.90 * profile) * (1.0 + expand * 0.18);
+    let w = widVar * (0.10 + 0.90 * profile) * (1.0 + expand * 0.18)
+            * (1.0 + u.interference * 0.04 * sin(petalId));
 
     // --- masks -----------------------------------------------------
     let radial = smoother(baseR - 0.015, baseR + 0.03, r) *
@@ -504,7 +572,7 @@ fn sacredSymbol(
     // orbiting the centre, gently scaling with the breath.
     let seedR = 0.045 * (1.0 + expand * 0.35);
     for (var i = 0; i < 3; i++) {
-        let ang = -t * 0.35 + f32(i) * (TAU / 3.0);
+        let ang = -t * 0.35 * (1.0 + u.interference) + f32(i) * (TAU / 3.0);
         let p = uv - vec2<f32>(cos(ang), sin(ang)) * seedR;
         let dd = length(p);
         col += (0.0016 / (dd + 0.004)) * c * bright * 0.7;
@@ -530,28 +598,47 @@ fn lotusAndSymbol(
     let shimmer = 0.03 * sin(t * 1.6 + breath * 12.566) * intensity;
     let effExpand = expand + shimmer;
     let glowMult = 0.78 + effExpand * 0.62 + intensity * 0.25;
+    let density = clamp(u.geometryDensity + u.intensity * 0.2, 0.2, 3.0);
+    let timeM = 1.0 + u.interference * 0.35;
 
-    // Layer colors radiate from warm rose-violet (inner) through rich violet
-    // to amber/coral and golden-rose (outer) — warmth radiating outward into
-    // a cooler aura, like a body's heat dissipating into the space around it.
-    col += lotusLayer(uv, t, 8.0, 0.42, 0.16, 0.06,
-                      0.000 + t * 0.020, effExpand,
+    // Petal counts grow with density; outer layers emerge only at higher density.
+    let n1 = 8.0 + floor(density * 4.0);
+    let n2 = 12.0 + floor(density * 5.0);
+    let n3 = 16.0 + floor(density * 6.0);
+    let n4 = mix(0.0, 20.0 + floor(density * 7.0), smoothstep(0.6, 1.4, density));
+    let n5 = mix(0.0, 26.0 + floor(density * 9.0), smoothstep(1.0, 2.0, density));
+
+    col += lotusLayer(uv, t, n1, 0.42, 0.16, 0.06,
+                      (0.000 + t * 0.020) * timeM, effExpand,
                       vec3<f32>(0.95, 0.62, 0.75)) * glowMult;
 
-    col += lotusLayer(uv, t, 12.0, 0.60, 0.20, 0.10,
-                      0.262 + t * 0.014, effExpand,
+    col += lotusLayer(uv, t, n2, 0.60, 0.20, 0.10,
+                      (0.262 + t * 0.014) * timeM, effExpand,
                       vec3<f32>(0.82, 0.52, 0.92)) * glowMult;
 
-    col += lotusLayer(uv, t, 16.0, 0.76, 0.24, 0.14,
-                      0.131 + t * 0.008, effExpand,
+    col += lotusLayer(uv, t, n3, 0.76, 0.24, 0.14,
+                      (0.131 + t * 0.008) * timeM, effExpand,
                       vec3<f32>(0.97, 0.55, 0.42)) * glowMult;
 
-    col += lotusLayer(uv, t, 20.0, 0.92, 0.28, 0.18,
-                      0.000 - t * 0.005, effExpand * 0.7,
-                      vec3<f32>(0.95, 0.70, 0.45)) * glowMult * 0.55;
+    if (n4 > 0.0) {
+        col += lotusLayer(uv, t, n4, 0.92, 0.28, 0.18,
+                          (0.000 - t * 0.005) * timeM, effExpand * 0.7,
+                          vec3<f32>(0.95, 0.70, 0.45)) * glowMult * 0.55;
+    }
+
+    if (n5 > 0.0) {
+        col += lotusLayer(uv, t, n5, 1.12, 0.32, 0.24,
+                          (0.500 + t * 0.003) * timeM, effExpand * 0.45,
+                          vec3<f32>(0.58, 0.72, 0.85)) * glowMult * 0.28;
+    }
 
     // Central sacred symbol
     col += sacredSymbol(uv, t, effExpand, intensity, chakraPhase);
+
+    // Recursive micro-geometry around the heart of the lotus
+    col += dotLattice(uv, t, density) * 0.30;
+    col += goldenSeedField(uv, vec2<f32>(0.0), 18, t, density) * 0.18;
+    col += vesicaPiscisChain(uv, vec2<f32>(0.0), 10.0, 0.18, t, density) * 0.16;
 
     // Lotus aura bridges warm inner petals with cool outer space
     let aura = exp(-length(uv) * 3.2) * (0.12 + effExpand * 0.18) * intensity;
@@ -581,7 +668,7 @@ fn ribbonLayerDepth(orbitR: f32) -> f32 {
 
 fn ribbonParallaxUV(uv: vec2<f32>, orbitR: f32) -> vec2<f32> {
     let layerDepth = ribbonLayerDepth(orbitR);
-    let drift = vec2<f32>(sin(u.fieldTime * 0.07), cos(u.fieldTime * 0.05))
+    let drift = vec2<f32>(sin(fieldTime() * 0.07), cos(fieldTime() * 0.05))
                 * (1.0 - layerDepth) * 0.02;
     return uv + drift;
 }
@@ -804,7 +891,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // LAYER 1 — Background atmosphere, driven by its own slow, un-synchronized
     // clock so the space around the figure keeps drifting independently —
     // most noticeable as held stillness in the foreground during breath holds.
-    var col = backgroundAtmosphere(uv, u.fieldTime, breath, expand);
+    var col = backgroundAtmosphere(uv, fieldTime(), breath, expand);
 
     // LAYER 2 — Volumetric light shafts
     col += lightShafts(uv * 0.85, t, breath, expand);

@@ -16,6 +16,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 0,
     mandalaStyle: 0,
     strengthLevel: 1.0,
+    geometryDensity: 1.2,
+    interference: 0.45,
   },
   {
     id: 'lotus-heart',
@@ -32,6 +34,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 0,
     mandalaStyle: 0,
     strengthLevel: 1.0,
+    geometryDensity: 1.0,
+    interference: 0.6,
   },
   {
     id: 'prana-flow',
@@ -48,6 +52,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 1,
     mandalaStyle: 2,
     strengthLevel: 1.0,
+    geometryDensity: 1.6,
+    interference: 0.7,
   },
   {
     id: 'classic-mandala',
@@ -64,6 +70,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 0,
     mandalaStyle: 1,
     strengthLevel: 1.0,
+    geometryDensity: 1.4,
+    interference: 0.5,
   },
   {
     id: 'deep-release',
@@ -80,6 +88,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 2,
     mandalaStyle: 0,
     strengthLevel: 1.0,
+    geometryDensity: 1.1,
+    interference: 0.35,
   },
   {
     id: 'grounding',
@@ -96,6 +106,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 2,
     mandalaStyle: 0,
     strengthLevel: 1.0,
+    geometryDensity: 1.1,
+    interference: 0.35,
   },
   {
     id: 'nervous-system-reg',
@@ -112,6 +124,8 @@ export const SESSION_MODES: SessionMode[] = [
     theme: 3,
     mandalaStyle: 1,
     strengthLevel: 1.0,
+    geometryDensity: 1.3,
+    interference: 0.55,
   },
 ];
 

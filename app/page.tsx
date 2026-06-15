@@ -260,6 +260,8 @@ export default function Home() {
           timeScale={1.0}
           strengthLevel={selectedMode.strengthLevel ?? 1.0}
           chakraFocus={selectedMode.chakraFocusIndex}
+          geometryDensity={selectedMode.geometryDensity ?? 1.0}
+          interference={selectedMode.interference ?? 0.5}
           shaderPath={selectedMode.shaderPath}
           vertexEntry={selectedMode.vertexEntry}
           fragmentEntry={selectedMode.fragmentEntry}

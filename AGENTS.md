@@ -135,11 +135,11 @@ offset 28  strengthLevel   f32   // 0.0=light, 1.0=regular (default), 2.0=strong
 offset 32  mouse.x         f32   // -1..1 or -2 when inactive
 offset 36  mouse.y         f32
 offset 40  mouseStrength   f32   // 0..1
-offset 44  padding0        f32   // 16-byte alignment
+offset 44  chakraFocus     f32   // -1=none, 0..6=root..crown (repurposed padding slot)
 offset 48  resolution.x    f32
 offset 52  resolution.y    f32
-offset 56  padding1        f32
-offset 60  padding2        f32
+offset 56  geometryDensity f32   // 0.0=sparse, 1.0=default, 3.0=rich geometry detail
+offset 60  interference    f32   // 0.0=still layers, 1.0=strong moire / recursive motion
 ```
 
 **Critical:** When adding or reordering uniforms, update **all three** active WGSL files + `WebGPUShader.tsx` buffer size (64) + Float32Array write order in lockstep. WebGPU will hard crash (blank canvas) on size or layout mismatch.

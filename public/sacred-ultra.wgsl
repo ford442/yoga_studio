@@ -36,8 +36,8 @@ struct Uniforms {
     mouseStrength: f32,
     chakraFocus: f32,        // -1=none, 0..6=root..crown (repurposed padding slot)
     resolution: vec2<f32>,
-    padding1: f32,
-    padding2: f32,
+    geometryDensity: f32,    // detail multiplier for geometry/petals/ring counts
+    interference: f32,       // moire / recursive layer motion strength
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -228,6 +228,65 @@ fn kalei(p: vec2<f32>, n: f32) -> vec2<f32> {
     return vec2<f32>(cos(new_a), sin(new_a)) * r;
 }
 
+// ---------------------------------------------------------------------------
+// Micro-geometry helpers — dot lattices, vesica piscis chains, golden seeds
+// ---------------------------------------------------------------------------
+fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
+    let r = length(uv);
+    var col = vec3<f32>(0.0);
+    let ringCount = i32(clamp(3.0 + density * 4.0, 3.0, 9.0));
+    let dotCountBase = 8.0 + density * 12.0;
+    for (var i = 0; i < ringCount; i++) {
+        let fi = f32(i);
+        let rr = 0.08 + fi * 0.055 * (1.0 + density * 0.15);
+        let band = exp(-abs(r - rr) * 35.0);
+        let dots = i32(clamp(dotCountBase + fi * 4.0, 4.0, 36.0));
+        for (var d = 0; d < dots; d++) {
+            let fd = f32(d);
+            let ang = fd * TAU / f32(dots) + t * 0.12 * (1.0 + fi * 0.2);
+            let p = vec2<f32>(cos(ang), sin(ang)) * rr;
+            let dd = length(uv - p) - 0.0055 * (1.0 + density * 0.25);
+            let glow = exp(-abs(dd) * 130.0);
+            let c = 0.6 + 0.4 * cos(vec3<f32>(0.0, 2.0, 4.0) + fd * 0.35 + fi * 0.5);
+            col += glow * c * 0.10 * band;
+        }
+    }
+    return col;
+}
+
+fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f32, density: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let count = i32(clamp(n * density, 3.0, 20.0));
+    for (var i = 0; i < count; i++) {
+        let fi = f32(i);
+        let a = fi * TAU / f32(count) + t * 0.2;
+        let r = radius * (0.85 + 0.15 * sin(t + fi));
+        let c1 = center + vec2<f32>(cos(a), sin(a)) * r;
+        let c2 = center + vec2<f32>(cos(a + TAU / f32(count) * 0.5), sin(a + TAU / f32(count) * 0.5)) * r * 0.7;
+        let d1 = length(uv - c1) - 0.018 * density;
+        let d2 = length(uv - c2) - 0.018 * density;
+        let vesica = abs(max(d1, d2));
+        col += exp(-vesica * 70.0) * vec3<f32>(1.0, 0.92, 0.72) * 0.12;
+    }
+    return col;
+}
+
+fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let n = clamp(count + i32(density * 18.0), 6, 48);
+    for (var i = 0; i < n; i++) {
+        let fi = f32(i);
+        let r = 0.02 + sqrt(fi) * 0.018 * density;
+        let a = fi * GOLDEN_ANGLE + t * 0.2;
+        let p = center + vec2<f32>(cos(a), sin(a)) * r;
+        let d = length(uv - p) - 0.004 * (1.0 + density * 0.3);
+        let glow = exp(-abs(d) * 160.0);
+        let c = 0.6 + 0.4 * cos(vec3<f32>(0.0, 2.0, 4.0) + fi * 0.25);
+        col += glow * c * 0.15;
+    }
+    return col;
+}
+
 // ============================================================================
 // MODULE 1 — BACKGROUND ATMOSPHERE (Agent: Background & Geometry Specialist)
 // ============================================================================
@@ -403,63 +462,86 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
     let isFlower = u.mandalaStyle > 1.5;
     let isLotus = !(isYantra || isFlower);
 
+    let density = clamp(u.geometryDensity + u.intensity * 0.25, 0.2, 3.0);
     let breathe = expand * 0.12 * (1.0 + 0.05 * u.intensity * sin(t * 3.0));
 
     if (isLotus) {
-        let hexUV = kalei(uv, 6.0);
-        let hexRot = t * 0.05 + u.phaseProgress * 0.1;
+        let hexN = 6.0 + floor(density * 4.0);
+        let hexUV = kalei(uv, hexN);
+        let hexRot = t * 0.05 * (1.0 + u.interference * 0.3) + u.phaseProgress * 0.1;
         let hexR = rot2(hexRot) * hexUV;
         let hexD = abs(length(hexR) - (0.75 + breathe)) - 0.015;
         let hexGlow = exp(-abs(hexD) * 40.0);
         col += hexGlow * phaseColor * 0.5;
 
-        let triUV = kalei(uv, 3.0);
-        let triRot = -t * 0.08 - u.phaseProgress * 0.15;
+        let triN = 3.0 + floor(density * 2.0);
+        let triUV = kalei(uv, triN);
+        let triRot = -t * 0.08 * (1.0 + u.interference * 0.5) - u.phaseProgress * 0.15;
         let triR = rot2(triRot) * triUV;
         let triD = abs(length(triR) - (0.55 + breathe * 0.8)) - 0.012;
         let triGlow = exp(-abs(triD) * 45.0);
         col += triGlow * vec3<f32>(1.0, 0.85, 0.25) * 0.4;
 
-        let circleD = abs(length(uv) - (0.35 + breathe * 0.5)) - 0.02;
-        let circleGlow = exp(-abs(circleD) * 30.0);
-        col += circleGlow * vec3<f32>(1.0, 0.95, 0.9) * 0.6;
-
-    } else if (isYantra) {
-        for (var i = 0; i < 5; i++) {
+        let ringCount = i32(clamp(2.0 + density * 3.0, 2.0, 7.0));
+        for (var i = 0; i < ringCount; i++) {
             let fi = f32(i);
-            let layerScale = 0.18 + fi * 0.11;
-            let triDir = select(-1.0, 1.0, (i % 2) == 0);
-            let triRot = triDir * (t * 0.03 + fi * 0.25);
-            let kUV = kalei(uv, 3.0);
-            let rUV = rot2(triRot) * kUV;
-            let triD = abs(length(rUV) - layerScale * (1.0 + breathe)) - 0.008;
-            let glow = exp(-abs(triD) * 55.0);
-            let layerColor = mix(phaseColor, vec3<f32>(1.0, 0.85, 0.4), fi * 0.15);
-            col += glow * layerColor * (0.32 - fi * 0.045);
+            let rad = 0.20 + fi * 0.08 + breathe * 0.3;
+            let circleD = abs(length(uv) - rad) - 0.012;
+            let circleGlow = exp(-abs(circleD) * 35.0);
+            col += circleGlow * vec3<f32>(1.0, 0.95, 0.9) * (0.4 - fi * 0.04);
         }
 
-        for (var i = 0; i < 3; i++) {
-            let fi = f32(i);
-            let cR = 0.12 + fi * 0.16;
-            let cD = abs(sdCircle(uv, cR * (1.0 + breathe * 0.3))) - 0.005;
-            let cGlow = exp(-abs(cD) * 60.0);
-            col += cGlow * vec3<f32>(1.0, 0.9, 0.7) * 0.25;
+        col += dotLattice(uv, t, density) * 0.35;
 
-            let dotCount = 6u + u32(fi) * 3u;
-            for (var d = 0u; d < 12u; d = d + 1u) {
+    } else if (isYantra) {
+        let layerCount = i32(clamp(5.0 + density * 5.0, 5.0, 12.0));
+        for (var i = 0; i < layerCount; i++) {
+            let fi = f32(i);
+            let layerScale = 0.12 + fi * 0.055 / (1.0 + density * 0.1);
+            let triDir = select(-1.0, 1.0, (i % 2) == 0);
+            let triRot = triDir * (t * 0.03 * (1.0 + u.interference * 0.4) + fi * 0.25);
+            let kUV = kalei(uv, 3.0);
+            let rUV = rot2(triRot) * kUV;
+            let triD = abs(length(rUV) - layerScale * (1.0 + breathe)) - 0.006;
+            let glow = exp(-abs(triD) * 55.0);
+            let layerColor = mix(phaseColor, vec3<f32>(1.0, 0.85, 0.4), fi * 0.12);
+            col += glow * layerColor * (0.32 - fi * 0.025);
+        }
+
+        let circleCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
+        for (var i = 0; i < circleCount; i++) {
+            let fi = f32(i);
+            let cR = 0.08 + fi * 0.075;
+            let cD = abs(sdCircle(uv, cR * (1.0 + breathe * 0.3))) - 0.004;
+            let cGlow = exp(-abs(cD) * 60.0);
+            col += cGlow * vec3<f32>(1.0, 0.9, 0.7) * 0.22;
+
+            let dotCount = 6u + u32(fi) * 3u + u32(density * 4.0);
+            for (var d = 0u; d < 24u; d = d + 1u) {
                 if (d >= dotCount) { break; }
                 let fd = f32(d);
-                let a = fd * TAU / f32(dotCount) + t * 0.1 * (1.0 + fi);
+                let a = fd * TAU / f32(dotCount) + t * 0.1 * (1.0 + fi) * (1.0 + u.interference);
                 let dp = vec2<f32>(cos(a), sin(a)) * cR * (1.0 + breathe * 0.3);
-                let dDist = length(uv - dp) - 0.012;
-                let dGlow = exp(-abs(dDist) * 80.0);
-                col += dGlow * vec3<f32>(1.0, 0.95, 0.6) * 0.15;
+                let dDist = length(uv - dp) - 0.010;
+                let dGlow = exp(-abs(dDist) * 90.0);
+                col += dGlow * vec3<f32>(1.0, 0.95, 0.6) * 0.12;
             }
         }
 
+        let tipCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
+        for (var i = 0; i < tipCount; i++) {
+            let fi = f32(i);
+            let tipUV = kalei(uv, 3.0);
+            let tipRot = t * 0.05 * (1.0 + u.interference) + fi * 0.4;
+            let tipR = rot2(tipRot) * tipUV;
+            let tipD = abs(length(tipR) - (0.06 + fi * 0.025)) - 0.003;
+            col += exp(-abs(tipD) * 100.0) * phaseColor * (0.15 - fi * 0.015);
+        }
+
     } else {
-        let flowerUV = kalei(uv, 12.0);
-        let pRot = rot2(t * 0.04) * flowerUV;
+        let flowerN = 12.0 + floor(density * 8.0);
+        let flowerUV = kalei(uv, flowerN);
+        let pRot = rot2(t * 0.04 * (1.0 + u.interference * 0.35)) * flowerUV;
         let petalCenter = vec2<f32>(0.30 * (1.0 + breathe), 0.0);
         let petalD = length(pRot - petalCenter) - 0.09;
         let petalGlow = exp(-abs(petalD) * 40.0);
@@ -469,16 +551,19 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         let centerGlow = exp(-abs(centerD) * 50.0);
         col += centerGlow * vec3<f32>(1.0, 0.95, 0.8) * 0.55;
 
-        for (var i = 0; i < 21; i++) {
+        let seedCount = i32(clamp(21.0 + density * 30.0, 21.0, 60.0));
+        for (var i = 0; i < seedCount; i++) {
             let fi = f32(i);
-            let r = 0.04 + sqrt(fi) * 0.055;
-            let a = fi * GOLDEN_ANGLE + t * 0.15;
+            let r = 0.04 + sqrt(fi) * 0.055 / (1.0 + density * 0.05);
+            let a = fi * GOLDEN_ANGLE + t * 0.15 * (1.0 + u.interference * 0.5);
             let fp = vec2<f32>(cos(a), sin(a)) * r * (1.0 + breathe * 0.2);
             let fd = length(uv - fp) - 0.007;
             let fGlow = exp(-abs(fd) * 90.0);
             let fCol = 0.6 + 0.4 * cos(vec3<f32>(0.0, 2.0, 4.0) + fi * 0.3);
             col += fGlow * fCol * 0.18;
         }
+
+        col += vesicaPiscisChain(uv, vec2<f32>(0.0), 12.0, 0.22, t, density) * 0.25;
     }
 
     return col;
@@ -486,9 +571,10 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
 
 fn layeredSacredGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
-    col += sacredGeometryRings(uv / 0.30, t * 1.30 + 1.7, breath, expand) * 0.22;
-    col += sacredGeometryRings(uv / 0.60, t * 0.90 + 0.8, breath, expand) * 0.45;
-    col += sacredGeometryRings(uv,        t,             breath, expand) * 1.00;
+    let inter = u.interference;
+    col += sacredGeometryRings(uv / 0.30, t * (1.30 + inter * 0.4) + 1.7, breath, expand) * 0.22;
+    col += sacredGeometryRings(uv / 0.60, t * (0.90 - inter * 0.35) + 0.8, breath, expand) * 0.45;
+    col += sacredGeometryRings(uv,        t * (1.0 + inter * 0.15),       breath, expand) * 1.00;
     return col;
 }
 
@@ -527,8 +613,8 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let p = (uv - vec2<f32>(0.0, -0.05)) / 0.75;
 
-    let headPos  = vec2<f32>(0.0,  0.30);
-    let chestPos = vec2<f32>(0.0,  0.10);
+    let headPos  = vec2<f32>(0.0,  0.30 + expand * 0.012);
+    let chestPos = vec2<f32>(0.0,  0.10 + expand * 0.015);
     let hipsPos  = vec2<f32>(0.0, -0.10);
 
     let phaseColor = focusedBreathColor();
@@ -543,10 +629,11 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     }
 
     let figurePulse = 1.0 + 0.02 * u.intensity * sin(t * 2.0);
+    let animAmp = 0.01 * u.intensity * (0.6 + 0.4 * u.strengthLevel);
     let isLotus  = u.mandalaStyle < 0.5;
     let isTaiChi = u.mandalaStyle > 1.5;
 
-    // Arm animation
+    // Arm animation — smooth eased motion with tiny overshoot/settle
     var leftHand  = vec2<f32>(-0.25, -0.05);
     var rightHand = vec2<f32>( 0.25, -0.05);
 
@@ -556,26 +643,31 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
         rightHand = vec2<f32>( 0.25, -0.15 - flow);
     } else {
         if (u.chakraPhase < 0.5) {
-            let rise = smoothstep(0.0, 0.7, u.phaseProgress);
-            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.20, 0.50), rise);
-            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.20, 0.50), rise);
+            let pp = u.phaseProgress;
+            let rise = pp * pp * (3.0 - 2.0 * pp);
+            let overshoot = 0.015 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
+            leftHand  = mix(vec2<f32>(-0.25, -0.05), vec2<f32>(-0.20, 0.52), rise) + vec2<f32>(0.0, overshoot);
+            rightHand = mix(vec2<f32>( 0.25, -0.05), vec2<f32>( 0.20, 0.52), rise) + vec2<f32>(0.0, overshoot);
         } else if (u.chakraPhase < 1.5) {
-            let sway = sin(t * 2.0) * 0.015 * u.intensity;
-            leftHand  = vec2<f32>(-0.20 + sway, 0.50);
-            rightHand = vec2<f32>( 0.20 - sway, 0.50);
+            let sway = sin(t * 2.0) * animAmp;
+            let pulse = 1.0 + 0.02 * sin(t * 3.0) * u.intensity;
+            leftHand  = vec2<f32>(-0.20 + sway, 0.52 * pulse);
+            rightHand = vec2<f32>( 0.20 - sway, 0.52 * pulse);
         } else if (u.chakraPhase < 2.5) {
-            let lower = smoothstep(0.0, 0.8, u.phaseProgress);
-            leftHand  = mix(vec2<f32>(-0.20, 0.50), vec2<f32>(-0.25, -0.05), lower);
-            rightHand = mix(vec2<f32>( 0.20, 0.50), vec2<f32>( 0.25, -0.05), lower);
+            let pp = u.phaseProgress;
+            let lower = pp * pp * (3.0 - 2.0 * pp);
+            let settle = 0.012 * sin(pp * PI) * (0.5 + 0.5 * u.intensity);
+            leftHand  = mix(vec2<f32>(-0.20, 0.52), vec2<f32>(-0.25, -0.05), lower) - vec2<f32>(0.0, settle);
+            rightHand = mix(vec2<f32>( 0.20, 0.52), vec2<f32>( 0.25, -0.05), lower) - vec2<f32>(0.0, settle);
         } else {
-            let idle = sin(t * 1.5) * 0.01 * u.intensity;
+            let idle = sin(t * 1.5) * animAmp;
             leftHand  = vec2<f32>(-0.25 + idle, -0.05);
             rightHand = vec2<f32>( 0.25 - idle, -0.05);
         }
     }
 
     if (!isTaiChi) {
-        let sway = sin(t * 1.5) * 0.01 * u.intensity;
+        let sway = sin(t * 1.5) * animAmp;
         leftHand.x  += sway;
         rightHand.x -= sway;
     }
@@ -584,9 +676,9 @@ fn humanFigure(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let headD = sdCircle((p - headPos) / figurePulse, 0.055);
     col += exp(-abs(headD) * 35.0) * themeColor * 0.5;
 
-    // Torso
-    let chestD = sdCircle((p - chestPos) / figurePulse, 0.075);
-    let hipsD  = sdCircle((p - hipsPos)  / figurePulse, 0.065);
+    // Torso — chest expands on inhale, hips stay grounded
+    let chestD = sdCircle((p - chestPos) / figurePulse, 0.075 * (1.0 + expand * 0.12));
+    let hipsD  = sdCircle((p - hipsPos)  / figurePulse, 0.065 * (1.0 + expand * 0.04));
     let torsoD = smin(chestD, hipsD, 0.08);
     col += exp(-abs(torsoD) * 30.0) * themeColor * 0.4;
 
@@ -847,6 +939,45 @@ fn figureAura(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     return col;
 }
 
+// ---------------------------------------------------------------------------
+// Geometry that frames/grows from the human figure, changing with pose
+// ---------------------------------------------------------------------------
+fn figureFramingGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
+    var col = vec3<f32>(0.0);
+    let density = clamp(u.geometryDensity, 0.2, 3.0);
+    let isLotus = u.mandalaStyle < 0.5;
+    let isYantra = u.mandalaStyle > 0.5 && u.mandalaStyle < 1.5;
+    let phaseColor = focusedBreathColor();
+
+    // Heart and head positions in uv space (matches humanFigure mapping)
+    let heartUV = vec2<f32>(0.0, 0.025);
+    let headUV  = vec2<f32>(0.0, 0.175);
+
+    if (isLotus) {
+        let hexN = 6.0 + floor(density * 4.0);
+        let hexUV = kalei(uv - heartUV, hexN);
+        let hexD = abs(length(hexUV) - (0.16 + expand * 0.04)) - 0.005;
+        col += exp(-abs(hexD) * 80.0) * phaseColor * 0.35;
+        col += goldenSeedField(uv, headUV, 12, t, density) * 0.5;
+    } else if (isYantra) {
+        let tipCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
+        for (var i = 0; i < tipCount; i++) {
+            let fi = f32(i);
+            let tipUV = kalei(uv - heartUV, 3.0);
+            let tipRot = t * 0.05 * (1.0 + u.interference) + fi * 0.4;
+            let tipR = rot2(tipRot) * tipUV;
+            let tipD = abs(length(tipR) - (0.06 + fi * 0.025) * (1.0 + expand * 0.1)) - 0.003;
+            col += exp(-abs(tipD) * 100.0) * mix(phaseColor, vec3<f32>(1.0, 0.85, 0.4), fi * 0.15) * (0.18 - fi * 0.018);
+        }
+    } else {
+        let ringD = abs(length(uv - heartUV) - (0.12 + expand * 0.03)) - 0.006;
+        col += exp(-abs(ringD) * 70.0) * phaseColor * 0.30;
+        col += vesicaPiscisChain(uv, heartUV, 8.0, 0.10, t, density) * 0.5;
+    }
+
+    return col;
+}
+
 // ============================================================================
 // MODULE 4 — LOTUS, SACRED SYMBOL & ENERGY RIBBONS (Agent: Lotus & Post Specialist)
 // ============================================================================
@@ -882,7 +1013,7 @@ fn lotusLayer(
     let lightCol = mix(color, vec3<f32>(1.0, 0.94, 0.88), 0.45);
 
     if (u.mandalaStyle < 0.5) {
-        let droop = max(0.0, r - baseR) * 0.12 * (n / 12.0) * (1.0 - expand * 0.35);
+        let droop = max(0.0, r - baseR) * 0.12 * (min(n, 24.0) / 12.0) * (1.0 - expand * 0.35);
         let aD = a + droop;
         tNorm = clamp((r - baseR) / max(tip - baseR, 1e-3), 0.0, 1.0);
         let profile = pow(sin(tNorm * PI), 0.65);
@@ -1088,24 +1219,41 @@ fn lotusAndSymbol(
     let effExpand = expand + shimmer;
     let glowMult = 0.78 + effExpand * 0.62 + intensity * 0.25;
     let translucency = 0.88;
+    let density = clamp(u.geometryDensity + u.intensity * 0.2, 0.2, 3.0);
+    let timeM = 1.0 + u.interference * 0.35;
 
-    col += lotusLayer(uv, t, 8.0, 0.42, 0.16, 0.06,
-                      0.000 + t * 0.020, effExpand,
+    let n1 = 8.0 + floor(density * 4.0);
+    let n2 = 12.0 + floor(density * 5.0);
+    let n3 = 16.0 + floor(density * 6.0);
+    let n4 = mix(0.0, 20.0 + floor(density * 7.0), smoothstep(0.6, 1.4, density));
+    let n5 = mix(0.0, 26.0 + floor(density * 9.0), smoothstep(1.0, 2.0, density));
+
+    col += lotusLayer(uv, t, n1, 0.42, 0.16, 0.06,
+                      (0.000 + t * 0.020) * timeM, effExpand,
                       vec3<f32>(0.95, 0.62, 0.75)) * glowMult * translucency;
-    col += lotusLayer(uv, t, 12.0, 0.60, 0.20, 0.10,
-                      0.262 + t * 0.014, effExpand,
+    col += lotusLayer(uv, t, n2, 0.60, 0.20, 0.10,
+                      (0.262 + t * 0.014) * timeM, effExpand,
                       vec3<f32>(0.82, 0.52, 0.92)) * glowMult * translucency;
-    col += lotusLayer(uv, t, 16.0, 0.76, 0.24, 0.14,
-                      0.131 + t * 0.008, effExpand,
+    col += lotusLayer(uv, t, n3, 0.76, 0.24, 0.14,
+                      (0.131 + t * 0.008) * timeM, effExpand,
                       vec3<f32>(0.55, 0.68, 0.92)) * glowMult * translucency;
-    col += lotusLayer(uv, t, 20.0, 0.92, 0.28, 0.18,
-                      0.000 - t * 0.005, effExpand * 0.7,
-                      vec3<f32>(0.62, 0.75, 0.88)) * glowMult * 0.55 * translucency;
-    col += lotusLayer(uv, t, 28.0, 1.12, 0.32, 0.24,
-                      0.500 + t * 0.003, effExpand * 0.45,
-                      vec3<f32>(0.58, 0.72, 0.85)) * glowMult * 0.28 * translucency;
+    if (n4 > 0.0) {
+        col += lotusLayer(uv, t, n4, 0.92, 0.28, 0.18,
+                          (0.000 - t * 0.005) * timeM, effExpand * 0.7,
+                          vec3<f32>(0.62, 0.75, 0.88)) * glowMult * 0.55 * translucency;
+    }
+    if (n5 > 0.0) {
+        col += lotusLayer(uv, t, n5, 1.12, 0.32, 0.24,
+                          (0.500 + t * 0.003) * timeM, effExpand * 0.45,
+                          vec3<f32>(0.58, 0.72, 0.85)) * glowMult * 0.28 * translucency;
+    }
 
     col += sacredSymbol(uv, t, effExpand, intensity, chakraPhase);
+
+    // Micro-geometry nested in the lotus heart
+    col += dotLattice(uv, t, density) * 0.22;
+    col += goldenSeedField(uv, vec2<f32>(0.0), 18, t, density) * 0.14;
+    col += vesicaPiscisChain(uv, vec2<f32>(0.0), 10.0, 0.18, t, density) * 0.13;
 
     let aura = exp(-length(uv) * 3.2) * (0.12 + effExpand * 0.18) * intensity;
     col += aura * vec3<f32>(0.72, 0.58, 0.92);
@@ -1367,6 +1515,11 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // LAYER 6 — Figure aura
     // ------------------------------------------------------------
     col += figureAura(uv, t, breath, expand);
+
+    // ------------------------------------------------------------
+    // LAYER 6b — Figure-framing geometry (grows from heart/head)
+    // ------------------------------------------------------------
+    col += figureFramingGeometry(uv, t, breath, expand);
 
     // ------------------------------------------------------------
     // LAYER 7 — Human figure with animated arms
