@@ -2,17 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import type { EnvironmentId, EnvironmentOverride } from '../types/environment';
-import { DEFAULT_ENVIRONMENT_ID } from '../data/environments';
+import { DEFAULT_ENVIRONMENT_ID, isEnvironmentId } from '../data/environments';
 
 const STORAGE_KEY = 'sacred-breath-environment';
-
-const isEnvironmentId = (value: unknown): value is EnvironmentId =>
-  value === 'none' ||
-  value === 'temple-dawn' ||
-  value === 'forest-shafts' ||
-  value === 'candle-altar' ||
-  value === 'mist-mandala' ||
-  value === 'cosmic-bokeh';
 
 const isEnvironmentOverride = (value: unknown): value is EnvironmentOverride =>
   value === 'auto' || isEnvironmentId(value);

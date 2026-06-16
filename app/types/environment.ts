@@ -1,10 +1,16 @@
 export type EnvironmentId =
   | 'none'
+  | 'zendo-dawn'
   | 'temple-dawn'
   | 'forest-shafts'
   | 'candle-altar'
   | 'mist-mandala'
-  | 'cosmic-bokeh';
+  | 'cosmic-bokeh'
+  | 'lotus-water'
+  | 'stone-wabi'
+  | 'twilight-sky'
+  | 'void-nearblack'
+  | 'linen-veil';
 
 export type EnvironmentOverride = EnvironmentId | 'auto';
 

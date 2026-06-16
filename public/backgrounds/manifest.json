@@ -1,0 +1,418 @@
+{
+  "$schema": "./manifest.schema (informal)",
+  "version": 1,
+  "generator": "assets/backgrounds/generate.py + encode.mjs",
+  "description": "Atmospheric background plates for the Sacred Breath app. Rendered to sit behind the WGSL breath shader at low opacity under theme/chakra tint.",
+  "license": "CC0-1.0 \u2014 all plates are original, self-generated artwork; free to use.",
+  "crops": {
+    "16x9": "1920x1080",
+    "9x16": "1080x1920",
+    "1x1": "1440x1440"
+  },
+  "formats": [
+    "avif",
+    "webp",
+    "jpg"
+  ],
+  "luminanceModel": "Rec.709, sRGB, mean over 16:9 master, normalized 0..1",
+  "contrastAnchors": {
+    "darkest": "void-nearblack",
+    "brightest": "linen-veil"
+  },
+  "plates": [
+    {
+      "id": "zendo-dawn",
+      "label": "Zendo Dawn",
+      "emoji": "\ud83e\udea7",
+      "category": "meditation-hall",
+      "mood": "Minimal meditation hall, soft side light",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "nervous-system-reg",
+        "classic-mandala"
+      ],
+      "blendMode": "soft-light",
+      "opacity": 0.5,
+      "averageLuminance": 0.1041,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/zendo-dawn-16x9.avif",
+          "webp": "backgrounds/zendo-dawn-16x9.webp",
+          "jpg": "backgrounds/zendo-dawn-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/zendo-dawn-9x16.avif",
+          "webp": "backgrounds/zendo-dawn-9x16.webp",
+          "jpg": "backgrounds/zendo-dawn-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/zendo-dawn-1x1.avif",
+          "webp": "backgrounds/zendo-dawn-1x1.webp",
+          "jpg": "backgrounds/zendo-dawn-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "temple-dawn",
+      "label": "Temple Dawn",
+      "emoji": "\ud83d\uded5",
+      "category": "temple-detail",
+      "mood": "Colonnade silhouette under a dawn glow",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "classic-mandala",
+        "sacred-ultra"
+      ],
+      "blendMode": "multiply",
+      "opacity": 0.52,
+      "averageLuminance": 0.1326,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/temple-dawn-16x9.avif",
+          "webp": "backgrounds/temple-dawn-16x9.webp",
+          "jpg": "backgrounds/temple-dawn-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/temple-dawn-9x16.avif",
+          "webp": "backgrounds/temple-dawn-9x16.webp",
+          "jpg": "backgrounds/temple-dawn-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/temple-dawn-1x1.avif",
+          "webp": "backgrounds/temple-dawn-1x1.webp",
+          "jpg": "backgrounds/temple-dawn-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "forest-shafts",
+      "label": "Forest Light",
+      "emoji": "\ud83c\udf32",
+      "category": "light-bokeh",
+      "mood": "God-rays through forest mist",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "prana-flow",
+        "grounding"
+      ],
+      "blendMode": "multiply",
+      "opacity": 0.48,
+      "averageLuminance": 0.1249,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/forest-shafts-16x9.avif",
+          "webp": "backgrounds/forest-shafts-16x9.webp",
+          "jpg": "backgrounds/forest-shafts-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/forest-shafts-9x16.avif",
+          "webp": "backgrounds/forest-shafts-9x16.webp",
+          "jpg": "backgrounds/forest-shafts-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/forest-shafts-1x1.avif",
+          "webp": "backgrounds/forest-shafts-1x1.webp",
+          "jpg": "backgrounds/forest-shafts-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "candle-altar",
+      "label": "Candle Altar",
+      "emoji": "\ud83d\udd6f\ufe0f",
+      "category": "temple-detail",
+      "mood": "Warm altar glow with offering bokeh",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "nervous-system-reg",
+        "lotus-heart"
+      ],
+      "blendMode": "soft-light",
+      "opacity": 0.55,
+      "averageLuminance": 0.065,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/candle-altar-16x9.avif",
+          "webp": "backgrounds/candle-altar-16x9.webp",
+          "jpg": "backgrounds/candle-altar-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/candle-altar-9x16.avif",
+          "webp": "backgrounds/candle-altar-9x16.webp",
+          "jpg": "backgrounds/candle-altar-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/candle-altar-1x1.avif",
+          "webp": "backgrounds/candle-altar-1x1.webp",
+          "jpg": "backgrounds/candle-altar-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "mist-mandala",
+      "label": "Mist Mandala",
+      "emoji": "\u2601\ufe0f",
+      "category": "temple-detail",
+      "mood": "Out-of-focus mandala in violet mist",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "lotus-heart",
+        "classic-mandala"
+      ],
+      "blendMode": "soft-light",
+      "opacity": 0.45,
+      "averageLuminance": 0.0973,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/mist-mandala-16x9.avif",
+          "webp": "backgrounds/mist-mandala-16x9.webp",
+          "jpg": "backgrounds/mist-mandala-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/mist-mandala-9x16.avif",
+          "webp": "backgrounds/mist-mandala-9x16.webp",
+          "jpg": "backgrounds/mist-mandala-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/mist-mandala-1x1.avif",
+          "webp": "backgrounds/mist-mandala-1x1.webp",
+          "jpg": "backgrounds/mist-mandala-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "cosmic-bokeh",
+      "label": "Cosmic Bokeh",
+      "emoji": "\u2728",
+      "category": "cosmic-sky",
+      "mood": "Photographic nebula with coloured bokeh",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "sacred-ultra",
+        "deep-release"
+      ],
+      "blendMode": "overlay",
+      "opacity": 0.42,
+      "averageLuminance": 0.0664,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/cosmic-bokeh-16x9.avif",
+          "webp": "backgrounds/cosmic-bokeh-16x9.webp",
+          "jpg": "backgrounds/cosmic-bokeh-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/cosmic-bokeh-9x16.avif",
+          "webp": "backgrounds/cosmic-bokeh-9x16.webp",
+          "jpg": "backgrounds/cosmic-bokeh-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/cosmic-bokeh-1x1.avif",
+          "webp": "backgrounds/cosmic-bokeh-1x1.webp",
+          "jpg": "backgrounds/cosmic-bokeh-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "lotus-water",
+      "label": "Lotus Water",
+      "emoji": "\ud83e\udeb7",
+      "category": "natural-texture",
+      "mood": "Abstract rippled pond surface",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "prana-flow",
+        "lotus-heart"
+      ],
+      "blendMode": "soft-light",
+      "opacity": 0.5,
+      "averageLuminance": 0.1633,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/lotus-water-16x9.avif",
+          "webp": "backgrounds/lotus-water-16x9.webp",
+          "jpg": "backgrounds/lotus-water-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/lotus-water-9x16.avif",
+          "webp": "backgrounds/lotus-water-9x16.webp",
+          "jpg": "backgrounds/lotus-water-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/lotus-water-1x1.avif",
+          "webp": "backgrounds/lotus-water-1x1.webp",
+          "jpg": "backgrounds/lotus-water-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "stone-wabi",
+      "label": "Stone & Wood",
+      "emoji": "\ud83e\udeb5",
+      "category": "natural-texture",
+      "mood": "Warm wood / stone grain, earthy",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "grounding"
+      ],
+      "blendMode": "multiply",
+      "opacity": 0.5,
+      "averageLuminance": 0.1544,
+      "tone": "dark",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/stone-wabi-16x9.avif",
+          "webp": "backgrounds/stone-wabi-16x9.webp",
+          "jpg": "backgrounds/stone-wabi-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/stone-wabi-9x16.avif",
+          "webp": "backgrounds/stone-wabi-9x16.webp",
+          "jpg": "backgrounds/stone-wabi-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/stone-wabi-1x1.avif",
+          "webp": "backgrounds/stone-wabi-1x1.webp",
+          "jpg": "backgrounds/stone-wabi-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "twilight-sky",
+      "label": "Twilight Sky",
+      "emoji": "\ud83c\udf07",
+      "category": "cosmic-sky",
+      "mood": "Soft dusk gradient, indigo to amber",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "deep-release",
+        "sacred-ultra"
+      ],
+      "blendMode": "soft-light",
+      "opacity": 0.5,
+      "averageLuminance": 0.2619,
+      "tone": "mid",
+      "isDarkPlate": false,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/twilight-sky-16x9.avif",
+          "webp": "backgrounds/twilight-sky-16x9.webp",
+          "jpg": "backgrounds/twilight-sky-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/twilight-sky-9x16.avif",
+          "webp": "backgrounds/twilight-sky-9x16.webp",
+          "jpg": "backgrounds/twilight-sky-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/twilight-sky-1x1.avif",
+          "webp": "backgrounds/twilight-sky-1x1.webp",
+          "jpg": "backgrounds/twilight-sky-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "void-nearblack",
+      "label": "Near-Black Void",
+      "emoji": "\ud83c\udf11",
+      "category": "cosmic-sky",
+      "mood": "Very dark plate, faint ember (contrast anchor)",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "deep-release",
+        "sacred-ultra"
+      ],
+      "blendMode": "normal",
+      "opacity": 0.6,
+      "averageLuminance": 0.0438,
+      "tone": "dark",
+      "isDarkPlate": true,
+      "isBrightPlate": false,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/void-nearblack-16x9.avif",
+          "webp": "backgrounds/void-nearblack-16x9.webp",
+          "jpg": "backgrounds/void-nearblack-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/void-nearblack-9x16.avif",
+          "webp": "backgrounds/void-nearblack-9x16.webp",
+          "jpg": "backgrounds/void-nearblack-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/void-nearblack-1x1.avif",
+          "webp": "backgrounds/void-nearblack-1x1.webp",
+          "jpg": "backgrounds/void-nearblack-1x1.jpg"
+        }
+      }
+    },
+    {
+      "id": "linen-veil",
+      "label": "Linen Veil",
+      "emoji": "\ud83e\udd0d",
+      "category": "light-bokeh",
+      "mood": "High-key sunlight through sheer curtains",
+      "credit": "Original procedural artwork \u2014 Sacred Breath / generate.py",
+      "license": "CC0-1.0 (public-domain-equivalent, self-generated)",
+      "suggestedModes": [
+        "nervous-system-reg"
+      ],
+      "blendMode": "multiply",
+      "opacity": 0.5,
+      "averageLuminance": 0.8034,
+      "tone": "bright",
+      "isDarkPlate": false,
+      "isBrightPlate": true,
+      "sources": {
+        "16x9": {
+          "avif": "backgrounds/linen-veil-16x9.avif",
+          "webp": "backgrounds/linen-veil-16x9.webp",
+          "jpg": "backgrounds/linen-veil-16x9.jpg"
+        },
+        "9x16": {
+          "avif": "backgrounds/linen-veil-9x16.avif",
+          "webp": "backgrounds/linen-veil-9x16.webp",
+          "jpg": "backgrounds/linen-veil-9x16.jpg"
+        },
+        "1x1": {
+          "avif": "backgrounds/linen-veil-1x1.avif",
+          "webp": "backgrounds/linen-veil-1x1.webp",
+          "jpg": "backgrounds/linen-veil-1x1.jpg"
+        }
+      }
+    }
+  ]
+}

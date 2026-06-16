@@ -250,6 +250,10 @@ export default function Home() {
           voiceGuidanceEnabled={voiceSettings.enabled}
           figurePose={selectedMode.figurePose}
           isRunning={isRunning}
+          currentPhase={currentPhase}
+          phaseProgress={phaseProgress}
+          phaseDurationSec={phaseDuration}
+          intensity={intensity}
           onDragOffset={(pipDragOffset) => updateInstructorSettings({ pipDragOffset })}
         />
       )}

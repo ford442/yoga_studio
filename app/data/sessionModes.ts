@@ -99,7 +99,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.1,
     interference: 0.35,
-    backgroundId: 'cosmic-bokeh',
+    backgroundId: 'twilight-sky',
   },
   {
     id: 'grounding',
@@ -119,7 +119,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.1,
     interference: 0.35,
-    backgroundId: 'forest-shafts',
+    backgroundId: 'stone-wabi',
   },
   {
     id: 'nervous-system-reg',
@@ -139,7 +139,7 @@ export const SESSION_MODES: SessionMode[] = [
     strengthLevel: 1.0,
     geometryDensity: 1.3,
     interference: 0.55,
-    backgroundId: 'candle-altar',
+    backgroundId: 'zendo-dawn',
   },
 ];
 

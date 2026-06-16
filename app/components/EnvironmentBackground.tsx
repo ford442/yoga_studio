@@ -97,19 +97,30 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
             style={{ opacity: layer.visible ? 1 : 0 }}
           >
             {layerEnv.imageSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={resolveAssetUrl(layerEnv.imageSrc)}
-                alt=""
-                draggable={false}
-                className={`absolute inset-0 h-full w-full object-cover select-none pointer-events-none ${
-                  layerEnv.kenBurns ? 'env-ken-burns' : ''
-                }`}
-                style={{
-                  opacity: layerEnv.opacity,
-                  mixBlendMode: layerEnv.blendMode,
-                }}
-              />
+              <picture>
+                <source
+                  type="image/avif"
+                  srcSet={resolveAssetUrl(layerEnv.imageSrc.replace(/\.jpg$/, '.avif'))}
+                />
+                <source
+                  type="image/webp"
+                  srcSet={resolveAssetUrl(layerEnv.imageSrc.replace(/\.jpg$/, '.webp'))}
+                />
+                <img
+                  src={resolveAssetUrl(layerEnv.imageSrc)}
+                  alt=""
+                  draggable={false}
+                  loading="lazy"
+                  decoding="async"
+                  className={`absolute inset-0 h-full w-full object-cover select-none pointer-events-none ${
+                    layerEnv.kenBurns ? 'env-ken-burns' : ''
+                  }`}
+                  style={{
+                    opacity: layerEnv.opacity,
+                    mixBlendMode: layerEnv.blendMode,
+                  }}
+                />
+              </picture>
             ) : layerEnv.gradientCss ? (
               <div
                 className={`absolute inset-0 ${layerEnv.kenBurns ? 'env-ken-burns' : ''}`}
