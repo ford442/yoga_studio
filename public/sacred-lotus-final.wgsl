@@ -70,7 +70,7 @@ struct Uniforms {
     geometryDensity: f32,    // detail multiplier for geometry/petals/ring counts
     interference: f32,       // moire / recursive layer motion strength
     figurePose: f32,         // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
-    _padding: f32,
+    qualityPreset: f32,      // 0.0=mobile, 1.0=high
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
