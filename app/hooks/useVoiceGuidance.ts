@@ -7,21 +7,36 @@ interface VoiceSettings {
 }
 
 const VOICE_SETTINGS_KEY = 'sacred-breath-voice';
+const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: true, useSanskrit: false };
+
+const readStoredVoiceSettings = (): VoiceSettings => {
+  const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
+  return saved ? JSON.parse(saved) : DEFAULT_VOICE_SETTINGS;
+};
 
 export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) => {
-  const [settings, setSettings] = useState<VoiceSettings>(() => {
-    if (typeof window === 'undefined') return { enabled: true, useSanskrit: false };
-    const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
-    return saved ? JSON.parse(saved) : { enabled: true, useSanskrit: false };
-  });
+  const [settings, setSettings] = useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
 
   const lastPhaseRef = useRef<BreathPhase>(currentPhase);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Save settings to localStorage
   useEffect(() => {
+    if (!hasLoadedSettings) return;
     localStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(settings));
-  }, [settings]);
+  }, [hasLoadedSettings, settings]);
+
+  useEffect(() => {
+    try {
+      setSettings(readStoredVoiceSettings());
+    } catch {
+      console.warn('Invalid sacred-breath-voice localStorage payload');
+      setSettings(DEFAULT_VOICE_SETTINGS);
+    } finally {
+      setHasLoadedSettings(true);
+    }
+  }, []);
 
   const speak = (text: string) => {
     if (!settings.enabled || !('speechSynthesis' in window)) return;

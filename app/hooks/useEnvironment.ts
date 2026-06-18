@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { EnvironmentId, EnvironmentOverride } from '../types/environment';
 import { DEFAULT_ENVIRONMENT_ID, isEnvironmentId } from '../data/environments';
 
@@ -10,7 +10,6 @@ const isEnvironmentOverride = (value: unknown): value is EnvironmentOverride =>
   value === 'auto' || isEnvironmentId(value);
 
 const readStoredOverride = (): EnvironmentOverride => {
-  if (typeof window === 'undefined') return 'auto';
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return 'auto';
   try {
@@ -23,7 +22,11 @@ const readStoredOverride = (): EnvironmentOverride => {
 };
 
 export function useEnvironment(modeBackgroundId?: EnvironmentId) {
-  const [override, setOverrideState] = useState<EnvironmentOverride>(readStoredOverride);
+  const [override, setOverrideState] = useState<EnvironmentOverride>('auto');
+
+  useEffect(() => {
+    setOverrideState(readStoredOverride());
+  }, []);
 
   const setOverride = useCallback((next: EnvironmentOverride) => {
     setOverrideState(next);

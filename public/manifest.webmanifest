@@ -1,0 +1,12 @@
+{
+  "name": "Sacred Breath",
+  "short_name": "SacredBreath",
+  "description": "A sacred breath timer for deep meditation and pranayama practice",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#05010a",
+  "theme_color": "#05010a",
+  "categories": ["health", "lifestyle", "meditation"],
+  "lang": "en",
+  "orientation": "any"
+}

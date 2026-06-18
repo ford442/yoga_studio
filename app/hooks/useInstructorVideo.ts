@@ -37,7 +37,6 @@ const parseSettings = (raw: unknown): InstructorVideoSettings => {
 };
 
 const readStoredSettings = (): InstructorVideoSettings => {
-  if (typeof window === 'undefined') return DEFAULT_INSTRUCTOR_SETTINGS;
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return DEFAULT_INSTRUCTOR_SETTINGS;
   try {
@@ -55,10 +54,15 @@ const canPlayVideo = (): boolean => {
 };
 
 export function useInstructorVideo() {
-  const [settings, setSettingsState] = useState<InstructorVideoSettings>(readStoredSettings);
-  const [isSupported] = useState(canPlayVideo);
+  const [settings, setSettingsState] = useState<InstructorVideoSettings>(DEFAULT_INSTRUCTOR_SETTINGS);
+  const [isSupported, setIsSupported] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
   const [availabilityChecked, setAvailabilityChecked] = useState(false);
+
+  useEffect(() => {
+    setSettingsState(readStoredSettings());
+    setIsSupported(canPlayVideo());
+  }, []);
 
   useEffect(() => {
     if (!isSupported) {

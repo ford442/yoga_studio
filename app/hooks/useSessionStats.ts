@@ -11,33 +11,56 @@ const STORAGE_KEY = 'sacred-breath-stats';
 
 const getTodayKey = () => new Date().toISOString().split('T')[0];
 
+const getDefaultStats = (): SessionStats => ({
+  todayMinutes: 0,
+  todayBreaths: 0,
+  currentStreak: 0,
+  lastPracticeDate: getTodayKey(),
+});
+
+const readStoredStats = (): SessionStats => {
+  const today = getTodayKey();
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return { ...getDefaultStats(), lastPracticeDate: today };
+
+  const parsed = JSON.parse(saved) as Partial<SessionStats>;
+  if (parsed.lastPracticeDate !== today) {
+    return {
+      todayMinutes: 0,
+      todayBreaths: 0,
+      currentStreak: parsed.currentStreak ?? 0,
+      lastPracticeDate: today,
+    };
+  }
+
+  return {
+    todayMinutes: parsed.todayMinutes ?? 0,
+    todayBreaths: parsed.todayBreaths ?? 0,
+    currentStreak: parsed.currentStreak ?? 0,
+    lastPracticeDate: parsed.lastPracticeDate ?? today,
+  };
+};
+
 export const useSessionStats = () => {
-  const [stats, setStats] = useState<SessionStats>(() => {
-    const today = getTodayKey();
-    if (typeof window === 'undefined') {
-      return { todayMinutes: 0, todayBreaths: 0, currentStreak: 0, lastPracticeDate: today };
+  const [stats, setStats] = useState<SessionStats>(getDefaultStats);
+  const [hasLoadedStats, setHasLoadedStats] = useState(false);
+
+  useEffect(() => {
+    try {
+      setStats(readStoredStats());
+    } catch {
+      console.warn('Invalid sacred-breath-stats localStorage payload');
+      setStats(getDefaultStats());
+    } finally {
+      setHasLoadedStats(true);
     }
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.lastPracticeDate !== today) {
-        // Reset daily counters if new day (streak preserved)
-        return {
-          todayMinutes: 0,
-          todayBreaths: 0,
-          currentStreak: parsed.currentStreak,
-          lastPracticeDate: today,
-        };
-      }
-      return parsed;
-    }
-    return { todayMinutes: 0, todayBreaths: 0, currentStreak: 0, lastPracticeDate: today };
-  });
+  }, []);
 
   // Save to localStorage whenever stats change
   useEffect(() => {
+    if (!hasLoadedStats) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
-  }, [stats]);
+  }, [hasLoadedStats, stats]);
 
   const addPracticeTime = useCallback((seconds: number) => {
     const today = getTodayKey();

@@ -279,7 +279,7 @@ fn kalei(p_in: vec3<f32>, time: f32) -> vec3<f32> {
 }
 
 // Hex-symmetric star point mapping with output parameters
-fn mapStarsGeo(uv: vec2<f32>, out near: ptr<function, vec3<f32>>, out neighbor: ptr<function, vec3<f32>>) {
+fn mapStarsGeo(uv: vec2<f32>, near: ptr<function, vec3<f32>>, neighbor: ptr<function, vec3<f32>>) {
   var point: vec2<f32>;
   *near = vec3<f32>(1e+4, 1e+4, 1e+4);
   

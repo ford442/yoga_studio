@@ -79,10 +79,19 @@ const SessionModeSwitcher: React.FC<SessionModeSwitcherProps> = ({
                 boxShadow: `0 0 12px 2px rgba(${r}, ${g}, ${b}, 0.5)`,
               } as React.CSSProperties)
             : undefined;
+          const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            handleSelect(mode);
+          };
+
           return (
-            <button
+            <div
               key={mode.id}
+              role="button"
+              tabIndex={0}
               onClick={() => handleSelect(mode)}
+              onKeyDown={handleCardKeyDown}
               style={cardStyle}
               className={`relative overflow-hidden flex-shrink-0 snap-start flex flex-col items-center gap-1 px-4 py-3 rounded-2xl transition-all duration-300 active:scale-90 min-w-[90px] backdrop-blur-sm ${
                 isActive
@@ -195,7 +204,7 @@ const SessionModeSwitcher: React.FC<SessionModeSwitcherProps> = ({
                   </p>
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>

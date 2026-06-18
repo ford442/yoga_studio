@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 
 interface WebGPUShaderProps {
   breathPhase: number;
@@ -796,22 +797,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       let bindGroup: GPUBindGroup | null = null;
 
       try {
-        // Resolve shader URL relative to the current page directory.
-        // This is critical for sub-path deployments (e.g. /yoga/) behind a reverse proxy
-        // that strips the prefix. A bare relative fetch('sacred-xxx.wgsl') resolves
-        // incorrectly if the page URL lacks a trailing slash (pathname=/yoga vs /yoga/).
-        // We derive the directory from window.location so the visible prefix is always used.
-        const getShaderUrl = (path: string): string => {
-          const loc = window.location;
-          let dir = loc.pathname;
-          if (!dir.endsWith('/')) {
-            // Treat as directory (e.g. /yoga -> /yoga/)
-            dir = dir.replace(/[^/]*$/, '') + '/';
-          }
-          return new URL(path, loc.origin + dir).href;
-        };
-
-        const shaderUrl = getShaderUrl(shaderPath);
+        const shaderUrl = resolveAssetUrl(shaderPath);
         const shaderResponse = await fetch(shaderUrl);
         if (!shaderResponse.ok) {
           throw new Error(`Shader load failed: ${shaderResponse.status} ${shaderUrl}`);

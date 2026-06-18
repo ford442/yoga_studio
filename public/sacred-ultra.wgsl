@@ -320,7 +320,7 @@ fn pmodRadial(pos: vec2<f32>, num: f32, out_id: ptr<function, f32>) -> vec2<f32>
     return rot2(final_angle) * pos;
 }
 
-fn mapStarsGeo(uv: vec2<f32>, out near: ptr<function, vec3<f32>>, out neighbor: ptr<function, vec3<f32>>) {
+fn mapStarsGeo(uv: vec2<f32>, near: ptr<function, vec3<f32>>, neighbor: ptr<function, vec3<f32>>) {
     var point: vec2<f32>;
     *near = vec3<f32>(1e+4, 1e+4, 1e+4);
 
