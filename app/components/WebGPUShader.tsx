@@ -17,6 +17,8 @@ interface WebGPUShaderProps {
   chakraFocus?: number; // -1=none, 0..6=root..crown
   geometryDensity?: number; // 0.0=sparse, 1.0=default, 3.0=rich
   interference?: number;    // 0.0=still, 1.0=strong moire/interference
+  qualityPreset?: number;   // 0=mobile, 1=high, undefined=auto-detect
+  overlayEnabled?: boolean; // WebGL2 transparent geometry layer on top of WebGPU
   className?: string;
   shaderPath?: string;
   vertexEntry?: string;
@@ -41,7 +43,14 @@ type ShaderPropsRef = Required<Pick<
   | 'chakraFocus'
   | 'geometryDensity'
   | 'interference'
+  | 'qualityPreset'
 >>;
+
+const resolveQualityPreset = (explicit?: number): number => {
+  if (explicit !== undefined) return explicit >= 0.5 ? 1 : 0;
+  if (typeof window === 'undefined') return 1;
+  return window.innerWidth < 768 ? 0 : 1;
+};
 
 const WEBGL_VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -214,6 +223,158 @@ void main() {
 }
 `;
 
+const WEBGL_OVERLAY_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+uniform float uTime;
+uniform float uBreathPhase;
+uniform float uPhaseProgress;
+uniform float uChakraPhase;
+uniform float uIntensity;
+uniform float uInterference;
+uniform float uGeometryDensity;
+uniform float uQualityPreset;
+uniform float uTheme;
+uniform vec2 uResolution;
+
+out vec4 outColor;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+mat2 rot(float a) {
+  float s = sin(a);
+  float c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+float curve(float t, float d) {
+  t /= d;
+  return mix(floor(t), floor(t) + 1.0, pow(smoothstep(0.0, 1.0, fract(t)), 20.0));
+}
+
+float dHex(vec2 p) {
+  p = abs(p);
+  return max(dot(p, normalize(vec2(1.0, 1.73))), p.x);
+}
+
+float dTri(vec2 p) {
+  float a = atan(p.x, p.y) + PI;
+  float r = TAU / 3.0;
+  return cos(floor(0.5 + a / r) * r - a) * length(p);
+}
+
+float strokeRing(float dist, float thickness, float blur) {
+  return 1.0 - smoothstep(0.0, thickness, abs(dist) - blur);
+}
+
+float hexRing(vec2 p, float radius, float thickness, float blur) {
+  return strokeRing(dHex(p) - radius, thickness, blur);
+}
+
+float triRing(vec2 p, float radius, float thickness, float blur) {
+  return strokeRing(dTri(p) - radius, thickness, blur);
+}
+
+float circleRing(vec2 p, float radius, float thickness, float blur) {
+  return strokeRing(length(p) - radius, thickness, blur);
+}
+
+vec2 moda(vec2 p, float repetitions) {
+  float angle = TAU / repetitions;
+  float a = atan(p.y, p.x) + angle * 0.5;
+  a = mod(a, angle) - angle * 0.5;
+  return vec2(cos(a), sin(a)) * length(p);
+}
+
+vec3 overlayPalette(float theme, float phase) {
+  vec3 cosmic = mix(vec3(0.35, 0.72, 1.0), vec3(0.82, 0.42, 1.0), phase);
+  vec3 golden = mix(vec3(1.0, 0.62, 0.22), vec3(1.0, 0.88, 0.42), phase);
+  vec3 ocean = mix(vec3(0.22, 0.92, 0.82), vec3(0.28, 0.58, 1.0), phase);
+  vec3 color = cosmic;
+  color = mix(color, golden, smoothstep(0.35, 1.0, 1.0 - abs(theme - 1.0)));
+  color = mix(color, ocean, smoothstep(0.35, 1.0, 1.0 - abs(theme - 2.0)));
+  return color;
+}
+
+float floatingShape(vec2 p, float sides, float size, float rot) {
+  float r = length(p);
+  float a = atan(p.y, p.x) + rot;
+  float sector = TAU / sides;
+  float sa = mod(a + sector * 0.5, sector) - sector * 0.5;
+  float d = abs(r - size * 0.5) + abs(sa) * r * 1.4;
+  return smoothstep(size * 0.18, 0.0, d);
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution.xy) / max(uResolution.y, 1.0);
+  float breath = 0.5 + 0.5 * sin(uBreathPhase * TAU - PI * 0.5);
+  float tt = 0.3 * uTime;
+  float anim = curve(tt, 2.0);
+  float phaseMix = clamp(uChakraPhase / 3.0, 0.0, 1.0);
+  vec3 accent = overlayPalette(uTheme, phaseMix);
+
+  vec2 uvr = uv * (1.15 + breath * 0.05);
+  float lineWidth = mix(0.0022, 0.0015, step(0.5, uQualityPreset));
+  float blur = 0.001;
+  float glow = 0.35;
+
+  float rings = 0.0;
+  rings += hexRing(uvr, 0.62, lineWidth, blur);
+  rings += glow * hexRing(uvr, 0.62, lineWidth * 5.0, blur);
+
+  vec2 uv0 = rot(-PI * anim) * uvr;
+  rings += hexRing(uv0, 0.31, lineWidth, blur);
+  rings += glow * hexRing(uv0, 0.31, lineWidth * 5.0, blur);
+
+  vec2 uv1 = rot(PI * anim) * uvr;
+  rings += triRing(uv1, 0.34, lineWidth, blur);
+  rings += glow * triRing(uv1, 0.34, lineWidth * 5.0, blur);
+
+  vec2 uv2 = rot(PI - anim * PI) * uvr;
+  rings += triRing(uv2, 0.22, lineWidth, blur);
+
+  if (uQualityPreset >= 0.5) {
+    vec2 uv3 = rot(PI * 0.5) * uvr;
+    uv3 = rot(PI * anim) * uv3;
+    uv3 = moda(uv3, 6.0);
+    uv3.x -= mix(0.22, 0.48, abs(mod(anim, 2.0) - 1.0));
+    rings += circleRing(uv3, 0.12, lineWidth, blur);
+    rings += glow * circleRing(uv3, 0.12, lineWidth * 5.0, blur);
+  }
+
+  float ringPulse = mix(0.0, 0.55, sin(tt * PI) * 0.5 + 0.5);
+  vec3 ringCol = mix(vec3(0.76, 0.85, 1.0), accent, 0.35) * rings * ringPulse;
+
+  vec3 shapes = vec3(0.0);
+  float shapeAlpha = 0.0;
+  int layerCount = uQualityPreset >= 0.5 ? 6 : 3;
+
+  for (int i = 0; i < 6; i++) {
+    if (i >= layerCount) break;
+    float fi = float(i);
+    float sides = mix(3.0, 8.0, fract(fi * 0.37));
+    vec2 anchor = vec2(
+      sin(uTime * (0.11 + fi * 0.013) + fi * 1.9),
+      cos(uTime * (0.09 + fi * 0.017) + fi * 2.4)
+    ) * (0.55 + fi * 0.08);
+    vec2 local = rot(uTime * (0.04 + fi * 0.01) + anim * 0.35) * (uv - anchor);
+    float shape = floatingShape(local, sides, 0.14 + fi * 0.015, fi * 0.8);
+    float layerAlpha = shape * (0.08 + uIntensity * 0.06) * (1.0 - fi * 0.08);
+    shapes += accent * layerAlpha;
+    shapeAlpha = max(shapeAlpha, layerAlpha);
+  }
+
+  float orbit = circleRing(rot(uTime * 0.08 + anim) * uvr, 0.88 + breath * 0.04, lineWidth * 0.8, blur);
+  ringCol += accent * orbit * 0.22;
+
+  vec3 color = ringCol + shapes;
+  float alpha = clamp(max(rings * 0.28, shapeAlpha) * (0.42 + uIntensity * 0.18), 0.0, 0.72);
+  alpha *= smoothstep(1.35, 0.15, length(uv));
+  outColor = vec4(color, alpha);
+}
+`;
+
 const createShader = (gl: WebGL2RenderingContext, type: number, source: string): WebGLShader => {
   const shader = gl.createShader(type);
   if (!shader) throw new Error('Unable to create WebGL2 shader.');
@@ -248,6 +409,40 @@ const createProgram = (gl: WebGL2RenderingContext): WebGLProgram => {
   return program;
 };
 
+const createOverlayProgram = (gl: WebGL2RenderingContext): WebGLProgram => {
+  const vertexShader = createShader(gl, gl.VERTEX_SHADER, WEBGL_VERTEX_SHADER);
+  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, WEBGL_OVERLAY_FRAGMENT_SHADER);
+  const program = gl.createProgram();
+  if (!program) throw new Error('Unable to create WebGL2 overlay program.');
+
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const log = gl.getProgramInfoLog(program) ?? 'Unknown WebGL2 overlay program link error';
+    gl.deleteProgram(program);
+    throw new Error(log);
+  }
+
+  return program;
+};
+
+type OverlayUniforms = {
+  time: WebGLUniformLocation | null;
+  breathPhase: WebGLUniformLocation | null;
+  phaseProgress: WebGLUniformLocation | null;
+  chakraPhase: WebGLUniformLocation | null;
+  intensity: WebGLUniformLocation | null;
+  interference: WebGLUniformLocation | null;
+  geometryDensity: WebGLUniformLocation | null;
+  qualityPreset: WebGLUniformLocation | null;
+  theme: WebGLUniformLocation | null;
+  resolution: WebGLUniformLocation | null;
+};
+
 const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   breathPhase,
   intensity = 1.0,
@@ -263,16 +458,22 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   chakraFocus = -1,
   geometryDensity = 1.0,
   interference = 0.5,
+  qualityPreset,
+  overlayEnabled = true,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
   fragmentEntry = 'main',
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const deviceRef = useRef<GPUDevice | null>(null);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const [rendererMode, setRendererMode] = useState<RendererMode>('webgpu');
+
+  const resolvedQuality = resolveQualityPreset(qualityPreset);
 
   // Mutable refs for animated values so the graphics backend only initializes once.
   const propsRef = useRef<ShaderPropsRef>({
@@ -290,6 +491,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     chakraFocus,
     geometryDensity,
     interference,
+    qualityPreset: resolvedQuality,
   });
 
   useEffect(() => {
@@ -308,8 +510,9 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       chakraFocus,
       geometryDensity,
       interference,
+      qualityPreset: resolveQualityPreset(qualityPreset),
     };
-  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, figurePose, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference]);
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, figurePose, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference, qualityPreset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,6 +520,10 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     let glContext: WebGL2RenderingContext | null = null;
     let glProgram: WebGLProgram | null = null;
     let glVertexArray: WebGLVertexArrayObject | null = null;
+    let overlayGl: WebGL2RenderingContext | null = null;
+    let overlayProgram: WebGLProgram | null = null;
+    let overlayVertexArray: WebGLVertexArrayObject | null = null;
+    let overlayUniforms: OverlayUniforms | null = null;
 
     const markWebGPUFailed = (message: string, error?: unknown) => {
       console.warn(`[WebGPUShader] ${message} Falling back to WebGL2.`, error);
@@ -328,7 +535,6 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const w = Math.floor(canvas.clientWidth * dpr);
       const h = Math.floor(canvas.clientHeight * dpr);
 
-      // Prevent GPU errors if canvas is invisible/0px during React mount.
       if (w === 0 || h === 0) return false;
 
       if (canvas.width !== w || canvas.height !== h) {
@@ -338,6 +544,87 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       }
       return true;
     };
+
+    const renderOverlayFrame = (currentTime: number) => {
+      if (!overlayEnabled || !overlayGl || !overlayProgram || !overlayUniforms) return;
+
+      const overlayCanvas = overlayCanvasRef.current;
+      if (!overlayCanvas || overlayCanvas.width === 0 || overlayCanvas.height === 0) return;
+
+      const {
+        breathPhase: bp,
+        intensity: int,
+        chakraPhase: cp,
+        phaseProgress: pp,
+        theme: th,
+        geometryDensity: gd,
+        interference: ir,
+        qualityPreset: qp,
+      } = propsRef.current;
+
+      const gl = overlayGl;
+      gl.viewport(0, 0, overlayCanvas.width, overlayCanvas.height);
+      gl.useProgram(overlayProgram);
+      gl.bindVertexArray(overlayVertexArray);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.uniform1f(overlayUniforms.time, currentTime);
+      gl.uniform1f(overlayUniforms.breathPhase, bp);
+      gl.uniform1f(overlayUniforms.phaseProgress, pp);
+      gl.uniform1f(overlayUniforms.chakraPhase, cp);
+      gl.uniform1f(overlayUniforms.intensity, int);
+      gl.uniform1f(overlayUniforms.interference, ir);
+      gl.uniform1f(overlayUniforms.geometryDensity, gd);
+      gl.uniform1f(overlayUniforms.qualityPreset, qp);
+      gl.uniform1f(overlayUniforms.theme, th);
+      gl.uniform2f(overlayUniforms.resolution, overlayCanvas.width, overlayCanvas.height);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+
+    const initOverlay = () => {
+      if (!overlayEnabled) return;
+
+      const overlayCanvas = overlayCanvasRef.current;
+      if (!overlayCanvas) return;
+
+      const gl = overlayCanvas.getContext('webgl2', {
+        alpha: true,
+        antialias: true,
+        premultipliedAlpha: false,
+      });
+      if (!gl) {
+        console.warn('[WebGPUShader] WebGL2 overlay is unavailable.');
+        return;
+      }
+
+      overlayGl = gl;
+      try {
+        overlayProgram = createOverlayProgram(gl);
+        overlayVertexArray = gl.createVertexArray();
+        overlayUniforms = {
+          time: gl.getUniformLocation(overlayProgram, 'uTime'),
+          breathPhase: gl.getUniformLocation(overlayProgram, 'uBreathPhase'),
+          phaseProgress: gl.getUniformLocation(overlayProgram, 'uPhaseProgress'),
+          chakraPhase: gl.getUniformLocation(overlayProgram, 'uChakraPhase'),
+          intensity: gl.getUniformLocation(overlayProgram, 'uIntensity'),
+          interference: gl.getUniformLocation(overlayProgram, 'uInterference'),
+          geometryDensity: gl.getUniformLocation(overlayProgram, 'uGeometryDensity'),
+          qualityPreset: gl.getUniformLocation(overlayProgram, 'uQualityPreset'),
+          theme: gl.getUniformLocation(overlayProgram, 'uTheme'),
+          resolution: gl.getUniformLocation(overlayProgram, 'uResolution'),
+        };
+      } catch (error) {
+        console.warn('[WebGPUShader] WebGL2 overlay setup failed:', error);
+        overlayGl = null;
+        overlayProgram = null;
+      }
+    };
+
+    initOverlay();
 
     const initWebGL2 = () => {
       const canvas = canvasRef.current;
@@ -380,11 +667,16 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       const resize = () => {
         resizeCanvas(canvas, () => gl.viewport(0, 0, canvas.width, canvas.height));
         gl.viewport(0, 0, canvas.width, canvas.height);
+        const overlayCanvas = overlayCanvasRef.current;
+        if (overlayCanvas) {
+          resizeCanvas(overlayCanvas, () => overlayGl?.viewport(0, 0, overlayCanvas.width, overlayCanvas.height));
+        }
       };
 
       resize();
+      const observeTarget = containerRef.current ?? canvas;
       ro = new ResizeObserver(resize);
-      ro.observe(canvas);
+      ro.observe(observeTarget);
 
       const loop = () => {
         if (cancelled || !glProgram) return;
@@ -434,6 +726,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+        renderOverlayFrame(currentTime);
 
         animationRef.current = requestAnimationFrame(loop);
       };
@@ -486,11 +780,16 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
       const resize = () => {
         resizeCanvas(canvas, configure);
+        const overlayCanvas = overlayCanvasRef.current;
+        if (overlayCanvas) {
+          resizeCanvas(overlayCanvas, () => overlayGl?.viewport(0, 0, overlayCanvas.width, overlayCanvas.height));
+        }
       };
 
       resize();
+      const observeTarget = containerRef.current ?? canvas;
       ro = new ResizeObserver(resize);
-      ro.observe(canvas);
+      ro.observe(observeTarget);
 
       let pipeline: GPURenderPipeline | null = null;
       let uniformBuffer: GPUBuffer | null = null;
@@ -544,7 +843,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         //   [14] geometryDensity @byte 56  // 0.0=sparse, 1.0=default, 3.0=rich
         //   [15] interference    @byte 60  // 0.0=still, 1.0=strong moire/interference
         //   [16] figurePose      @byte 64  // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
-        //   [17] padding         @byte 68  (struct padded to 72 bytes for 8-byte alignment)
+        //   [17] qualityPreset   @byte 68  // 0.0=mobile, 1.0=high
         //   Total struct size: 72 bytes (WebGPU uniform buffer alignment)
         uniformBuffer = device.createBuffer({
           size: 72,
@@ -588,6 +887,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           chakraFocus: cf,
           geometryDensity: gd,
           interference: ir,
+          qualityPreset: qp,
         } = propsRef.current;
         const start = startTimeRef.current ?? Date.now();
         const now = (Date.now() - start) / 1000;
@@ -613,7 +913,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           gd,            // [14] geometryDensity
           ir,            // [15] interference
           fp,            // [16] figurePose
-          0.0,           // [17] padding
+          qp,            // [17] qualityPreset
         ]);
 
         try {
@@ -632,6 +932,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           pass.end();
 
           device.queue.submit([encoder.finish()]);
+          renderOverlayFrame(currentTime);
         } catch (error) {
           markWebGPUFailed('WebGPU render loop failed.', error);
           return;
@@ -659,21 +960,37 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       if (glProgram) {
         glContext?.deleteProgram(glProgram);
       }
+      if (overlayVertexArray) {
+        overlayGl?.deleteVertexArray(overlayVertexArray);
+      }
+      if (overlayProgram) {
+        overlayGl?.deleteProgram(overlayProgram);
+      }
       if (deviceRef.current) {
         try { deviceRef.current.destroy(); } catch { /* ignore */ }
         deviceRef.current = null;
       }
     };
-  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode]);
+  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, overlayEnabled]);
 
   return (
-    <canvas
-      key={rendererMode}
-      ref={canvasRef}
-      className={`absolute inset-0 w-full h-full ${className}`}
-      data-renderer={rendererMode}
-      style={{ display: 'block' }}
-    />
+    <div ref={containerRef} className={`absolute inset-0 w-full h-full ${className}`}>
+      <canvas
+        key={rendererMode}
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full"
+        data-renderer={rendererMode}
+        style={{ display: 'block' }}
+      />
+      {overlayEnabled && (
+        <canvas
+          ref={overlayCanvasRef}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          data-layer="webgl2-overlay"
+          style={{ display: 'block', mixBlendMode: 'screen' }}
+        />
+      )}
+    </div>
   );
 };
 

@@ -39,7 +39,7 @@ struct Uniforms {
     geometryDensity: f32,    // detail multiplier for geometry/petals/ring counts
     interference: f32,       // moire / recursive layer motion strength
     figurePose: f32,         // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
-    _padding: f32,
+    qualityPreset: f32,      // 0.0=mobile (reduced detail), 1.0=high (full star field + rings)
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -62,6 +62,8 @@ fn vs(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
 const PI: f32 = 3.14159265359;
 const TAU: f32 = 6.28318530718;
 const GOLDEN_ANGLE: f32 = 2.39996323;
+const HEX_COS: f32 = 0.866025404;
+const HEX_TAN: f32 = 0.577350269;
 const CHAKRA = array<vec3<f32>, 7>(
     vec3<f32>(0.90, 0.12, 0.18), // root
     vec3<f32>(0.98, 0.45, 0.12), // sacral
@@ -289,6 +291,217 @@ fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density
     return col;
 }
 
+// ---------------------------------------------------------------------------
+// Shadertoy-inspired background geometry (star field + stepped ring curves)
+// ---------------------------------------------------------------------------
+
+fn isHighQuality() -> bool {
+    return u.qualityPreset >= 0.5;
+}
+
+fn shadertoyCurve(t: f32, d: f32) -> f32 {
+    let scaled = t / d;
+    return mix(floor(scaled), floor(scaled) + 1.0, pow(smoothstep(0.0, 1.0, fract(scaled)), 20.0));
+}
+
+fn hueFromTime(v: f32) -> vec3<f32> {
+    return 0.6 + 0.6 * cos(6.3 * v + vec3<f32>(0.0, 23.0, 21.0));
+}
+
+fn toLogPolar(p: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(log(max(length(p), 1e-6)), atan2(p.y, p.x));
+}
+
+fn pmodRadial(pos: vec2<f32>, num: f32, out_id: ptr<function, f32>) -> vec2<f32> {
+    let angle = atan2(pos.x, pos.y) + PI / num;
+    let split = TAU / num;
+    *out_id = floor(angle / split);
+    let final_angle = (*out_id) * split;
+    return rot2(final_angle) * pos;
+}
+
+fn mapStarsGeo(uv: vec2<f32>, out near: ptr<function, vec3<f32>>, out neighbor: ptr<function, vec3<f32>>) {
+    var point: vec2<f32>;
+    *near = vec3<f32>(1e+4, 1e+4, 1e+4);
+
+    for (var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+        point = vec2<f32>(0.0, HEX_COS + y * HEX_TAN * 0.25);
+        let dist = distance(uv, point);
+        if ((*near).z >= dist) {
+            *near = vec3<f32>(point, dist);
+        }
+    }
+
+    for (var x: f32 = -1.0; x <= 1.0; x = x + 2.0) {
+        for (var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+            for (var both: f32 = -1.0; both <= 1.0; both = both + 2.0) {
+                point = vec2<f32>(x * 0.125, HEX_COS + y * HEX_COS * 0.5);
+                point.x = point.x + both * 0.5 * 0.125 * -x;
+                point.y = point.y + both * HEX_TAN * 0.125 * -y;
+                let dist = distance(uv, point);
+                if ((*near).z >= dist) {
+                    *near = vec3<f32>(point, dist);
+                }
+            }
+        }
+    }
+
+    *neighbor = vec3<f32>(1e+4, 1e+4, 1e+4);
+
+    for (var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+        point = vec2<f32>(0.0, HEX_COS + y * HEX_TAN * 0.25);
+        if (!all((*near).xy == point)) {
+            let center = (point + (*near).xy) * 0.5;
+            let dist = dot(uv - center, normalize((*near).xy - point));
+            if ((*neighbor).z >= dist) {
+                *neighbor = vec3<f32>(point, dist);
+            }
+        }
+    }
+
+    for (var x: f32 = -1.0; x <= 1.0; x = x + 2.0) {
+        for (var y: f32 = -1.0; y <= 1.0; y = y + 2.0) {
+            for (var both: f32 = -1.0; both <= 1.0; both = both + 2.0) {
+                point = vec2<f32>(x * 0.125, HEX_COS + y * HEX_COS * 0.5);
+                point.x = point.x + both * 0.5 * 0.125 * -x;
+                point.y = point.y + both * HEX_TAN * 0.125 * -y;
+                if (!all((*near).xy == point)) {
+                    let center = (point + (*near).xy) * 0.5;
+                    let dist = dot(uv - center, normalize((*near).xy - point));
+                    if ((*neighbor).z >= dist) {
+                        *neighbor = vec3<f32>(point, dist);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn starPattern(uv_in: vec2<f32>, time: f32) -> f32 {
+    let uvb = uv_in;
+    var uv = uv_in;
+
+    let width = 0.0001 + mix(0.03, 0.0, pow(dot(uv, uv), 0.3));
+
+    uv = toLogPolar(uv * 0.01) * 2.5;
+    uv.x = uv.x + (-0.2 * time);
+    uv = vec2<f32>(pmod(uv.x, 1.0) - 0.5, pmod(uv.y, HEX_COS * 2.0) - HEX_COS);
+
+    var id: f32 = 0.0;
+    let reps: f32 = 5.0;
+    let tt: f32 = 0.07 * (time + 6.0);
+    let modt: f32 = pow(smoothstep(0.0, 0.3, abs(fract(0.1 * length(uvb) - tt) - 0.5)), 500.0);
+    let alpha: f32 = mix(6.0, 18.0, modt);
+
+    uv = pmodRadial(uv, alpha, &id);
+
+    var near: vec3<f32>;
+    var neighbor: vec3<f32>;
+    mapStarsGeo(uv, &near, &neighbor);
+
+    return 1.0 - smoothstep(0.0, width, neighbor.z);
+}
+
+fn dHex(p: vec2<f32>) -> f32 {
+    let ap = abs(p);
+    return max(dot(ap, normalize(vec2<f32>(1.0, 1.73))), ap.x);
+}
+
+fn dTri(p: vec2<f32>) -> f32 {
+    let a = atan2(p.x, p.y) + PI;
+    let r = TAU / 3.0;
+    return cos(floor(0.5 + a / r) * r - a) * length(p);
+}
+
+fn strokeRing(dist: f32, thickness: f32, blur: f32) -> f32 {
+    return 1.0 - smoothstep(0.0, thickness, abs(dist) - blur);
+}
+
+fn shadertoyHexRing(p: vec2<f32>, radius: f32, thickness: f32, blur: f32) -> f32 {
+    return strokeRing(dHex(p) - radius, thickness, blur);
+}
+
+fn shadertoyTriRing(p: vec2<f32>, radius: f32, thickness: f32, blur: f32) -> f32 {
+    return strokeRing(dTri(p) - radius, thickness, blur);
+}
+
+fn shadertoyCircleRing(p: vec2<f32>, radius: f32, thickness: f32, blur: f32) -> f32 {
+    return strokeRing(length(p) - radius, thickness, blur);
+}
+
+fn moda(p: vec2<f32>, repetitions: f32) -> vec2<f32> {
+    let angle = TAU / repetitions;
+    var a = atan2(p.y, p.x) + angle * 0.5;
+    a = pmod(a, angle) - angle * 0.5;
+    return vec2<f32>(cos(a), sin(a)) * length(p);
+}
+
+fn shadertoySacredRings(uv_in: vec2<f32>, t: f32, expand: f32) -> vec3<f32> {
+    var rings = 0.0;
+    var uvr = uv_in * 1.2;
+
+    let triSize = 0.286;
+    let hexSize = 0.5;
+    let circleSize = 0.143;
+    let lineWidth = select(0.002, 0.0015, isHighQuality());
+    let blur = 0.001;
+    let glow = 0.3;
+    let tt = 0.3 * t;
+    let anim = shadertoyCurve(tt, 2.0);
+    let ringPulse = mix(0.0, 0.5, sin(tt * PI) * 0.5 + 0.5);
+
+    if (isHighQuality()) {
+        for (var i = 0; i < 3; i = i + 1) {
+            uvr = abs(uvr) - triSize;
+            uvr = rot2(cos(uvr.x + tt)) * uvr;
+        }
+    }
+
+    rings += shadertoyHexRing(uvr, hexSize, lineWidth, blur);
+    rings += glow * shadertoyHexRing(uvr, hexSize, lineWidth * 5.0, blur);
+
+    var uv0 = uvr;
+    uv0 = rot2(-PI * anim) * uv0;
+    rings += shadertoyHexRing(uv0, hexSize * 0.5, lineWidth, blur);
+    rings += glow * shadertoyHexRing(uv0, hexSize * 0.5, lineWidth * 5.0, blur);
+
+    var uv1 = uvr;
+    uv1 = rot2(PI * anim) * uv1;
+    rings += shadertoyTriRing(uv1, triSize, lineWidth, blur);
+    rings += glow * shadertoyTriRing(uv1, triSize, lineWidth * 5.0, blur);
+
+    var uv2 = uvr;
+    uv2 = rot2(PI - anim * PI) * uv2;
+    rings += shadertoyTriRing(uv2, triSize, lineWidth, blur);
+    rings += glow * shadertoyTriRing(uv2, triSize, lineWidth * 5.0, blur);
+
+    if (isHighQuality()) {
+        var uv3 = uvr;
+        uv3 = rot2(PI * 0.5) * uv3;
+        uv3 = rot2(PI * anim) * uv3;
+        uv3 = moda(uv3, 6.0);
+        uv3.x = uv3.x - mix(triSize, 0.576, abs(pmod(anim, 2.0) - 1.0));
+        rings += shadertoyCircleRing(uv3, circleSize, lineWidth, blur);
+        rings += glow * shadertoyCircleRing(uv3, circleSize, lineWidth * 5.0, blur);
+    }
+
+    let ringColor = vec3<f32>(0.761, 0.851, 1.000);
+    let hueCol = hueFromTime(-tt + length(uv_in) * 2.0 + 0.5 * PI);
+    return 0.6 * mix(ringColor, hueCol, 0.5) * rings * ringPulse * (0.65 + expand * 0.35);
+}
+
+fn shadertoyStarField(uv: vec2<f32>, t: f32, expand: f32) -> vec3<f32> {
+    if (!isHighQuality()) {
+        return vec3<f32>(0.0);
+    }
+
+    let tt = 0.3 * t;
+    let stars = starPattern(uv * 0.5, tt);
+    let starHue = hueFromTime(-tt + length(uv));
+    let vignette = mix(0.1, 0.2, sin(length(uv) * 1.5 + tt) * 0.5 + 0.5);
+    return vec3<f32>(stars) * 0.6 * (0.1 + 0.9 * starHue) * vignette * (0.55 + expand * 0.45);
+}
+
 // ============================================================================
 // MODULE 1 — BACKGROUND ATMOSPHERE (Agent: Background & Geometry Specialist)
 // ============================================================================
@@ -361,11 +574,13 @@ fn floatingGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32
     let p3 = rot2(t * 0.018) * (uv - vec2<f32>(0.85, 0.85));
     col += geometryFragment(p3, 5.0, 0.12, 2.5, breath) * 0.5;
 
-    let p4 = rot2(-t * 0.022) * (uv - vec2<f32>(-0.75, -0.85));
-    col += geometryFragment(p4, 7.0, 0.14, 0.8, breath) * 0.6;
+    if (isHighQuality()) {
+        let p4 = rot2(-t * 0.022) * (uv - vec2<f32>(-0.75, -0.85));
+        col += geometryFragment(p4, 7.0, 0.14, 0.8, breath) * 0.6;
 
-    let p5 = rot2(t * 0.015) * (uv - vec2<f32>(1.4, 0.2));
-    col += geometryFragment(p5, 6.0, 0.10, 3.0, breath) * 0.35;
+        let p5 = rot2(t * 0.015) * (uv - vec2<f32>(1.4, 0.2));
+        col += geometryFragment(p5, 6.0, 0.10, 3.0, breath) * 0.35;
+    }
 
     return col;
 }
@@ -396,6 +611,7 @@ fn emanationRays(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
 fn backgroundAtmosphere(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let r = length(uv);
     var col = vec3<f32>(0.003, 0.0015, 0.010);
+    col += shadertoyStarField(uv, t, expand);
     col += nebulaDust(uv, t, breath, expand);
     col += twinkleStars(uv, t, breath, expand);
     col += floatingGeometry(uv, t, breath, expand);
@@ -468,23 +684,26 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
     let breathe = expand * 0.12 * (1.0 + 0.05 * u.intensity * sin(t * 3.0));
 
     if (isLotus) {
-        let hexN = 6.0 + floor(density * 4.0);
+        let tt = 0.3 * t;
+        let anim = shadertoyCurve(tt, 2.0);
+
+        let hexN = select(4.0, 6.0 + floor(density * 4.0), isHighQuality());
         let hexUV = kalei(uv, hexN);
-        let hexRot = t * 0.05 * (1.0 + u.interference * 0.3) + u.phaseProgress * 0.1;
+        let hexRot = -PI * anim + u.phaseProgress * 0.1;
         let hexR = rot2(hexRot) * hexUV;
         let hexD = abs(length(hexR) - (0.75 + breathe)) - 0.015;
         let hexGlow = exp(-abs(hexD) * 40.0);
         col += hexGlow * phaseColor * 0.5;
 
-        let triN = 3.0 + floor(density * 2.0);
+        let triN = select(3.0, 3.0 + floor(density * 2.0), isHighQuality());
         let triUV = kalei(uv, triN);
-        let triRot = -t * 0.08 * (1.0 + u.interference * 0.5) - u.phaseProgress * 0.15;
+        let triRot = PI * anim - u.phaseProgress * 0.15;
         let triR = rot2(triRot) * triUV;
         let triD = abs(length(triR) - (0.55 + breathe * 0.8)) - 0.012;
         let triGlow = exp(-abs(triD) * 45.0);
         col += triGlow * vec3<f32>(1.0, 0.85, 0.25) * 0.4;
 
-        let ringCount = i32(clamp(2.0 + density * 3.0, 2.0, 7.0));
+        let ringCount = i32(clamp(select(2.0, 2.0 + density * 3.0, isHighQuality()), 2.0, 7.0));
         for (var i = 0; i < ringCount; i++) {
             let fi = f32(i);
             let rad = 0.20 + fi * 0.08 + breathe * 0.3;
@@ -574,6 +793,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
 fn layeredSacredGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let inter = u.interference;
+    col += shadertoySacredRings(uv, t, expand) * select(0.45, 0.70, isHighQuality());
     col += sacredGeometryRings(uv / 0.30, t * (1.30 + inter * 0.4) + 1.7, breath, expand) * 0.22;
     col += sacredGeometryRings(uv / 0.60, t * (0.90 - inter * 0.35) + 0.8, breath, expand) * 0.45;
     col += sacredGeometryRings(uv,        t * (1.0 + inter * 0.15),       breath, expand) * 1.00;
@@ -584,10 +804,11 @@ fn pranaParticles(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> 
     var col = vec3<f32>(0.0);
     let outward = u.chakraPhase < 1.5;
     let flowSpeed = 0.25 + 0.15 * u.intensity;
+    let particleCount = select(16.0, 32.0, isHighQuality());
 
-    for (var i: f32 = 0.0; i < 32.0; i += 1.0) {
+    for (var i: f32 = 0.0; i < particleCount; i += 1.0) {
         let seed = i * 13.37;
-        let a = i * TAU / 32.0 + t * flowSpeed + hash21(vec2<f32>(seed, 0.0));
+        let a = i * TAU / particleCount + t * flowSpeed + hash21(vec2<f32>(seed, 0.0));
         let r = 0.15 + fract(seed + t * 0.3) * 0.6;
 
         let flow = select(1.0 - u.phaseProgress, u.phaseProgress, outward);
