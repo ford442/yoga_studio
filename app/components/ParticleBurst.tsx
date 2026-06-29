@@ -78,6 +78,7 @@ const ParticleBurst: React.FC<ParticleBurstProps> = ({ phase, isRunning, color }
       color,
       particles: buildParticles(kind),
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBursts((prev) => [...prev, burst]);
 
     const timeout = window.setTimeout(() => {

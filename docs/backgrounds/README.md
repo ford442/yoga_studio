@@ -18,11 +18,11 @@ the system gracefully falls back to the solid `#05010a` void.
 | `candle-altar` | Candle Altar | temple detail | dark | 0.07 |
 | `mist-mandala` | Mist Mandala | temple detail | dark | 0.10 |
 | `cosmic-bokeh` | Cosmic Bokeh | cosmic / sky | dark | 0.07 |
-| `lotus-water` | Lotus Water | natural texture | dark | 0.16 |
-| `stone-wabi` | Stone & Wood | natural texture | dark | 0.15 |
-| `twilight-sky` | Twilight Sky | cosmic / sky | mid | 0.26 |
-| `void-nearblack` | Near-Black Void | cosmic / sky | **dark (anchor)** | 0.04 |
-| `linen-veil` | Linen Veil | light & bokeh | **bright (anchor)** | 0.80 |
+| `lotus-water` | Lotus Water | natural texture | dark | 0.155 |
+| `stone-wabi` | Stone & Wood | natural texture | dark | 0.214 |
+| `twilight-sky` | Twilight Sky | cosmic / sky | mid | 0.262 |
+| `void-nearblack` | Near-Black Void | cosmic / sky | **dark (anchor)** | 0.044 |
+| `linen-veil` | Linen Veil | light & bokeh | **bright (anchor)** | 0.812 |
 
 `void-nearblack` is the very dark / near-black contrast anchor and `linen-veil`
 is the high-key bright anchor required for the system's auto-exposure range.
@@ -30,7 +30,7 @@ is the high-key bright anchor required for the system's auto-exposure range.
 Each plate ships as **3 crops × 3 formats**:
 
 - crops: `16x9` (1920×1080), `9x16` (1080×1920), `1x1` (1440×1440)
-- formats: `avif`, `webp`, `jpg` (fallback) — every variant is < 120 kB (budget 800 kB)
+- formats: `avif`, `webp`, `jpg` (fallback) — every variant is < 150 kB (budget 800 kB)
 
 File naming: `public/backgrounds/<id>-<crop>.<ext>`,
 e.g. `public/backgrounds/cosmic-bokeh-9x16.avif`.
@@ -70,8 +70,8 @@ Requirements: Python `numpy` + `Pillow`, Node `sharp`.
 
 ## Wiring
 
-- Types: `app/types/environment.ts` (`EnvironmentId` union)
-- Config: `app/data/environments.ts` (`ENVIRONMENTS`, blend/opacity/tint per plate)
+- Types: `app/types/environment.ts` (`EnvironmentId` union + `Environment.averageLuminance`)
+- Config: `app/data/environments.ts` (`ENVIRONMENTS`, blend/opacity/tint/luminance per plate)
 - Renderer: `app/components/EnvironmentBackground.tsx` (`<picture>` avif→webp→jpg,
   cross-fade, Ken Burns, theme/chakra tint, vignette)
 - Per-mode defaults: `app/data/sessionModes.ts` (`backgroundId`)

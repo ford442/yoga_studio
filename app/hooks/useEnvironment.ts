@@ -25,6 +25,7 @@ export function useEnvironment(modeBackgroundId?: EnvironmentId) {
   const [override, setOverrideState] = useState<EnvironmentOverride>('auto');
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOverrideState(readStoredOverride());
   }, []);
 

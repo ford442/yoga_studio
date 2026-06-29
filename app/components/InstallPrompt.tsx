@@ -12,6 +12,7 @@ const InstallPrompt: React.FC = () => {
   const [showInstall, setShowInstall] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowInstall(!window.matchMedia('(display-mode: standalone)').matches);
 
     const handler = (e: Event) => {

@@ -32,4 +32,6 @@ export interface Environment {
   tintByTheme?: boolean;
   /** Tint overlay follows breath chakra phase */
   tintByChakra?: boolean;
+  /** Mean Rec.709 luminance from manifest.json (0..1) for future auto-exposure. */
+  averageLuminance?: number;
 }

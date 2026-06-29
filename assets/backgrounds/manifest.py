@@ -121,7 +121,6 @@ def main():
         })
 
     manifest = {
-        "$schema": "./manifest.schema (informal)",
         "version": 1,
         "generator": "assets/backgrounds/generate.py + encode.mjs",
         "description": (
@@ -129,6 +128,7 @@ def main():
             "behind the WGSL breath shader at low opacity under theme/chakra tint."
         ),
         "license": "CC0-1.0 — all plates are original, self-generated artwork; free to use.",
+        "credits": "Original procedural artwork — Sacred Breath / generate.py",
         "crops": {"16x9": "1920x1080", "9x16": "1080x1920", "1x1": "1440x1440"},
         "formats": FORMATS,
         "luminanceModel": "Rec.709, sRGB, mean over 16:9 master, normalized 0..1",

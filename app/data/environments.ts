@@ -22,6 +22,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'soft-light',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.1041,
   },
   {
     id: 'temple-dawn',
@@ -32,6 +33,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'multiply',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.1326,
   },
   {
     id: 'forest-shafts',
@@ -42,6 +44,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'multiply',
     kenBurns: true,
     tintByChakra: true,
+    averageLuminance: 0.1249,
   },
   {
     id: 'candle-altar',
@@ -52,6 +55,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'soft-light',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.065,
   },
   {
     id: 'mist-mandala',
@@ -62,6 +66,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'soft-light',
     kenBurns: true,
     tintByChakra: true,
+    averageLuminance: 0.0973,
   },
   {
     id: 'cosmic-bokeh',
@@ -73,6 +78,7 @@ export const ENVIRONMENTS: Environment[] = [
     kenBurns: true,
     tintByTheme: true,
     tintByChakra: true,
+    averageLuminance: 0.0664,
   },
   {
     id: 'lotus-water',
@@ -83,6 +89,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'soft-light',
     kenBurns: true,
     tintByChakra: true,
+    averageLuminance: 0.1552,
   },
   {
     id: 'stone-wabi',
@@ -93,6 +100,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'multiply',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.214,
   },
   {
     id: 'twilight-sky',
@@ -103,6 +111,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'soft-light',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.2619,
   },
   {
     id: 'void-nearblack',
@@ -113,6 +122,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'normal',
     kenBurns: true,
     tintByChakra: true,
+    averageLuminance: 0.0438,
   },
   {
     id: 'linen-veil',
@@ -123,6 +133,7 @@ export const ENVIRONMENTS: Environment[] = [
     blendMode: 'multiply',
     kenBurns: true,
     tintByTheme: true,
+    averageLuminance: 0.8119,
   },
 ];
 

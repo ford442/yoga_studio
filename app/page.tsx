@@ -155,6 +155,7 @@ export default function Home() {
       try {
         const parsed = JSON.parse(rawFavorites);
         if (Array.isArray(parsed)) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setFavoriteModeIds(parsed.filter((id): id is string => typeof id === 'string'));
         }
       } catch {

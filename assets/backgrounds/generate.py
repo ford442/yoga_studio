@@ -266,42 +266,70 @@ def p_cosmic_bokeh(w, h, seed=61):
 
 def p_lotus_water(w, h, seed=71):
     xs, ys, u, v = fields(w, h)
-    # Rippled water: layered directional noise.
-    n1 = smooth_noise(w, h, 90, 4, seed)
-    n2 = smooth_noise(w, h, 40, 3, seed + 3)
-    ripple = np.sin((n1 * 6.0 + ys * 30.0)) * 0.5 + 0.5
-    base = ramp((n1 * 0.6 + ripple * 0.4),
-                [(0.0, "#06201f"), (0.4, "#0c3a36"), (0.7, "#155049"),
-                 (1.0, "#3a7a6a")])
-    spec = np.clip(ripple - 0.7, 0, 1) * (0.5 + 0.5 * n2)
-    spec = gblur(spec[..., None].repeat(3, 2), 4)[..., 0]
-    base = screen(base, (hex_rgb("#bfeede") * 0.6)[None, None, :] * spec[..., None])
-    # A couple of soft out-of-focus lotus-pad shadows.
     rng = np.random.default_rng(seed)
-    for _ in range(3):
-        cx, cy = rng.uniform(-1.4, 1.4), rng.uniform(-0.9, 0.9)
-        m = soft_disc(u, v, cx, cy, rng.uniform(0.25, 0.5), feather=2.0)
-        base *= (1.0 - 0.25 * m[..., None])
-    base = gblur(base, 3)
-    return finalize(base, u, v, w, h, seed, vig=0.45)
+    # Deep, still pond base with a gentle colour gradient.
+    base = ramp(ys,
+                [(0.0, "#041a1c"), (0.35, "#0a2f32"), (0.65, "#114845"),
+                 (1.0, "#1d5c56")])
+    # Concentric ripples from a few distant sources to feel like a real surface.
+    ripple = np.zeros((h, w), np.float32)
+    for i in range(5):
+        cx, cy = rng.uniform(-1.2, 1.2), rng.uniform(-0.8, 0.8)
+        r = np.sqrt((u - cx) ** 2 + (v - cy) ** 2)
+        freq = rng.uniform(14.0, 24.0)
+        ripple += np.sin(r * freq - rng.uniform(0, 6.28)) * np.exp(-r * 0.8)
+    ripple = (ripple / 3.0).clip(-1, 1)
+    ripple = gblur(ripple[..., None].repeat(3, 2), 2.5)[..., 0]
+    # Map ripple crests to slightly lighter teal, troughs to deeper blue-green.
+    water = base * (1.0 + ripple[..., None] * 0.25)
+    # Specular glints where crests catch a soft overhead light.
+    glint = np.clip(ripple - 0.35, 0, 1) ** 2
+    glint = gblur(glint[..., None].repeat(3, 2), 4)[..., 0]
+    water = screen(water, (hex_rgb("#d4f5e9") * 0.55)[None, None, :] * glint[..., None])
+    # Soft out-of-focus lotus-pad shadows (elliptical, darker).
+    for _ in range(4):
+        cx, cy = rng.uniform(-1.5, 1.5), rng.uniform(-1.0, 1.0)
+        rx, ry = rng.uniform(0.25, 0.55), rng.uniform(0.15, 0.35)
+        angle = rng.uniform(0, 6.28)
+        du = (u - cx) * np.cos(angle) - (v - cy) * np.sin(angle)
+        dv = (u - cx) * np.sin(angle) + (v - cy) * np.cos(angle)
+        m = np.exp(-((du / rx) ** 2 + (dv / ry) ** 2))
+        water *= (1.0 - 0.22 * gblur(m[..., None].repeat(3, 2), 18)[..., 0][..., None])
+    # Very faint caustic shimmer.
+    caust = smooth_noise(w, h, 160, 3, seed + 2)
+    water = screen(water, (hex_rgb("#8fd4c2") * 0.12)[None, None, :]
+                   * caust[..., None] * (0.5 + 0.5 * ripple[..., None]))
+    return finalize(water, u, v, w, h, seed, vig=0.4, grain_amt=0.008)
 
 
 def p_stone_wabi(w, h, seed=81):
     xs, ys, u, v = fields(w, h)
-    # Warm wood / stone grain: stretched anisotropic noise.
-    grain_n = smooth_noise(w * 2, h, 60, 5, seed)
+    # Diagonal seam: warm wood grain on the left, cool smooth stone on the right.
+    seam = np.clip((u + v * 0.3) * 1.3, 0, 1)
+    # Long anisotropic wood grain.
+    grain_n = smooth_noise(w, h * 3, 50, 5, seed)
     grain_n = np.asarray(Image.fromarray((grain_n * 255).astype(np.uint8))
                          .resize((w, h), Image.BILINEAR), np.float32) / 255.0
-    lines = np.sin(grain_n * 8.0 + xs * 26.0) * 0.5 + 0.5
-    base = ramp((grain_n * 0.6 + lines * 0.4),
-                [(0.0, "#1c120a"), (0.4, "#3a2414"), (0.7, "#5c3c20"),
-                 (1.0, "#8a5e34")])
-    blotch = smooth_noise(w, h, 220, 3, seed + 5)
-    base *= (0.7 + 0.5 * blotch[..., None])
-    # Soft top light.
-    base = screen(base, (hex_rgb("#c89a5a") * 0.25)[None, None, :]
-                  * np.clip(1 - ys * 1.3, 0, 1)[..., None])
-    base = gblur(base, 2)
+    streaks = np.sin(grain_n * 10.0 + ys * 40.0) * 0.5 + 0.5
+    wood = ramp((grain_n * 0.5 + streaks * 0.5),
+                [(0.0, "#2a1810"), (0.35, "#4a2e1a"), (0.65, "#6f4a2a"),
+                 (1.0, "#9a6b3f")])
+    # Cool stone area with subtle marbling.
+    stone_n = smooth_noise(w, h, 90, 4, seed + 1)
+    marble = np.sin(stone_n * 12.0 + u * 5.0) * 0.5 + 0.5
+    stone = ramp((stone_n * 0.7 + marble * 0.3),
+                 [(0.0, "#1a1e22"), (0.4, "#2e3538"), (0.7, "#444e4f"),
+                  (1.0, "#5c6666")])
+    # Blend across the diagonal seam with a little blur for softness.
+    seam = gblur(seam[..., None].repeat(3, 2), 40)
+    base = wood * (1.0 - seam) + stone * seam
+    # Soft raking top-left light.
+    light = np.clip(1.0 - (xs * 0.3 + ys * 0.7), 0, 1) ** 1.5
+    base = screen(base, (hex_rgb("#d4b080") * 0.22)[None, None, :] * light[..., None])
+    # Gentle warmth lift on the wood, cool lift on the stone.
+    base = screen(base, (hex_rgb("#8a5a30") * 0.08)[None, None, :] * (1.0 - seam))
+    base = screen(base, (hex_rgb("#607a80") * 0.08)[None, None, :] * seam)
+    base = gblur(base, 1.5)
     return finalize(base, u, v, w, h, seed, vig=0.5)
 
 
@@ -336,19 +364,32 @@ def p_void_nearblack(w, h, seed=101):
 
 def p_linen_veil(w, h, seed=111):
     xs, ys, u, v = fields(w, h)
-    # High-key: warm near-white with soft vertical curtain folds.
-    base = ramp(ys, [(0.0, "#fdf6e6"), (0.5, "#f7ecd6"), (1.0, "#ecdcc0")])
-    folds = np.sin(xs * 22.0 + smooth_noise(w, h, 200, 3, seed) * 3.0) * 0.5 + 0.5
-    folds = gblur(folds[..., None].repeat(3, 2), 10)[..., 0]
-    base *= (0.9 + 0.12 * folds[..., None])
-    # Warm sun bloom upper-right.
-    bloom = soft_disc(u, v, 0.6, -0.4, 1.4, feather=1.6)
-    bloom = gblur(bloom[..., None].repeat(3, 2), 50)[..., 0]
-    base = screen(base, (hex_rgb("#fff2cc") * 0.6)[None, None, :] * bloom[..., None])
-    base = gblur(base, 3)
+    rng = np.random.default_rng(seed)
+    # High-key sheer curtain with warm/cool variation.
+    base = ramp(ys,
+                [(0.0, "#fbf4e8"), (0.45, "#f5ead4"), (0.75, "#efe2c8"),
+                 (1.0, "#e6d6b8")])
+    # Soft, irregular vertical folds.
+    fold_noise = smooth_noise(w, h, 180, 3, seed)
+    folds = np.sin(xs * 18.0 + fold_noise * 4.0 + ys * 4.0) * 0.5 + 0.5
+    folds = gblur(folds[..., None].repeat(3, 2), 14)[..., 0]
+    base *= (0.88 + 0.18 * folds[..., None])
+    # Gentle warm sun bloom from upper right.
+    bloom = soft_disc(u, v, 0.55, -0.35, 1.3, feather=1.5)
+    bloom = gblur(bloom[..., None].repeat(3, 2), 55)[..., 0]
+    base = screen(base, (hex_rgb("#fff6db") * 0.55)[None, None, :] * bloom[..., None])
+    # Faint cool shadow from an implied window frame on the left.
+    frame_shadow = np.clip(1.0 - (xs / 0.18), 0, 1) ** 1.5
+    frame_shadow = gblur(frame_shadow[..., None].repeat(3, 2), 30)[..., 0]
+    base *= (1.0 - 0.08 * frame_shadow[..., None])
+    # Subtle horizontal light streaks where sun catches fold edges.
+    streaks = np.clip(np.sin(ys * 60.0 + fold_noise * 6.0), 0, 1)
+    streaks = gblur(streaks[..., None].repeat(3, 2), 8)[..., 0]
+    base = screen(base, (hex_rgb("#fff9e6") * 0.2)[None, None, :] * streaks[..., None])
+    base = gblur(base, 2.5)
     # Gentle vignette only - keep it high-key.
-    base = base * vignette(u, v, 0.18)[..., None]
-    base = base + grain(w, h, seed, 0.006)
+    base = base * vignette(u, v, 0.15)[..., None]
+    base = base + grain(w, h, seed, 0.005)
     return np.clip(base, 0, 1)
 
 

@@ -60,12 +60,14 @@ export function useInstructorVideo() {
   const [availabilityChecked, setAvailabilityChecked] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSettingsState(readStoredSettings());
     setIsSupported(canPlayVideo());
   }, []);
 
   useEffect(() => {
     if (!isSupported) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAvailabilityChecked(true);
       return;
     }
