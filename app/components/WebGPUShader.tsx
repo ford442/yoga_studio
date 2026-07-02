@@ -19,6 +19,7 @@ interface WebGPUShaderProps {
   geometryDensity?: number; // 0.0=sparse, 1.0=default, 3.0=rich
   interference?: number;    // 0.0=still, 1.0=strong moire/interference
   qualityPreset?: number;   // 0=mobile, 1=high, undefined=auto-detect
+  maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
   overlayEnabled?: boolean; // WebGL2 transparent geometry layer on top of WebGPU
   className?: string;
   shaderPath?: string;
@@ -50,7 +51,17 @@ type ShaderPropsRef = Required<Pick<
 const resolveQualityPreset = (explicit?: number): number => {
   if (explicit !== undefined) return explicit >= 0.5 ? 1 : 0;
   if (typeof window === 'undefined') return 1;
-  return window.innerWidth < 768 ? 0 : 1;
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const highDpr = window.devicePixelRatio >= 2;
+  const narrow = window.innerWidth < 900;
+  const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
+  const lowCoreCount = navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 6;
+  return highDpr || narrow || lowMemory || lowCoreCount ? 0 : 1;
+};
+
+const resolveMaxDpr = (qualityPreset: number, maxDevicePixelRatio?: number): number => {
+  if (maxDevicePixelRatio !== undefined) return Math.max(1, maxDevicePixelRatio);
+  return qualityPreset < 0.5 ? 1.5 : 2;
 };
 
 const WEBGL_VERTEX_SHADER = `#version 300 es
@@ -460,6 +471,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   geometryDensity = 1.0,
   interference = 0.5,
   qualityPreset,
+  maxDevicePixelRatio,
   overlayEnabled = true,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
@@ -532,7 +544,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     };
 
     const resizeCanvas = (canvas: HTMLCanvasElement, onResize?: () => void) => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, resolveMaxDpr(propsRef.current.qualityPreset, maxDevicePixelRatio));
       const w = Math.floor(canvas.clientWidth * dpr);
       const h = Math.floor(canvas.clientHeight * dpr);
 
@@ -957,7 +969,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         deviceRef.current = null;
       }
     };
-  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, overlayEnabled]);
+  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, overlayEnabled, maxDevicePixelRatio]);
 
   return (
     <div ref={containerRef} className={`absolute inset-0 w-full h-full ${className}`}>

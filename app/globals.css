@@ -59,6 +59,15 @@ body {
   animation: mode-ripple 500ms ease-out 1;
 }
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes phase-burst-spark {
   0% {
     opacity: 1;

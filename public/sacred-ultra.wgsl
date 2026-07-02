@@ -21,7 +21,7 @@
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// Uniforms — must match WebGPUShader.tsx exactly (64 bytes)
+// Uniforms — must match WebGPUShader.tsx exactly (72 bytes)
 // ---------------------------------------------------------------------------
 struct Uniforms {
     time: f32,
@@ -116,11 +116,17 @@ fn noise2(p: vec2<f32>) -> f32 {
     );
 }
 
+fn isHighQuality() -> bool {
+    return u.qualityPreset >= 0.5;
+}
+
 fn fbm2(p: vec2<f32>, t: f32) -> f32 {
     var sum = 0.0;
     var amp = 0.5;
     var freq = 1.0;
+    let octaves = select(2, 3, isHighQuality());
     for (var i = 0; i < 3; i++) {
+        if (i >= octaves) { break; }
         let fi = f32(i);
         sum += amp * noise2(p * freq + t * 0.2 * fi);
         amp *= 0.5;
@@ -238,8 +244,9 @@ fn kalei(p: vec2<f32>, n: f32) -> vec2<f32> {
 fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
     let r = length(uv);
     var col = vec3<f32>(0.0);
-    let ringCount = i32(clamp(3.0 + density * 4.0, 3.0, 9.0));
-    let dotCountBase = 8.0 + density * 12.0;
+    let qualityScale = select(0.55, 1.0, isHighQuality());
+    let ringCount = i32(clamp(3.0 + density * 4.0 * qualityScale, 3.0, 9.0));
+    let dotCountBase = 6.0 + density * 12.0 * qualityScale;
     for (var i = 0; i < ringCount; i++) {
         let fi = f32(i);
         let rr = 0.08 + fi * 0.055 * (1.0 + density * 0.15);
@@ -277,7 +284,8 @@ fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f
 
 fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
-    let n = clamp(count + i32(density * 18.0), 6, 48);
+    let qualityScale = select(0.55, 1.0, isHighQuality());
+    let n = clamp(count + i32(density * 18.0 * qualityScale), 6, 48);
     for (var i = 0; i < n; i++) {
         let fi = f32(i);
         let r = 0.02 + sqrt(fi) * 0.018 * density;
@@ -294,10 +302,6 @@ fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density
 // ---------------------------------------------------------------------------
 // Shadertoy-inspired background geometry (star field + stepped ring curves)
 // ---------------------------------------------------------------------------
-
-fn isHighQuality() -> bool {
-    return u.qualityPreset >= 0.5;
-}
 
 fn shadertoyCurve(t: f32, d: f32) -> f32 {
     let scaled = t / d;
@@ -639,7 +643,7 @@ fn lightShafts(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
 fn godRays(uv: vec2<f32>, t: f32, intensity: f32, expand: f32) -> vec3<f32> {
     let r = length(uv);
     let dir = normalize(uv + vec2<f32>(1e-4, 1e-4));
-    let steps = 10;
+    let steps = select(6, 10, isHighQuality());
     var acc = 0.0;
 
     var phaseScale = 0.0;
@@ -715,7 +719,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         col += dotLattice(uv, t, density) * 0.35;
 
     } else if (isYantra) {
-        let layerCount = i32(clamp(5.0 + density * 5.0, 5.0, 12.0));
+        let layerCount = i32(clamp(select(4.0 + density * 3.0, 5.0 + density * 5.0, isHighQuality()), 4.0, 12.0));
         for (var i = 0; i < layerCount; i++) {
             let fi = f32(i);
             let layerScale = 0.12 + fi * 0.055 / (1.0 + density * 0.1);
@@ -729,7 +733,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
             col += glow * layerColor * (0.32 - fi * 0.025);
         }
 
-        let circleCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
+        let circleCount = i32(clamp(select(2.0 + density * 2.0, 3.0 + density * 3.0, isHighQuality()), 2.0, 8.0));
         for (var i = 0; i < circleCount; i++) {
             let fi = f32(i);
             let cR = 0.08 + fi * 0.075;
@@ -737,7 +741,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
             let cGlow = exp(-abs(cD) * 60.0);
             col += cGlow * vec3<f32>(1.0, 0.9, 0.7) * 0.22;
 
-            let dotCount = 6u + u32(fi) * 3u + u32(density * 4.0);
+            let dotCount = select(4u + u32(fi) * 2u + u32(density * 2.0), 6u + u32(fi) * 3u + u32(density * 4.0), isHighQuality());
             for (var d = 0u; d < 24u; d = d + 1u) {
                 if (d >= dotCount) { break; }
                 let fd = f32(d);
@@ -749,7 +753,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
             }
         }
 
-        let tipCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
+        let tipCount = i32(clamp(select(2.0 + density * 2.0, 3.0 + density * 3.0, isHighQuality()), 2.0, 8.0));
         for (var i = 0; i < tipCount; i++) {
             let fi = f32(i);
             let tipUV = kalei(uv, 3.0);
@@ -760,7 +764,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         }
 
     } else {
-        let flowerN = 12.0 + floor(density * 8.0);
+        let flowerN = select(8.0 + floor(density * 4.0), 12.0 + floor(density * 8.0), isHighQuality());
         let flowerUV = kalei(uv, flowerN);
         let pRot = rot2(t * 0.04 * (1.0 + u.interference * 0.35)) * flowerUV;
         let petalCenter = vec2<f32>(0.30 * (1.0 + breathe), 0.0);
@@ -772,7 +776,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         let centerGlow = exp(-abs(centerD) * 50.0);
         col += centerGlow * vec3<f32>(1.0, 0.95, 0.8) * 0.55;
 
-        let seedCount = i32(clamp(21.0 + density * 30.0, 21.0, 60.0));
+        let seedCount = i32(clamp(select(12.0 + density * 14.0, 21.0 + density * 30.0, isHighQuality()), 12.0, 60.0));
         for (var i = 0; i < seedCount; i++) {
             let fi = f32(i);
             let r = 0.04 + sqrt(fi) * 0.055 / (1.0 + density * 0.05);
@@ -793,9 +797,13 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
 fn layeredSacredGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let inter = u.interference;
-    col += shadertoySacredRings(uv, t, expand) * select(0.45, 0.70, isHighQuality());
-    col += sacredGeometryRings(uv / 0.30, t * (1.30 + inter * 0.4) + 1.7, breath, expand) * 0.22;
-    col += sacredGeometryRings(uv / 0.60, t * (0.90 - inter * 0.35) + 0.8, breath, expand) * 0.45;
+    if (isHighQuality()) {
+        col += shadertoySacredRings(uv, t, expand) * 0.70;
+        col += sacredGeometryRings(uv / 0.30, t * (1.30 + inter * 0.4) + 1.7, breath, expand) * 0.22;
+    } else {
+        col += shadertoySacredRings(uv, t, expand) * 0.25;
+    }
+    col += sacredGeometryRings(uv / 0.60, t * (0.90 - inter * 0.35) + 0.8, breath, expand) * select(0.25, 0.45, isHighQuality());
     col += sacredGeometryRings(uv,        t * (1.0 + inter * 0.15),       breath, expand) * 1.00;
     return col;
 }
@@ -1742,11 +1750,11 @@ fn lotusAndSymbol(
     let density = clamp(u.geometryDensity + u.intensity * 0.2, 0.2, 3.0);
     let timeM = 1.0 + u.interference * 0.35;
 
-    let n1 = 8.0 + floor(density * 4.0);
-    let n2 = 12.0 + floor(density * 5.0);
-    let n3 = 16.0 + floor(density * 6.0);
-    let n4 = mix(0.0, 20.0 + floor(density * 7.0), smoothstep(0.6, 1.4, density));
-    let n5 = mix(0.0, 26.0 + floor(density * 9.0), smoothstep(1.0, 2.0, density));
+    let n1 = select(6.0 + floor(density * 2.0), 8.0 + floor(density * 4.0), isHighQuality());
+    let n2 = select(8.0 + floor(density * 3.0), 12.0 + floor(density * 5.0), isHighQuality());
+    let n3 = select(10.0 + floor(density * 4.0), 16.0 + floor(density * 6.0), isHighQuality());
+    let n4 = mix(0.0, 20.0 + floor(density * 7.0), smoothstep(0.6, 1.4, density)) * select(0.0, 1.0, isHighQuality());
+    let n5 = mix(0.0, 26.0 + floor(density * 9.0), smoothstep(1.0, 2.0, density)) * select(0.0, 1.0, isHighQuality());
 
     col += lotusLayer(uv, t, n1, 0.42, 0.16, 0.06,
                       (0.000 + t * 0.020) * timeM, effExpand,
@@ -2014,7 +2022,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // LAYER 2 — Volumetric light shafts
     // ------------------------------------------------------------
     col += lightShafts(uv * 0.85, t, breath, expand);
-    col += godRays(uv * 0.95, t, u.intensity, expand);
+    col += godRays(uv * 0.95, t, u.intensity, expand) * select(0.55, 1.0, isHighQuality());
 
     // ------------------------------------------------------------
     // LAYER 3 — Sacred geometry rings
@@ -2029,7 +2037,7 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // ------------------------------------------------------------
     // LAYER 5 — Energy ribbons (behind lotus for translucency glow)
     // ------------------------------------------------------------
-    col += energyRibbons(uv, t, breath, u.intensity, u.chakraPhase);
+    col += energyRibbons(uv, t, breath, u.intensity, u.chakraPhase) * select(0.72, 1.0, isHighQuality());
 
     // ------------------------------------------------------------
     // LAYER 6 — Figure aura
@@ -2039,7 +2047,9 @@ fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // ------------------------------------------------------------
     // LAYER 6b — Figure-framing geometry (grows from heart/head)
     // ------------------------------------------------------------
-    col += figureFramingGeometry(uv, t, breath, expand);
+    if (isHighQuality()) {
+        col += figureFramingGeometry(uv, t, breath, expand);
+    }
 
     // ------------------------------------------------------------
     // LAYER 7 — Human figure with animated arms

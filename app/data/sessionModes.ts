@@ -17,8 +17,10 @@ export const SESSION_MODES: SessionMode[] = [
     mandalaStyle: 0,
     figurePose: 0,
     strengthLevel: 1.0,
-    geometryDensity: 1.2,
-    interference: 0.45,
+    geometryDensity: 0.85,
+    interference: 0.30,
+    qualityPreset: 0,
+    maxDevicePixelRatio: 1.5,
     backgroundId: 'cosmic-bokeh',
   },
   {

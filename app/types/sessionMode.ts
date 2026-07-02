@@ -36,4 +36,6 @@ export interface SessionMode {
   strengthLevel?: number; // 0.0=light, 1.0=regular (default), 2.0=strong
   geometryDensity?: number; // 0.0=sparse, 1.0=default, 3.0=rich geometry detail
   interference?: number;    // 0.0=still layers, 1.0=strong moire / recursive motion
+  qualityPreset?: number;   // 0.0=reduced detail, 1.0=high detail, undefined=renderer auto
+  maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
 }

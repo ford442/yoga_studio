@@ -111,8 +111,17 @@ export default function Home() {
     toggleFree();
   };
 
-  const handleNudge = (key: 'inhale' | 'exhale', delta: number) => {
-    const next = Math.max(1, Math.min(15, settings[key] + delta));
+  const handleNudge = (key: keyof typeof settings, delta: number) => {
+    const min = key === 'inhale' || key === 'exhale' ? 1 : 0;
+    const max = key === 'hold2' ? 10 : 15;
+    const next = Math.max(min, Math.min(max, settings[key] + delta));
+    updateSettings({ [key]: next });
+  };
+
+  const handleSetPhaseDuration = (key: keyof typeof settings, value: number) => {
+    const min = key === 'inhale' || key === 'exhale' ? 1 : 0;
+    const max = key === 'hold2' ? 10 : 15;
+    const next = Math.max(min, Math.min(max, Number.isFinite(value) ? value : settings[key]));
     updateSettings({ [key]: next });
   };
 
@@ -303,6 +312,8 @@ export default function Home() {
           chakraFocus={selectedMode.chakraFocusIndex}
           geometryDensity={selectedMode.geometryDensity ?? 1.0}
           interference={selectedMode.interference ?? 0.5}
+          qualityPreset={selectedMode.qualityPreset}
+          maxDevicePixelRatio={selectedMode.maxDevicePixelRatio}
           shaderPath={selectedMode.shaderPath}
           vertexEntry={selectedMode.vertexEntry}
           fragmentEntry={selectedMode.fragmentEntry}
@@ -413,6 +424,7 @@ export default function Home() {
             onSelect={handleModeSelect}
             onStart={handleModeStart}
             onNudge={handleNudge}
+            onSetPhaseDuration={handleSetPhaseDuration}
             onToggleFavorite={toggleFavoriteMode}
           />
 
