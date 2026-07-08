@@ -103,9 +103,14 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
     setSettings(prev => ({ ...prev, useSanskrit: !prev.useSanskrit }));
   };
 
+  const setVoiceEnabled = (enabled: boolean) => {
+    setSettings(prev => (prev.enabled === enabled ? prev : { ...prev, enabled }));
+  };
+
   return {
     settings,
     toggleVoice,
     toggleSanskrit,
+    setVoiceEnabled,
   };
 };

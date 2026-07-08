@@ -386,6 +386,11 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `app/components/ExportStats.tsx` | Stats PNG export | **Active** |
 | `app/components/CompletionScreen.tsx` | Session completion overlay | **Active** |
 | `app/components/ThemeSwitcher.tsx` | Theme & mandala style toggles | **Active** |
+| `app/components/TechniquesLibrary.tsx` | Techniques Library UI (goals, science sheet) | **Active** |
+| `app/components/TechniqueScienceSheet.tsx` | Per-technique science detail sheet | **Active** |
+| `app/data/techniques.ts` | Named technique profiles (source of truth) | **Active** |
+| `app/data/sessionModes.ts` | Re-exports `TECHNIQUES` for compatibility | **Active** |
+| `TECHNIQUES.md` | Technique catalog & shader mappings | **Active** |
 | `app/page.tsx` | Main page orchestrator | **Active** |
 | `app/layout.tsx` | Root layout | **Active** |
 | `app/manifest.ts` | PWA manifest | **Active** |

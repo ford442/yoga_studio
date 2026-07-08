@@ -7,12 +7,22 @@ import ExportStats from './components/ExportStats';
 import CompletionScreen from './components/CompletionScreen';
 import SessionModeSwitcher from './components/SessionModeSwitcher';
 import ParticleBurst from './components/ParticleBurst';
+import WelcomePanel from './components/WelcomePanel';
+import PracticeIntroTour from './components/PracticeIntroTour';
 import { useBreathTimer, type SessionDuration } from './hooks/useBreathTimer';
 import { useBreathAudio } from './hooks/useBreathAudio';
 import { useSessionStats } from './hooks/useSessionStats';
 import { useVoiceGuidance } from './hooks/useVoiceGuidance';
 import { useRippleAudio } from './hooks/useRippleAudio';
+import { useOnboarding } from './hooks/useOnboarding';
 import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
+import {
+  BEGINNER_MUSCLE_CUES,
+  BEGINNER_SESSION_MINUTES,
+  DEFAULT_NEXT_STEP,
+  NEXT_STEP_BY_MODE,
+  getBeginnerMode,
+} from './data/onboarding';
 import type { SessionMode } from './types/sessionMode';
 import BreathingAvatar from './components/BreathingAvatar';
 import EnvironmentBackground from './components/EnvironmentBackground';
@@ -24,6 +34,12 @@ import { ENVIRONMENTS } from './data/environments';
 const chakraLabels = ['inhale', 'hold1', 'exhale', 'hold2'];
 type QuickStartDuration = 'free' | 5 | 10 | 15;
 type LastSession = { modeId: string; duration: QuickStartDuration };
+type CompletionMeta = {
+  isFirstSession: boolean;
+  modeId: string;
+  modeLabel: string;
+  modeEmoji: string;
+};
 
 export default function Home() {
   const {
@@ -43,11 +59,21 @@ export default function Home() {
 
   useBreathAudio(currentPhase, isRunning); // audio side effects only (chimes + drone)
   const { stats, addPracticeTime } = useSessionStats();
-  const { settings: voiceSettings, toggleVoice, toggleSanskrit } = useVoiceGuidance(currentPhase, isRunning);
+  const {
+    settings: voiceSettings,
+    toggleVoice,
+    toggleSanskrit,
+    setVoiceEnabled,
+  } = useVoiceGuidance(currentPhase, isRunning);
+  const onboarding = useOnboarding();
 
   const [showDrawer, setShowDrawer] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
   const [completedInfo, setCompletedInfo] = useState({ minutes: 5, breaths: 0 });
+  const [completionMeta, setCompletionMeta] = useState<CompletionMeta | null>(null);
+  const [showIntroTour, setShowIntroTour] = useState(false);
+  const [startAfterTour, setStartAfterTour] = useState(false);
+  const [isBeginnerSession, setIsBeginnerSession] = useState(false);
   const [selectedMode, setSelectedMode] = useState<SessionMode>(DEFAULT_MODE);
   const [favoriteModeIds, setFavoriteModeIds] = useState<string[]>([]);
   const [lastSession, setLastSession] = useState<LastSession | null>(null);
@@ -111,6 +137,64 @@ export default function Home() {
     toggleFree();
   };
 
+  const launchBeginnerSession = () => {
+    const mode = getBeginnerMode();
+    setIsBeginnerSession(true);
+    setSelectedMode(mode);
+    updateSettings(mode.breath);
+    setVoiceEnabled(true);
+    if (canUseInstructor) {
+      updateInstructorSettings({ enabled: true });
+    }
+    persistLastSession(mode.id, BEGINNER_SESSION_MINUTES);
+    onboarding.dismissWelcome(false);
+    startSession(BEGINNER_SESSION_MINUTES);
+  };
+
+  const handleBeginnerQuickStart = () => {
+    setShowIntroTour(false);
+    setStartAfterTour(false);
+    launchBeginnerSession();
+  };
+
+  const handleIntroTourComplete = () => {
+    onboarding.markIntroTourSeen();
+    setShowIntroTour(false);
+    if (startAfterTour) {
+      setStartAfterTour(false);
+      launchBeginnerSession();
+    }
+  };
+
+  const handleIntroTourSkip = () => {
+    onboarding.markIntroTourSeen();
+    setShowIntroTour(false);
+    setStartAfterTour(false);
+  };
+
+  const handleCompletionClose = () => {
+    if (completionMeta?.isFirstSession) {
+      onboarding.markFirstSessionComplete();
+    }
+    setShowCompletion(false);
+    setCompletionMeta(null);
+  };
+
+  const handleTryNextMode = () => {
+    const next = NEXT_STEP_BY_MODE[completionMeta?.modeId ?? ''] ?? DEFAULT_NEXT_STEP;
+    const mode = SESSION_MODES.find((entry) => entry.id === next.modeId);
+    if (!mode) {
+      handleCompletionClose();
+      return;
+    }
+    setShowCompletion(false);
+    setCompletionMeta(null);
+    if (completionMeta?.isFirstSession) {
+      onboarding.markFirstSessionComplete();
+    }
+    handleModeStart(mode, 5);
+  };
+
   const handleNudge = (key: keyof typeof settings, delta: number) => {
     const min = key === 'inhale' || key === 'exhale' ? 1 : 0;
     const max = key === 'hold2' ? 10 : 15;
@@ -148,15 +232,30 @@ export default function Home() {
   // endSession() inside the hook nulls sessionDuration on the same update).
   useEffect(() => {
     if (prevSessionDurationRef.current !== null && !isRunning && totalBreaths > 0) {
+      const isFirstSession = onboarding.hasLoaded && !onboarding.hasCompletedFirstSession;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCompletedInfo({
         minutes: prevSessionDurationRef.current || 5,
         breaths: totalBreaths,
       });
+      setCompletionMeta({
+        isFirstSession,
+        modeId: selectedMode.id,
+        modeLabel: selectedMode.label,
+        modeEmoji: selectedMode.emoji,
+      });
       setShowCompletion(true);
+      setIsBeginnerSession(false);
     }
     prevSessionDurationRef.current = sessionDuration;
-  }, [isRunning, sessionDuration, totalBreaths]);
+  }, [
+    isRunning,
+    sessionDuration,
+    totalBreaths,
+    onboarding.hasLoaded,
+    onboarding.hasCompletedFirstSession,
+    selectedMode,
+  ]);
 
   useEffect(() => {
     const rawFavorites = localStorage.getItem('sacred-breath-favorites');
@@ -227,12 +326,12 @@ export default function Home() {
     hold2: 'text-violet-400',
   };
 
-  const muscleCues: Record<string, string> = {
-    inhale: 'Tighten muscles · Raise arms slowly',
-    hold1:  'Keep muscles tightened · Hold posture',
-    exhale: 'Relax muscles · Lower arms gently',
-    hold2:  'Stay relaxed · Absolute stillness',
-  };
+  const activeMuscleCues = isBeginnerSession
+    ? BEGINNER_MUSCLE_CUES
+    : selectedMode.technique.phaseCues;
+  const nextStepSuggestion = completionMeta
+    ? NEXT_STEP_BY_MODE[completionMeta.modeId] ?? DEFAULT_NEXT_STEP
+    : DEFAULT_NEXT_STEP;
 
   const burstColors: Record<string, string> = {
     inhale: '#fa7e1e',
@@ -361,14 +460,14 @@ export default function Home() {
       </div>
 
       <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center pointer-events-none px-4">
-        <div className={`text-5xl font-light uppercase tracking-[6px] transition-all duration-700 [text-shadow:0_2px_12px_rgba(0,0,0,0.85)] ${phaseColors[currentPhase]}`}>
+        <div className={`text-5xl font-light uppercase tracking-[6px] transition-all duration-700 [text-shadow:0_2px_12px_rgba(0,0,0,0.85)] ${phaseColors[currentPhase]}`} data-tour="phase">
           {currentPhase}
         </div>
-        <div className="text-7xl font-mono font-light text-white/95 mt-2 tabular-nums [text-shadow:0_2px_16px_rgba(0,0,0,0.9)]">
+        <div className="text-7xl font-mono font-light text-white/95 mt-2 tabular-nums [text-shadow:0_2px_16px_rgba(0,0,0,0.9)]" data-tour="countdown">
           {Math.max(0, remaining).toFixed(0).padStart(2, '0')}
         </div>
 
-        <div className="relative w-64 h-64 mt-6">
+        <div className="relative w-64 h-64 mt-6" data-tour="ring">
           <svg className="w-64 h-64 -rotate-90" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="45" fill="none" stroke="#1a0f2e" strokeWidth="8" />
             <circle
@@ -391,9 +490,9 @@ export default function Home() {
                 figurePose={selectedMode.figurePose}
               />
             </div>
-            <div className="absolute -bottom-8 w-64 text-center">
-              <p className="text-[11px] uppercase tracking-[2px] text-white/50 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/5 animate-pulse">
-                {muscleCues[currentPhase]}
+            <div className="absolute -bottom-8 w-64 text-center" data-tour="controls">
+              <p className="text-[11px] uppercase tracking-[2px] text-white/50 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/5 animate-pulse motion-reduce:animate-none">
+                {activeMuscleCues[currentPhase]}
               </p>
             </div>
           </div>
@@ -411,7 +510,7 @@ export default function Home() {
               }}
               className="w-full py-2 rounded-xl bg-black/25 border border-white/20 hover:bg-black/35 transition-all text-[10px] tracking-widest text-white/90 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]"
             >
-              ↻ RESUME {SESSION_MODES.find((entry) => entry.id === lastSession.modeId)?.label.toUpperCase() ?? 'LAST MODE'} · {lastSession.duration === 'free' ? 'FREE' : `${lastSession.duration} MIN`}
+              ↻ RESUME {SESSION_MODES.find((entry) => entry.id === lastSession.modeId)?.technique.commonName.toUpperCase() ?? 'LAST TECHNIQUE'} · {lastSession.duration === 'free' ? 'FREE' : `${lastSession.duration} MIN`}
             </button>
           )}
 
@@ -484,12 +583,37 @@ export default function Home() {
         </div>
       </div>
 
+      {onboarding.shouldShowWelcome && !isRunning && !showIntroTour && (
+        <WelcomePanel
+          onQuickStart={handleBeginnerQuickStart}
+          onTakeTour={() => {
+            setStartAfterTour(true);
+            setShowIntroTour(true);
+          }}
+          onExplore={() => onboarding.dismissWelcome(false)}
+          onSkipForever={() => onboarding.dismissWelcome(true)}
+        />
+      )}
+
+      {showIntroTour && (
+        <PracticeIntroTour
+          onComplete={handleIntroTourComplete}
+          onSkip={handleIntroTourSkip}
+        />
+      )}
+
       {showCompletion && (
         <CompletionScreen
-          minutes={stats.todayMinutes}
-          breaths={totalBreaths}
+          minutes={completedInfo.minutes}
+          breaths={completedInfo.breaths}
           streak={stats.currentStreak}
-          onClose={() => setShowCompletion(false)}
+          isFirstSession={completionMeta?.isFirstSession}
+          practicedModeLabel={completionMeta?.modeLabel}
+          practicedModeEmoji={completionMeta?.modeEmoji}
+          nextStepLabel={nextStepSuggestion.label}
+          nextStepReason={completionMeta?.isFirstSession ? nextStepSuggestion.reason : undefined}
+          onTryNext={completionMeta?.isFirstSession ? handleTryNextMode : undefined}
+          onClose={handleCompletionClose}
         />
       )}
 
@@ -632,16 +756,6 @@ export default function Home() {
 
       {/* Global PWA install prompt (listens for beforeinstallprompt) */}
       <InstallPrompt />
-
-      {/* Session completion overlay with confetti (shown after timed sessions end) */}
-      {showCompletion && (
-        <CompletionScreen
-          minutes={completedInfo.minutes}
-          breaths={completedInfo.breaths}
-          streak={stats.currentStreak}
-          onClose={() => setShowCompletion(false)}
-        />
-      )}
     </main>
   );
 }

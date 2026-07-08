@@ -367,15 +367,26 @@ example.com/yoga/* {
 
 ## Practices Supported
 
-### Primary Pranayama
-- **Box Breathing** - Equal timing: inhale, hold, exhale, hold
-- **Nadi Shodhana Foundation** - Channel awareness during breathing
-- **Kundalini Activation** - Chakra visualization during practice
+The app ships a **Techniques Library** of evidence-informed pranayama profiles. Each selection configures phase timings, chakra visuals, posture cues, and optional science context. See **[TECHNIQUES.md](./TECHNIQUES.md)** for the full catalog and shader mappings.
 
-### Skill Levels
-- **Beginner** - Light level, 5 second phases
-- **Intermediate** - Medium level, 7 second phases
-- **Advanced** - Strong level with progressive increases
+### Core techniques
+- **Box Breathing (Sama Vṛtti)** — Equal 4-phase rhythm for autonomic balance
+- **Nadi Shodhana** — Channel-balancing alternate-nostril foundation
+- **Ujjayi** — Victorious ocean breath with throat resonance
+- **Heart Coherence (Lotus Heart)** — ~5 breaths/minute anāhata focus
+- **Grounding** — Root emphasis with extended exhale and retention
+- **Prana Flow** — Dynamic sacral rhythm for energizing practice
+- **Deep Release (4-7-8)** — Extended kumbhaka for deep calm
+- **Coherent Breathing** — Clinical-paced diaphragmatic regulation
+- **Sacred Integration** — Full chakra visualization journey
+
+### Browse by goal
+- **Calm** · **Focus** · **Energize** · **Deep Practice** — filter chips in the Techniques Library
+
+### Skill levels
+- **Gentle** — Beginner-friendly (Box, Coherent, Heart Coherence, Grounding)
+- **Moderate** — Nadi Shodhana, Ujjayi, Prana Flow, Deep Release
+- **Advanced** — Sacred Integration full visualization
 
 ## Usage Tips
 
@@ -441,6 +452,8 @@ Contributions are welcome! Please:
 ## Architecture Deep Dive
 
 For detailed architecture information, chakra system explanation, and shader internals, see [AGENTS.md](./AGENTS.md).
+
+For the techniques catalog, timings, and goal mappings, see [TECHNIQUES.md](./TECHNIQUES.md).
 
 For Claude Code development guidance and common tasks, see [claude.md](./claude.md).
 

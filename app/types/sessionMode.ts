@@ -1,4 +1,5 @@
 import type { EnvironmentId } from './environment';
+import type { TechniqueMeta } from './technique';
 
 export interface BreathTiming {
   inhale: number;
@@ -38,4 +39,6 @@ export interface SessionMode {
   interference?: number;    // 0.0=still layers, 1.0=strong moire / recursive motion
   qualityPreset?: number;   // 0.0=reduced detail, 1.0=high detail, undefined=renderer auto
   maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
+  /** Educational + guidance metadata for the Techniques Library */
+  technique: TechniqueMeta;
 }
