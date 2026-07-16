@@ -403,3 +403,16 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `public/shaders/*.wgsl` | Legacy compute / render passes | Unused |
 | `public/yoga-breath.wgsl` | Legacy base SDF scene shader | Unused |
 | `deploy.py` | SFTP deployment script | **Active** |
+
+---
+
+## Cursor Cloud specific instructions
+
+- Dependency install is `npm install` (Node 22, npm 10). This runs automatically on VM startup as the update script.
+- Standard commands are in `package.json`: `npm run dev` (dev server on `http://localhost:3000`), `npm run lint`, `npm run build` (static export to `out/`).
+- `npm start`/`npm run preview` serve the pre-built `out/` via `npx serve`; run `npm run build` first.
+- Run the dev server as a long-lived process (e.g. tmux), not a blocking foreground call.
+- WebGPU **does** render in this environment's Chrome — the cosmic/mandala visualization shows correctly, so verify canvas visuals via the browser, not just a black-canvas assumption.
+- `npm run lint` emits 3 pre-existing `react-hooks/exhaustive-deps` warnings (0 errors); this is the expected clean baseline.
+- No automated test suite exists; validate changes with `npm run build` plus manual browser checks (see Manual Testing Checklist above).
+- `next.config.ts` uses `output: 'export'` with `assetPrefix: './'` and `trailingSlash: true`; do not add server-only Next.js features.
