@@ -5,6 +5,9 @@ import WebGPUShader from './components/WebGPUShader';
 import InstallPrompt from './components/InstallPrompt';
 import ExportStats from './components/ExportStats';
 import CompletionScreen from './components/CompletionScreen';
+import OfflineIndicator from './components/OfflineIndicator';
+import ProgramNextSessionCard from './components/ProgramNextSessionCard';
+import ProgramSelector from './components/ProgramSelector';
 import SessionModeSwitcher from './components/SessionModeSwitcher';
 import ParticleBurst from './components/ParticleBurst';
 import WelcomePanel from './components/WelcomePanel';
@@ -15,7 +18,12 @@ import { useSessionStats } from './hooks/useSessionStats';
 import { useVoiceGuidance } from './hooks/useVoiceGuidance';
 import { useRippleAudio } from './hooks/useRippleAudio';
 import { useOnboarding } from './hooks/useOnboarding';
+import { useRendererSettings } from './hooks/useRendererSettings';
 import { SESSION_MODES, DEFAULT_MODE } from './data/sessionModes';
+import { PROGRAMS, getProgramById, getNextSessionDay, resolveProgramSessionTechnique } from './data/programs';
+import { useActiveProgram } from './hooks/useActiveProgram';
+import RendererDiagnostics from './components/RendererDiagnostics';
+import { type RendererDiagnosticsState } from './types/renderer';
 import {
   BEGINNER_MUSCLE_CUES,
   BEGINNER_SESSION_MINUTES,
@@ -39,6 +47,11 @@ type CompletionMeta = {
   modeId: string;
   modeLabel: string;
   modeEmoji: string;
+};
+
+type ActiveProgramSession = {
+  programId: string;
+  dayIndex: number;
 };
 
 export default function Home() {
@@ -66,11 +79,24 @@ export default function Home() {
     setVoiceEnabled,
   } = useVoiceGuidance(currentPhase, isRunning);
   const onboarding = useOnboarding();
+  const {
+    activeProgramId,
+    progress: programProgress,
+    selectProgram,
+    completeDay,
+    abandonProgram,
+    resetProgram,
+  } = useActiveProgram();
 
   const [showDrawer, setShowDrawer] = useState(false);
+  const [showProgramSelector, setShowProgramSelector] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
   const [completedInfo, setCompletedInfo] = useState({ minutes: 5, breaths: 0 });
   const [completionMeta, setCompletionMeta] = useState<CompletionMeta | null>(null);
+  const [nextProgramSession, setNextProgramSession] = useState<NonNullable<
+    React.ComponentProps<typeof CompletionScreen>['nextProgramSession']
+  > | null>(null);
+  const [activeProgramSession, setActiveProgramSession] = useState<ActiveProgramSession | null>(null);
   const [showIntroTour, setShowIntroTour] = useState(false);
   const [startAfterTour, setStartAfterTour] = useState(false);
   const [isBeginnerSession, setIsBeginnerSession] = useState(false);
@@ -80,6 +106,13 @@ export default function Home() {
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
+  const {
+    settings: rendererSettings,
+    updateSettings: updateRendererSettings,
+    effectivePerformanceMode,
+    isPerformanceForced,
+  } = useRendererSettings();
+  const [rendererDiagnostics, setRendererDiagnostics] = useState<RendererDiagnosticsState | null>(null);
   const { override: environmentOverride, activeId: activeEnvironmentId, setOverride: setEnvironmentOverride } =
     useEnvironment(selectedMode.backgroundId);
   const {
@@ -118,6 +151,7 @@ export default function Home() {
     setSelectedMode(mode);
     updateSettings(mode.breath);
     persistLastSession(mode.id, duration);
+    setActiveProgramSession(null);
     if (duration === 'free') {
       if (!isRunning) toggleFree();
       return;
@@ -125,8 +159,27 @@ export default function Home() {
     startSession(duration);
   };
 
+  const handleStartProgramSession = (programId: string, dayIndex: number) => {
+    const program = getProgramById(programId);
+    if (!program) return;
+    const day = program.days[dayIndex];
+    if (!day || day.type !== 'session') return;
+
+    const technique = resolveProgramSessionTechnique(day, SESSION_MODES);
+    setActiveProgramSession({ programId, dayIndex });
+    setSelectedMode(technique);
+    updateSettings(technique.breath);
+    persistLastSession(technique.id, day.durationMinutes);
+    if (day.durationMinutes === 'free') {
+      if (!isRunning) toggleFree();
+      return;
+    }
+    startSession(day.durationMinutes);
+  };
+
   const handleQuickStart = (duration: 5 | 10 | 15) => {
     persistLastSession(selectedMode.id, duration);
+    setActiveProgramSession(null);
     startSession(duration);
   };
 
@@ -134,6 +187,7 @@ export default function Home() {
     if (!isRunning) {
       persistLastSession(selectedMode.id, 'free');
     }
+    setActiveProgramSession(null);
     toggleFree();
   };
 
@@ -147,6 +201,7 @@ export default function Home() {
       updateInstructorSettings({ enabled: true });
     }
     persistLastSession(mode.id, BEGINNER_SESSION_MINUTES);
+    setActiveProgramSession(null);
     onboarding.dismissWelcome(false);
     startSession(BEGINNER_SESSION_MINUTES);
   };
@@ -178,6 +233,7 @@ export default function Home() {
     }
     setShowCompletion(false);
     setCompletionMeta(null);
+    setNextProgramSession(null);
   };
 
   const handleTryNextMode = () => {
@@ -189,6 +245,7 @@ export default function Home() {
     }
     setShowCompletion(false);
     setCompletionMeta(null);
+    setNextProgramSession(null);
     if (completionMeta?.isFirstSession) {
       onboarding.markFirstSessionComplete();
     }
@@ -244,6 +301,37 @@ export default function Home() {
         modeLabel: selectedMode.label,
         modeEmoji: selectedMode.emoji,
       });
+
+      // Mark active program day complete and compute the next scheduled session.
+      if (activeProgramSession) {
+        const { programId, dayIndex } = activeProgramSession;
+        completeDay(dayIndex);
+        const program = getProgramById(programId);
+        if (program) {
+          const updatedProgress = {
+            ...(programProgress ?? { programId, startDate: new Date().toISOString().split('T')[0], completedDays: [] }),
+            completedDays: [...(programProgress?.completedDays ?? []), dayIndex],
+          };
+          const nextDay = getNextSessionDay(program, updatedProgress);
+          if (nextDay) {
+            const nextTechnique = resolveProgramSessionTechnique(nextDay, SESSION_MODES);
+            setNextProgramSession({
+              programLabel: program.label,
+              dayIndex: nextDay.dayIndex,
+              techniqueLabel: nextTechnique.label,
+              techniqueEmoji: nextTechnique.emoji,
+              duration: nextDay.durationMinutes,
+              note: nextDay.note,
+            });
+          } else {
+            setNextProgramSession(null);
+          }
+        }
+        setActiveProgramSession(null);
+      } else {
+        setNextProgramSession(null);
+      }
+
       setShowCompletion(true);
       setIsBeginnerSession(false);
     }
@@ -255,6 +343,9 @@ export default function Home() {
     onboarding.hasLoaded,
     onboarding.hasCompletedFirstSession,
     selectedMode,
+    activeProgramSession,
+    completeDay,
+    programProgress,
   ]);
 
   useEffect(() => {
@@ -342,6 +433,8 @@ export default function Home() {
 
   return (
     <main className="min-h-dvh bg-[#05010a] text-white relative overflow-hidden">
+      <OfflineIndicator />
+
       <EnvironmentBackground
         environmentId={activeEnvironmentId}
         theme={selectedMode.theme}
@@ -411,11 +504,26 @@ export default function Home() {
           chakraFocus={selectedMode.chakraFocusIndex}
           geometryDensity={selectedMode.geometryDensity ?? 1.0}
           interference={selectedMode.interference ?? 0.5}
-          qualityPreset={selectedMode.qualityPreset}
-          maxDevicePixelRatio={selectedMode.maxDevicePixelRatio}
+          qualityPreset={
+            effectivePerformanceMode === 'performance' ? 0 :
+            effectivePerformanceMode === 'quality' ? 1 :
+            selectedMode.qualityPreset
+          }
+          maxDevicePixelRatio={
+            effectivePerformanceMode === 'performance' ? 1 :
+            effectivePerformanceMode === 'quality' ? 2 :
+            selectedMode.maxDevicePixelRatio
+          }
+          overlayEnabled={
+            effectivePerformanceMode === 'performance' ? false :
+            effectivePerformanceMode === 'quality' ? true :
+            true
+          }
+          reducedMotion={rendererSettings.reducedMotion || isPerformanceForced}
           shaderPath={selectedMode.shaderPath}
           vertexEntry={selectedMode.vertexEntry}
           fragmentEntry={selectedMode.fragmentEntry}
+          onDiagnostics={setRendererDiagnostics}
           className="w-full h-full"
         />
       </div>
@@ -513,6 +621,14 @@ export default function Home() {
               ↻ RESUME {SESSION_MODES.find((entry) => entry.id === lastSession.modeId)?.technique.commonName.toUpperCase() ?? 'LAST TECHNIQUE'} · {lastSession.duration === 'free' ? 'FREE' : `${lastSession.duration} MIN`}
             </button>
           )}
+
+          <ProgramNextSessionCard
+            activeProgramId={activeProgramId}
+            activeProgress={programProgress}
+            isRunning={isRunning}
+            onOpenSelector={() => setShowProgramSelector(true)}
+            onStartSession={handleStartProgramSession}
+          />
 
           <SessionModeSwitcher
             modes={sortedModes}
@@ -614,8 +730,29 @@ export default function Home() {
           nextStepReason={completionMeta?.isFirstSession ? nextStepSuggestion.reason : undefined}
           onTryNext={completionMeta?.isFirstSession ? handleTryNextMode : undefined}
           onClose={handleCompletionClose}
+          nextProgramSession={nextProgramSession ?? undefined}
         />
       )}
+
+      <ProgramSelector
+        programs={PROGRAMS}
+        activeProgramId={activeProgramId}
+        activeProgress={programProgress}
+        open={showProgramSelector}
+        onClose={() => setShowProgramSelector(false)}
+        onSelect={(programId) => {
+          selectProgram(programId);
+          setShowProgramSelector(false);
+        }}
+        onAbandon={() => {
+          abandonProgram();
+          setShowProgramSelector(false);
+        }}
+        onReset={() => {
+          resetProgram();
+          setShowProgramSelector(false);
+        }}
+      />
 
       {/* Custom settings drawer */}
       {showDrawer && (
@@ -730,6 +867,53 @@ export default function Home() {
               </div>
             )}
 
+            <div className="mb-8">
+              <p className="text-sm text-white/60 mb-3 tracking-wider">RENDERER</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(['auto', 'performance', 'quality'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => updateRendererSettings({ performanceMode: mode })}
+                    className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                      effectivePerformanceMode === mode
+                        ? 'bg-emerald-500/30 border-emerald-300 text-emerald-100'
+                        : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    {mode === 'auto' && 'AUTO'}
+                    {mode === 'performance' && 'PERFORMANCE'}
+                    {mode === 'quality' && 'QUALITY'}
+                    {isPerformanceForced && mode === 'performance' && ' (forced)'}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-3 text-sm text-white/70 mb-2">
+                <input
+                  type="checkbox"
+                  checked={rendererSettings.reducedMotion}
+                  onChange={(e) => updateRendererSettings({ reducedMotion: e.target.checked })}
+                  className="accent-emerald-400"
+                />
+                Reduced motion (lowers detail & disables overlay)
+              </label>
+              <label className="flex items-center gap-3 text-sm text-white/70 mb-2">
+                <input
+                  type="checkbox"
+                  checked={rendererSettings.showDiagnostics}
+                  onChange={(e) => updateRendererSettings({ showDiagnostics: e.target.checked })}
+                  className="accent-emerald-400"
+                />
+                Show renderer diagnostics
+              </label>
+              <p className="text-[11px] text-white/45 leading-relaxed">
+                {effectivePerformanceMode === 'auto'
+                  ? 'Following technique defaults.'
+                  : effectivePerformanceMode === 'performance'
+                    ? 'Capped resolution, lower detail, no overlay.'
+                    : 'Maximum detail, overlay enabled.'}
+              </p>
+            </div>
+
             {(['inhale', 'hold1', 'exhale', 'hold2'] as const).map((key) => (
               <div key={key} className="flex items-center gap-4 mb-6">
                 <span className="w-20 capitalize text-white/70">{key}</span>
@@ -752,6 +936,10 @@ export default function Home() {
             </button>
           </div>
         </div>
+      )}
+
+      {rendererSettings.showDiagnostics && (
+        <RendererDiagnostics state={rendererDiagnostics} />
       )}
 
       {/* Global PWA install prompt (listens for beforeinstallprompt) */}

@@ -4,10 +4,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-sw.mjs",
     "build": "next build",
     "start": "npx serve@latest out -l 3000",
     "preview": "npx serve@latest out -l 3000",
-    "lint": "eslint"
+    "lint": "eslint",
+    "smoke:files": "node scripts/smoke-export.mjs",
+    "smoke:assets": "node scripts/smoke-assets.mjs",
+    "smoke": "npm run smoke:files && npm run smoke:assets",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "validate:shaders": "node --experimental-strip-types scripts/validate-shaders.ts",
+    "validate:content": "node --experimental-strip-types scripts/validate-content.ts",
+    "check": "npm run lint && npm run validate:shaders && npm run validate:content"
   },
   "dependencies": {
     "next": "16.1.6",
@@ -15,14 +25,20 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.3",
     "@webgpu/types": "^0.1.69",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

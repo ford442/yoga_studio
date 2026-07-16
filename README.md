@@ -160,10 +160,20 @@ yoga_studio/
 │   ├── globals.css                 # Tailwind CSS imports
 │   ├── layout.tsx                  # Root layout component
 │   └── page.tsx                    # Main page
-├── public/
-│   ├── yoga.glsl                   # Reference GLSL shader (legacy)
-│   ├── yoga-regular.wgsl           # WGSL reference implementation
-│   └── yoga-fixed.wgsl             # WGSL reference (fixed version)
+├── public/                         # Runtime assets only
+│   ├── sacred-monk.wgsl            # Active scene shader
+│   ├── sacred-lotus-final.wgsl     # Active lotus + ribbons shader
+│   ├── sacred-ultra.wgsl           # Active cinematic ultra shader
+│   ├── yoga-regular.wgsl           # Active simplified shader
+│   ├── manifest.webmanifest        # PWA manifest
+│   ├── backgrounds/                # Runtime background images
+│   └── instructor/                 # Runtime instructor clips
+├── archive/shaders/                # Non-public shader archive
+│   ├── legacy/                     # Superseded reference shaders
+│   ├── experiments/                # Multi-pass / modular / swarm experiments
+│   └── generated/                  # Agent outputs and summary docs
+├── docs/shaders/
+│   └── SHADER_INVENTORY.md         # Active vs legacy vs experimental manifest
 ├── deploy.py                       # SFTP deployment script
 ├── webgpu.d.ts                     # WebGPU type definitions
 ├── next.config.ts                  # Next.js configuration
@@ -309,24 +319,41 @@ The `out/` directory contains a complete static site. Upload it to:
 
 When serving the application at a sub-path (e.g., `https://example.com/yoga/`), ensure your reverse proxy **strips the path prefix** before forwarding to the static content. This prevents doubled paths in asset URLs.
 
-#### Important: basePath Configuration
+#### Important: basePath / Deployment Path Configuration
 
-The `next.config.ts` does **NOT** include a `basePath` setting. This is intentional:
+The `next.config.ts` does **NOT** include a `basePath` setting. This keeps the static export host-agnostic and lets you choose how to deploy under a sub-path.
 
-- **Why?** When a reverse proxy (nginx, Caddy, etc.) serves the app at a sub-path, it typically strips the prefix:
-  ```
-  Request: https://example.com/yoga/index.html
-  ↓ (reverse proxy strips /yoga)
-  Served as: /index.html
-  ```
-- **If both were set**: Having `basePath: '/yoga'` in Next.js config + reverse proxy path handling would cause doubled paths:
-  ```
-  https://example.com/yoga/yoga/_next/static/...  ❌ WRONG
-  ```
-- **With current setup**: Asset paths resolve correctly:
-  ```
-  https://example.com/yoga/_next/static/...  ✅ CORRECT
-  ```
+`/yoga` is the canonical **example** deployment path used in the nginx/Caddy snippets below and in `deploy.py`, but the app itself does not hard-code it. Choose one of the following modes:
+
+1. **Reverse-proxy path stripping** (recommended for nginx/Caddy)
+   - The proxy serves the app at `https://example.com/yoga/` but strips `/yoga` before the files are requested:
+     ```
+     Request: https://example.com/yoga/index.html
+     ↓ (reverse proxy strips /yoga)
+     Served as: /index.html
+     ```
+   - No environment variables needed; `assetPrefix: './'` makes all assets relative.
+   - If `basePath` were also set, paths would double:
+     ```
+     https://example.com/yoga/yoga/_next/static/...  ❌ WRONG
+     ```
+
+2. **Sub-path without proxy stripping**
+   - If your host serves the contents of `out/` directly under a sub-path (e.g. GitHub Pages project sites), set the build-time env var:
+     ```bash
+     NEXT_PUBLIC_BASE_PATH=/yoga npm run build
+     ```
+   - `app/lib/resolveAssetUrl.ts` prepends this prefix to runtime-fetched public assets (WGSL shaders, backgrounds, instructor clips).
+   - Static `/_next` assets still rely on `assetPrefix: './'`, so the host must serve `out/` at the chosen sub-path.
+
+#### Local preview
+
+```bash
+npm run build
+npm run preview   # serves out/ at http://localhost:3000
+```
+
+Because `assetPrefix` is relative, the preview works from the export root with no `basePath` or env var needed.
 
 #### Example: Nginx Configuration
 

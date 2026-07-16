@@ -29,7 +29,7 @@ const readStoredStats = (): SessionStats => {
       todayMinutes: 0,
       todayBreaths: 0,
       currentStreak: parsed.currentStreak ?? 0,
-      lastPracticeDate: today,
+      lastPracticeDate: parsed.lastPracticeDate ?? today,
     };
   }
 
@@ -64,11 +64,11 @@ export const useSessionStats = () => {
 
   const addPracticeTime = useCallback((seconds: number) => {
     const today = getTodayKey();
-    const isNewDay = stats.lastPracticeDate !== today;
 
     setStats((prev) => {
       const newMinutes = prev.todayMinutes + Math.round(seconds / 60);
       const newBreaths = prev.todayBreaths + 1;
+      const isNewDay = prev.lastPracticeDate !== today;
 
       // Update streak
       let newStreak = prev.currentStreak;
@@ -88,7 +88,7 @@ export const useSessionStats = () => {
         lastPracticeDate: today,
       };
     });
-  }, [stats.lastPracticeDate, stats.currentStreak]);
+  }, []);
 
   const resetStats = () => {
     const today = getTodayKey();

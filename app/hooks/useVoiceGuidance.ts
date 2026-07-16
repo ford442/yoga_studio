@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BreathPhase } from './useBreathTimer';
 
 interface VoiceSettings {
@@ -8,6 +8,25 @@ interface VoiceSettings {
 
 const VOICE_SETTINGS_KEY = 'sacred-breath-voice';
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: true, useSanskrit: false };
+
+const PHASE_MESSAGES: Record<BreathPhase, { en: string; sanskrit: string }> = {
+  inhale: {
+    en: "Inhale deeply through the nose",
+    sanskrit: "Puraka — inhale"
+  },
+  hold1: {
+    en: "Hold the breath gently",
+    sanskrit: "Kumbhaka — retain"
+  },
+  exhale: {
+    en: "Exhale slowly and completely",
+    sanskrit: "Rechaka — exhale"
+  },
+  hold2: {
+    en: "Empty... rest in stillness",
+    sanskrit: "Shunyaka — empty"
+  }
+};
 
 const readStoredVoiceSettings = (): VoiceSettings => {
   const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
@@ -20,6 +39,7 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
 
   const lastPhaseRef = useRef<BreathPhase>(currentPhase);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Save settings to localStorage
   useEffect(() => {
@@ -38,7 +58,7 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
     }
   }, []);
 
-  const speak = (text: string) => {
+  const speak = useCallback((text: string) => {
     if (!settings.enabled || !('speechSynthesis' in window)) return;
 
     // Cancel any ongoing speech
@@ -62,38 +82,26 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
 
     window.speechSynthesis.speak(utterance);
     utteranceRef.current = utterance;
-  };
-
-  const phaseMessages: Record<BreathPhase, { en: string; sanskrit: string }> = {
-    inhale: {
-      en: "Inhale deeply through the nose",
-      sanskrit: "Puraka — inhale"
-    },
-    hold1: {
-      en: "Hold the breath gently",
-      sanskrit: "Kumbhaka — retain"
-    },
-    exhale: {
-      en: "Exhale slowly and completely",
-      sanskrit: "Rechaka — exhale"
-    },
-    hold2: {
-      en: "Empty... rest in stillness",
-      sanskrit: "Shunyaka — empty"
-    }
-  };
+  }, [settings.enabled]);
 
   useEffect(() => {
     if (!isRunning || currentPhase === lastPhaseRef.current) return;
 
-    const msg = phaseMessages[currentPhase];
+    const msg = PHASE_MESSAGES[currentPhase];
     const text = settings.useSanskrit ? msg.sanskrit : msg.en;
 
     // Small delay so it doesn't overlap with chimes
-    setTimeout(() => speak(text), 180);
+    speechTimeoutRef.current = setTimeout(() => speak(text), 180);
 
     lastPhaseRef.current = currentPhase;
-  }, [currentPhase, isRunning, settings.useSanskrit]);
+
+    return () => {
+      if (speechTimeoutRef.current) {
+        clearTimeout(speechTimeoutRef.current);
+        speechTimeoutRef.current = null;
+      }
+    };
+  }, [currentPhase, isRunning, settings.useSanskrit, speak]);
 
   const toggleVoice = () => {
     setSettings(prev => ({ ...prev, enabled: !prev.enabled }));

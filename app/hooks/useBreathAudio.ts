@@ -1,22 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BreathPhase } from './useBreathTimer';
 
 export const useBreathAudio = (currentPhase: BreathPhase, isRunning: boolean) => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastPhaseRef = useRef<BreathPhase>(currentPhase);
   const muteRef = useRef(false);
+  const isRunningRef = useRef(isRunning);
   const [isMuted, setIsMuted] = useState(false);
 
-  const getAudioContext = () => {
+  // Keep the ref in sync without making helpers depend on isRunning
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  const getAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
       const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       audioContextRef.current = new (AudioContextCtor || AudioContext)();
     }
     return audioContextRef.current;
-  };
+  }, []);
 
-  const playChime = (frequency: number, duration: number = 800, type: OscillatorType = 'sine') => {
-    if (muteRef.current || !isRunning) return;
+  const playChime = useCallback((frequency: number, duration: number = 800, type: OscillatorType = 'sine') => {
+    if (muteRef.current || !isRunningRef.current) return;
     const ctx = getAudioContext();
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -32,7 +38,7 @@ export const useBreathAudio = (currentPhase: BreathPhase, isRunning: boolean) =>
 
     oscillator.start();
     oscillator.stop(ctx.currentTime + duration / 1000);
-  };
+  }, [getAudioContext]);
 
   // Phase transition chimes
   useEffect(() => {
@@ -57,7 +63,7 @@ export const useBreathAudio = (currentPhase: BreathPhase, isRunning: boolean) =>
     }
 
     lastPhaseRef.current = currentPhase;
-  }, [currentPhase, isRunning]);
+  }, [currentPhase, isRunning, playChime, getAudioContext]);
 
   // Optional very subtle ambient drone (low humming bowl)
   useEffect(() => {
@@ -85,7 +91,7 @@ export const useBreathAudio = (currentPhase: BreathPhase, isRunning: boolean) =>
     return () => {
       drone.stop();
     };
-  }, [isRunning]);
+  }, [isRunning, getAudioContext]);
 
   const toggleMute = () => {
     const next = !muteRef.current;

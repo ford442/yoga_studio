@@ -2,6 +2,47 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
+import {
+  buildUniformBuffer,
+  UNIFORM_BUFFER_SIZE,
+  UNIFORM_FIELDS,
+  WEBGL_MAIN_UNIFORM_MAP,
+  WEBGL_OVERLAY_UNIFORM_MAP,
+  type UniformValues,
+} from '../lib/shaderContract';
+import {
+  type RendererMode,
+  type RendererDiagnosticsState,
+} from '../types/renderer';
+
+/** Upload one contract field to a WebGL2 uniform location. */
+const uploadUniform = (
+  gl: WebGL2RenderingContext,
+  location: WebGLUniformLocation | null,
+  field: (typeof UNIFORM_FIELDS)[number],
+  value: number | { x: number; y: number }
+) => {
+  if (location === null) return;
+  if (field.type === 'vec2<f32>') {
+    const vec = typeof value === 'number' ? { x: value, y: value } : value;
+    gl.uniform2f(location, vec.x, vec.y);
+  } else {
+    gl.uniform1f(location, value as number);
+  }
+};
+
+/** Look up WebGL2 uniform locations from a contract → GLSL name map. */
+const buildGLUniforms = (
+  gl: WebGL2RenderingContext,
+  program: WebGLProgram,
+  map: Record<string, string>
+): GLUniforms => {
+  const uniforms: GLUniforms = {};
+  for (const [fieldName, glslName] of Object.entries(map)) {
+    uniforms[fieldName] = gl.getUniformLocation(program, glslName);
+  }
+  return uniforms;
+};
 
 interface WebGPUShaderProps {
   breathPhase: number;
@@ -25,9 +66,12 @@ interface WebGPUShaderProps {
   shaderPath?: string;
   vertexEntry?: string;
   fragmentEntry?: string;
+  reducedMotion?: boolean;
+  onDiagnostics?: (state: RendererDiagnosticsState) => void;
 }
 
-type RendererMode = 'webgpu' | 'webgl2';
+
+type GLUniforms = Record<string, WebGLUniformLocation | null>;
 
 type ShaderPropsRef = Required<Pick<
   WebGPUShaderProps,
@@ -442,19 +486,6 @@ const createOverlayProgram = (gl: WebGL2RenderingContext): WebGLProgram => {
   return program;
 };
 
-type OverlayUniforms = {
-  time: WebGLUniformLocation | null;
-  breathPhase: WebGLUniformLocation | null;
-  phaseProgress: WebGLUniformLocation | null;
-  chakraPhase: WebGLUniformLocation | null;
-  intensity: WebGLUniformLocation | null;
-  interference: WebGLUniformLocation | null;
-  geometryDensity: WebGLUniformLocation | null;
-  qualityPreset: WebGLUniformLocation | null;
-  theme: WebGLUniformLocation | null;
-  resolution: WebGLUniformLocation | null;
-};
-
 const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   breathPhase,
   intensity = 1.0,
@@ -477,6 +508,8 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
   fragmentEntry = 'main',
+  reducedMotion = false,
+  onDiagnostics,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -485,8 +518,14 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const [rendererMode, setRendererMode] = useState<RendererMode>('webgpu');
+  const fallbackReasonRef = useRef<string | undefined>(undefined);
 
-  const resolvedQuality = resolveQualityPreset(qualityPreset);
+  // Reduce motion: lower quality, cap DPR, and disable the overlay.
+  const effectiveQualityPreset = reducedMotion ? 0 : resolveQualityPreset(qualityPreset);
+  const effectiveMaxDpr = reducedMotion
+    ? Math.min(maxDevicePixelRatio ?? 1.5, 1.5)
+    : maxDevicePixelRatio;
+  const effectiveOverlayEnabled = reducedMotion ? false : overlayEnabled;
 
   // Mutable refs for animated values so the graphics backend only initializes once.
   const propsRef = useRef<ShaderPropsRef>({
@@ -504,7 +543,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     chakraFocus,
     geometryDensity,
     interference,
-    qualityPreset: resolvedQuality,
+    qualityPreset: effectiveQualityPreset,
   });
 
   useEffect(() => {
@@ -523,9 +562,9 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       chakraFocus,
       geometryDensity,
       interference,
-      qualityPreset: resolveQualityPreset(qualityPreset),
+      qualityPreset: effectiveQualityPreset,
     };
-  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, figurePose, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference, qualityPreset]);
+  }, [breathPhase, intensity, chakraPhase, phaseProgress, theme, mandalaStyle, figurePose, mouse, mouseStrength, timeScale, strengthLevel, chakraFocus, geometryDensity, interference, effectiveQualityPreset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -536,15 +575,16 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     let overlayGl: WebGL2RenderingContext | null = null;
     let overlayProgram: WebGLProgram | null = null;
     let overlayVertexArray: WebGLVertexArrayObject | null = null;
-    let overlayUniforms: OverlayUniforms | null = null;
+    let overlayUniforms: GLUniforms | null = null;
 
     const markWebGPUFailed = (message: string, error?: unknown) => {
       console.warn(`[WebGPUShader] ${message} Falling back to WebGL2.`, error);
+      fallbackReasonRef.current = message.trim();
       if (!cancelled) setRendererMode('webgl2');
     };
 
     const resizeCanvas = (canvas: HTMLCanvasElement, onResize?: () => void) => {
-      const dpr = Math.min(window.devicePixelRatio || 1, resolveMaxDpr(propsRef.current.qualityPreset, maxDevicePixelRatio));
+      const dpr = Math.min(window.devicePixelRatio || 1, resolveMaxDpr(propsRef.current.qualityPreset, effectiveMaxDpr));
       const w = Math.floor(canvas.clientWidth * dpr);
       const h = Math.floor(canvas.clientHeight * dpr);
 
@@ -559,7 +599,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
     };
 
     const renderOverlayFrame = (currentTime: number) => {
-      if (!overlayEnabled || !overlayGl || !overlayProgram || !overlayUniforms) return;
+      if (!effectiveOverlayEnabled || !overlayGl || !overlayProgram || !overlayUniforms) return;
 
       const overlayCanvas = overlayCanvasRef.current;
       if (!overlayCanvas || overlayCanvas.width === 0 || overlayCanvas.height === 0) return;
@@ -584,22 +624,30 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      gl.uniform1f(overlayUniforms.time, currentTime);
-      gl.uniform1f(overlayUniforms.breathPhase, bp);
-      gl.uniform1f(overlayUniforms.phaseProgress, pp);
-      gl.uniform1f(overlayUniforms.chakraPhase, cp);
-      gl.uniform1f(overlayUniforms.intensity, int);
-      gl.uniform1f(overlayUniforms.interference, ir);
-      gl.uniform1f(overlayUniforms.geometryDensity, gd);
-      gl.uniform1f(overlayUniforms.qualityPreset, qp);
-      gl.uniform1f(overlayUniforms.theme, th);
-      gl.uniform2f(overlayUniforms.resolution, overlayCanvas.width, overlayCanvas.height);
+      const overlayValues: Partial<UniformValues> = {
+        time: currentTime,
+        breathPhase: bp,
+        phaseProgress: pp,
+        chakraPhase: cp,
+        intensity: int,
+        interference: ir,
+        geometryDensity: gd,
+        qualityPreset: qp,
+        theme: th,
+        resolution: { x: overlayCanvas.width, y: overlayCanvas.height },
+      };
+      for (const field of UNIFORM_FIELDS) {
+        if (!(field.name in WEBGL_OVERLAY_UNIFORM_MAP)) continue;
+        const value = overlayValues[field.name];
+        if (value === undefined) continue;
+        uploadUniform(gl, overlayUniforms[field.name], field, value);
+      }
 
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
 
     const initOverlay = () => {
-      if (!overlayEnabled) return;
+      if (!effectiveOverlayEnabled) return;
 
       const overlayCanvas = overlayCanvasRef.current;
       if (!overlayCanvas) return;
@@ -618,18 +666,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
       try {
         overlayProgram = createOverlayProgram(gl);
         overlayVertexArray = gl.createVertexArray();
-        overlayUniforms = {
-          time: gl.getUniformLocation(overlayProgram, 'uTime'),
-          breathPhase: gl.getUniformLocation(overlayProgram, 'uBreathPhase'),
-          phaseProgress: gl.getUniformLocation(overlayProgram, 'uPhaseProgress'),
-          chakraPhase: gl.getUniformLocation(overlayProgram, 'uChakraPhase'),
-          intensity: gl.getUniformLocation(overlayProgram, 'uIntensity'),
-          interference: gl.getUniformLocation(overlayProgram, 'uInterference'),
-          geometryDensity: gl.getUniformLocation(overlayProgram, 'uGeometryDensity'),
-          qualityPreset: gl.getUniformLocation(overlayProgram, 'uQualityPreset'),
-          theme: gl.getUniformLocation(overlayProgram, 'uTheme'),
-          resolution: gl.getUniformLocation(overlayProgram, 'uResolution'),
-        };
+        overlayUniforms = buildGLUniforms(gl, overlayProgram, WEBGL_OVERLAY_UNIFORM_MAP);
       } catch (error) {
         console.warn('[WebGPUShader] WebGL2 overlay setup failed:', error);
         overlayGl = null;
@@ -659,23 +696,7 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         return;
       }
 
-      const uniforms = {
-        time: gl.getUniformLocation(glProgram, 'uTime'),
-        breathPhase: gl.getUniformLocation(glProgram, 'uBreathPhase'),
-        intensity: gl.getUniformLocation(glProgram, 'uIntensity'),
-        chakraPhase: gl.getUniformLocation(glProgram, 'uChakraPhase'),
-        theme: gl.getUniformLocation(glProgram, 'uTheme'),
-        mandalaStyle: gl.getUniformLocation(glProgram, 'uMandalaStyle'),
-        figurePose: gl.getUniformLocation(glProgram, 'uFigurePose'),
-        phaseProgress: gl.getUniformLocation(glProgram, 'uPhaseProgress'),
-        strengthLevel: gl.getUniformLocation(glProgram, 'uStrengthLevel'),
-        mouse: gl.getUniformLocation(glProgram, 'uMouse'),
-        mouseStrength: gl.getUniformLocation(glProgram, 'uMouseStrength'),
-        chakraFocus: gl.getUniformLocation(glProgram, 'uChakraFocus'),
-        geometryDensity: gl.getUniformLocation(glProgram, 'uGeometryDensity'),
-        interference: gl.getUniformLocation(glProgram, 'uInterference'),
-        resolution: gl.getUniformLocation(glProgram, 'uResolution'),
-      };
+      const uniforms = buildGLUniforms(gl, glProgram, WEBGL_MAIN_UNIFORM_MAP);
 
       const resize = () => {
         resizeCanvas(canvas, () => gl.viewport(0, 0, canvas.width, canvas.height));
@@ -720,21 +741,30 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
 
         gl.useProgram(glProgram);
         gl.bindVertexArray(glVertexArray);
-        gl.uniform1f(uniforms.time, currentTime);
-        gl.uniform1f(uniforms.breathPhase, bp);
-        gl.uniform1f(uniforms.intensity, int);
-        gl.uniform1f(uniforms.chakraPhase, cp);
-        gl.uniform1f(uniforms.theme, th);
-        gl.uniform1f(uniforms.mandalaStyle, ms);
-        gl.uniform1f(uniforms.figurePose, fp);
-        gl.uniform1f(uniforms.phaseProgress, pp);
-        gl.uniform1f(uniforms.strengthLevel, sl);
-        gl.uniform2f(uniforms.mouse, m.x, m.y);
-        gl.uniform1f(uniforms.mouseStrength, msr);
-        gl.uniform1f(uniforms.chakraFocus, cf);
-        gl.uniform1f(uniforms.geometryDensity, gd);
-        gl.uniform1f(uniforms.interference, ir);
-        gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+
+        const mainValues: Partial<UniformValues> = {
+          time: currentTime,
+          breathPhase: bp,
+          intensity: int,
+          chakraPhase: cp,
+          theme: th,
+          mandalaStyle: ms,
+          figurePose: fp,
+          phaseProgress: pp,
+          strengthLevel: sl,
+          mouse: m,
+          mouseStrength: msr,
+          chakraFocus: cf,
+          geometryDensity: gd,
+          interference: ir,
+          resolution: { x: canvas.width, y: canvas.height },
+        };
+        for (const field of UNIFORM_FIELDS) {
+          if (!(field.name in WEBGL_MAIN_UNIFORM_MAP)) continue;
+          const value = mainValues[field.name];
+          if (value === undefined) continue;
+          uploadUniform(gl, uniforms[field.name], field, value);
+        }
 
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -823,28 +853,9 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
           fragment: { module: shaderModule, entryPoint: fragmentEntry, targets: [{ format }] },
           primitive: { topology: 'triangle-list' },
         });
-        // Uniforms struct layout (WGSL std140 alignment, 4 bytes per float):
-        //   [0]  time           @byte  0
-        //   [1]  breathPhase    @byte  4
-        //   [2]  intensity      @byte  8
-        //   [3]  chakraPhase    @byte 12
-        //   [4]  theme          @byte 16
-        //   [5]  mandalaStyle   @byte 20
-        //   [6]  phaseProgress  @byte 24
-        //   [7]  strengthLevel  @byte 28   // 0.0=light, 1.0=regular, 2.0=strong
-        //   [8]  mouse.x        @byte 32  (vec2<f32>, align 8)
-        //   [9]  mouse.y        @byte 36
-        //   [10] mouseStrength  @byte 40
-        //   [11] chakraFocus    @byte 44   // -1=none, 0..6=root..crown
-        //   [12] resolution.x   @byte 48  (vec2<f32>, align 8)
-        //   [13] resolution.y   @byte 52
-        //   [14] geometryDensity @byte 56  // 0.0=sparse, 1.0=default, 3.0=rich
-        //   [15] interference    @byte 60  // 0.0=still, 1.0=strong moire/interference
-        //   [16] figurePose      @byte 64  // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
-        //   [17] qualityPreset   @byte 68  // 0.0=mobile, 1.0=high
-        //   Total struct size: 72 bytes (WebGPU uniform buffer alignment)
+        // Uniform buffer size comes from the shared shader contract.
         uniformBuffer = device.createBuffer({
-          size: 72,
+          size: UNIFORM_BUFFER_SIZE,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         bindGroup = device.createBindGroup({
@@ -893,29 +904,27 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         const w = canvas.width;
         const h = canvas.height;
 
-        const uniforms = new Float32Array([
-          currentTime,   //  [0] time
-          bp,            //  [1] breathPhase
-          int,           //  [2] intensity
-          cp,            //  [3] chakraPhase
-          th,            //  [4] theme
-          ms,            //  [5] mandalaStyle
-          pp,            //  [6] phaseProgress
-          sl,            //  [7] strengthLevel
-          m.x,           //  [8] mouse.x
-          m.y,           //  [9] mouse.y
-          msr,           // [10] mouseStrength
-          cf,            // [11] chakraFocus
-          w,             // [12] resolution.x
-          h,             // [13] resolution.y
-          gd,            // [14] geometryDensity
-          ir,            // [15] interference
-          fp,            // [16] figurePose
-          qp,            // [17] qualityPreset
-        ]);
+        const uniforms = buildUniformBuffer({
+          time: currentTime,
+          breathPhase: bp,
+          intensity: int,
+          chakraPhase: cp,
+          theme: th,
+          mandalaStyle: ms,
+          phaseProgress: pp,
+          strengthLevel: sl,
+          mouse: m,
+          mouseStrength: msr,
+          chakraFocus: cf,
+          resolution: { x: w, y: h },
+          geometryDensity: gd,
+          interference: ir,
+          figurePose: fp,
+          qualityPreset: qp,
+        });
 
         try {
-          device.queue.writeBuffer(uniformBuffer, 0, uniforms);
+          device.queue.writeBuffer(uniformBuffer, 0, uniforms as GPUAllowSharedBufferSource);
 
           const encoder = device.createCommandEncoder();
           const view = context.getCurrentTexture().createView();
@@ -969,18 +978,42 @@ const WebGPUShader: React.FC<WebGPUShaderProps> = ({
         deviceRef.current = null;
       }
     };
-  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, overlayEnabled, maxDevicePixelRatio]);
+  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveOverlayEnabled, effectiveMaxDpr, effectiveQualityPreset]);
+
+  // Report renderer diagnostics whenever observable state changes.
+  useEffect(() => {
+    if (!onDiagnostics) return;
+    onDiagnostics({
+      mode: rendererMode,
+      fallbackReason: fallbackReasonRef.current,
+      activeShader: shaderPath,
+      qualityPreset: effectiveQualityPreset,
+      maxDevicePixelRatio: resolveMaxDpr(effectiveQualityPreset, effectiveMaxDpr),
+      overlayEnabled: effectiveOverlayEnabled,
+      reducedMotion: Boolean(reducedMotion),
+      batterySaver: false,
+    });
+  }, [rendererMode, shaderPath, effectiveQualityPreset, effectiveMaxDpr, effectiveOverlayEnabled, reducedMotion, onDiagnostics]);
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 w-full h-full ${className}`}>
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 w-full h-full ${className}`}
+      data-renderer={rendererMode}
+      data-shader={shaderPath}
+      data-fallback-reason={fallbackReasonRef.current ?? ''}
+      data-quality={effectiveQualityPreset}
+      data-dpr-cap={resolveMaxDpr(effectiveQualityPreset, effectiveMaxDpr)}
+      data-overlay={effectiveOverlayEnabled}
+      data-reduced-motion={Boolean(reducedMotion)}
+    >
       <canvas
         key={rendererMode}
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
-        data-renderer={rendererMode}
         style={{ display: 'block' }}
       />
-      {overlayEnabled && (
+      {effectiveOverlayEnabled && (
         <canvas
           ref={overlayCanvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none"

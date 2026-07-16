@@ -320,7 +320,7 @@ export const TECHNIQUES: SessionMode[] = [
     vertexEntry: 'vs_main',
     fragmentEntry: 'fs_main',
     breath: { inhale: 4, hold1: 4, exhale: 6, hold2: 0 },
-    theme: 3,
+    theme: 2,
     mandalaStyle: 1,
     figurePose: 0,
     strengthLevel: 1.0,

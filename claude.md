@@ -40,13 +40,21 @@ app/
 ├── data/sessionModes.ts          # 6 visualization presets with shaderPath + theme + strengthLevel
 └── types/sessionMode.ts
 
-public/
+public/                           # Runtime assets only
 ├── sacred-monk.wgsl              # Classic mandala + monk silhouette
 ├── sacred-lotus-final.wgsl       # Lotus + prana ribbons + ethereal
 ├── sacred-ultra.wgsl             # Master composition (ribbons, figure, chakras, lotus, post)
-├── lotus-ethereal.wgsl
-├── energy-ribbons.wgsl
-└── (legacy shaders in public/shaders/ and yoga-*.wgsl are unused)
+├── yoga-regular.wgsl             # Simplified clinical-calm shader
+├── manifest.webmanifest          # PWA manifest
+├── backgrounds/                  # Runtime background images
+└── instructor/                   # Runtime instructor clips
+
+archive/shaders/                  # Non-public preservation
+├── legacy/                       # Superseded yoga-*.wgsl / .glsl reference shaders
+├── experiments/                  # Multi-pass / modular / swarm experiments
+└── generated/                    # Agent outputs and summary docs
+
+docs/shaders/SHADER_INVENTORY.md  # Active vs legacy vs experimental manifest
 ```
 
 **Legacy files (present but not imported by page.tsx):** `useSacredBreathTimer.ts`, `useBreathingTimer.ts`, `PostureGuide.tsx`, `BreathingVisualizer.tsx`, `BreathTimer.tsx` (deleted).
@@ -88,7 +96,7 @@ npm run lint
 ### Uniform Buffer Layout (64 bytes / 16 floats)
 See AGENTS.md "WebGPU Shader Architecture" section for the exact field order and padding. The layout is deliberately mirrored in:
 - `WebGPUShader.tsx` (Float32Array + `device.createBuffer({ size: 64 })`)
-- `sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`
+- `sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`, `yoga-regular.wgsl`
 
 Mismatch = instant WebGPU validation error (blank canvas).
 

@@ -103,10 +103,29 @@ All active shaders share the 72-byte `Uniforms` buffer documented in [AGENTS.md]
 ## Adding a new technique
 
 1. Add a `SessionMode` entry to `TECHNIQUES` in `app/data/techniques.ts` with full `technique` metadata.  
-2. Choose an existing shader or add a new `.wgsl` under `public/`.  
-3. Verify uniform layout matches `WebGPUShader.tsx` if using a new shader file.  
-4. Update this document and the goal filter if introducing a new primary benefit.  
-5. Run `npm run build` and manually verify phase cues, timing, and WebGPU render.
+2. Choose an existing shader or add a new `.wgsl` under `public/`. See [`docs/shaders/SHADER_INVENTORY.md`](docs/shaders/SHADER_INVENTORY.md) for active vs archived assets.  
+3. Verify uniform layout matches `app/lib/shaderContract.ts` if using a new shader file.  
+4. Run `npm run validate:content` to catch schema and asset-reference errors early.  
+5. Update this document and the goal filter if introducing a new primary benefit.  
+6. Update `docs/shaders/SHADER_INVENTORY.md` if adding a new active shader.  
+7. Run `npm run build` and manually verify phase cues, timing, and WebGPU render.
+
+### Schema-backed checklist
+
+The `npm run validate:content` command checks every technique against these rules:
+
+- `id` is unique and non-empty.
+- `shaderPath` points to an existing file in `public/`.
+- `backgroundId` is either omitted or a valid environment id from `app/data/environments.ts`.
+- `chakraFocusIndex` is in `-1..6` (`-1` = none/all, `0..6` = root..crown).
+- `figurePose` is in `0..6`.
+- `mandalaStyle` is in `0..2` (Lotus / Yantra / Flower).
+- `theme` is in `0..2` (Cosmic / Golden / Ocean).
+- `breath` has all four phases (`inhale`, `hold1`, `exhale`, `hold2`) with non-negative integers, at least one > 0.
+- `technique.goals` are from `['calm', 'focus', 'energize', 'deep']` with no duplicates.
+- `technique.difficulty` is `gentle`, `moderate`, or `advanced`.
+- `technique.recommendedMinutes` are from `[5, 10, 15]`.
+- `technique.phaseCues` has a non-empty string for every phase.
 
 ## References (neutral tone)
 

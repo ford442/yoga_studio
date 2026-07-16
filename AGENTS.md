@@ -87,26 +87,44 @@ app/
 ### Static Assets
 
 ```
-public/
+public/                           # Runtime assets only (copied to out/)
 ├── sacred-monk.wgsl              # Active scene shader (mandala + monk SDF + particles)
-├── shaders/
-│   ├── bloom-compute.wgsl        # Legacy bright extract + Gaussian blur (unused)
-│   ├── particle-compute.wgsl     # Legacy particle simulation (unused)
-│   ├── particle-render.wgsl      # Legacy particle instanced quads (unused)
-│   ├── aurora-compute.wgsl       # Legacy aurora background (unused)
-│   ├── composite.wgsl            # Legacy final blend pass (unused)
-│   └── breath-swarm-merged.wgsl  # Swarm experiment outputs (unused by page)
-├── yoga-breath.wgsl              # Legacy base SDF scene shader (unused)
-├── yoga.glsl                     # Original GLSL reference (legacy)
-├── yoga-regular.wgsl             # WGSL reference (legacy)
-└── yoga-fixed.wgsl               # WGSL reference fix (legacy)
+├── sacred-lotus-final.wgsl       # Active lotus + ribbons shader
+├── sacred-ultra.wgsl             # Active cinematic ultra shader
+├── yoga-regular.wgsl             # Active simplified clinical-calm shader
+├── manifest.webmanifest          # PWA manifest
+├── backgrounds/                  # Runtime background images
+└── instructor/                   # Runtime instructor clips
+
+archive/shaders/                  # Non-public historical preservation
+├── legacy/                       # Superseded reference shaders
+│   ├── yoga-breath.wgsl
+│   ├── yoga-visuals.wgsl
+│   ├── yoga-fixed.wgsl
+│   └── yoga.glsl
+├── experiments/                  # Multi-pass / modular / swarm experiments
+│   ├── bloom-compute.wgsl
+│   ├── particle-compute.wgsl
+│   ├── particle-render.wgsl
+│   ├── aurora-compute.wgsl
+│   ├── composite.wgsl
+│   ├── breath-swarm-merged.wgsl
+│   ├── breath-swarm-next.wgsl
+│   ├── energy-ribbons.wgsl
+│   ├── lotus-ethereal.wgsl
+│   └── yoga-{light,strong,regular}.wgsl / .glsl
+└── generated/                    # Agent outputs and summary docs
+    ├── Kimi_Agent_Sacred Breath Shader.zip
+    └── YOGA_SHADER_REFACTOR_SUMMARY.md
 ```
+
+See `docs/shaders/SHADER_INVENTORY.md` for the full asset manifest.
 
 ### Configuration Files
 
 | File | Purpose |
 |------|---------|
-| `next.config.ts` | Static export, `basePath: '/yoga'` |
+| `next.config.ts` | Static export, no `basePath`, `assetPrefix: './'`, optional `NEXT_PUBLIC_BASE_PATH` for sub-path hosts |
 | `tsconfig.json` | ES2017, strict, bundler resolution, `@/*` → `./*` |
 | `postcss.config.mjs` | Tailwind v4 PostCSS plugin |
 | `eslint.config.mjs` | Flat ESLint config with Next.js web-vitals + typescript presets |
@@ -117,34 +135,25 @@ public/
 
 ## WebGPU Shader Architecture
 
-`WebGPUShader.tsx` is a **single-pass** renderer. It fetches `public/sacred-monk.wgsl` at runtime, creates one render pipeline, and draws a full-screen triangle.
+`WebGPUShader.tsx` is a **single-pass** renderer. It fetches the active `.wgsl` file (e.g. `public/sacred-monk.wgsl`) at runtime, creates one render pipeline, and draws a full-screen triangle.
 
 ### Uniform Buffer Layout
 
-The React side writes a 72-byte uniform buffer (18 × `f32`) every frame. All three active shaders (`sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`) must declare an identical `struct Uniforms`.
+The React side writes a 72-byte uniform buffer every frame. The single source of truth for field order, types, defaults, and byte offsets is **`app/lib/shaderContract.ts`**. All active shaders must declare an identical `struct Uniforms`.
 
-```
-offset  0  time            f32
-offset  4  breathPhase     f32   // 0–1 full cycle progress
-offset  8  intensity       f32
-offset 12  chakraPhase     f32   // 0–3 mapped to phase
-offset 16  theme           f32   // 0=Cosmic, 1=Golden, 2=Ocean
-offset 20  mandalaStyle    f32   // 0=Lotus, 1=Yantra, 2=Flower
-offset 24  phaseProgress   f32   // 0–1 progress within current phase (for petal/ribbon timing)
-offset 28  strengthLevel   f32   // 0.0=light, 1.0=regular (default), 2.0=strong — scales particle/glow density
-offset 32  mouse.x         f32   // -1..1 or -2 when inactive
-offset 36  mouse.y         f32
-offset 40  mouseStrength   f32   // 0..1
-offset 44  chakraFocus     f32   // -1=none, 0..6=root..crown (repurposed padding slot)
-offset 48  resolution.x    f32
-offset 52  resolution.y    f32
-offset 56  geometryDensity f32   // 0.0=sparse, 1.0=default, 3.0=rich geometry detail
-offset 60  interference    f32   // 0.0=still layers, 1.0=strong moire / recursive motion
-offset  64  figurePose      f32   // 0=lotus, 1=tadasana, 2=tai-chi, 3=heart-open, 4=chinmudra, 5=warrior, 6=tree
-offset  68  padding         f32   // struct padded to 72 bytes for 8-byte alignment
+Active shaders:
+- `public/sacred-monk.wgsl`
+- `public/sacred-lotus-final.wgsl`
+- `public/sacred-ultra.wgsl`
+- `public/yoga-regular.wgsl`
+
+Run the dev-time validator after any layout change:
+
+```bash
+npm run validate:shaders
 ```
 
-**Critical:** When adding or reordering uniforms, update **all three** active WGSL files + `WebGPUShader.tsx` buffer size (72) + Float32Array write order in lockstep. WebGPU will hard crash (blank canvas) on size or layout mismatch.
+**Critical:** When adding or reordering uniforms, update `app/lib/shaderContract.ts` first, then update every active `.wgsl` file, and run `npm run validate:shaders` to catch drift. `WebGPUShader.tsx` now reads the buffer size and field order from the contract, so it should not need manual index updates. WebGPU will hard crash (blank canvas) on size or layout mismatch.
 
 The shader defines its own `struct Uniforms` at the top of each active `.wgsl` file. Do **not** duplicate this struct elsewhere.
 
@@ -298,7 +307,35 @@ This is the single source of truth for breath state.
 ## Testing Instructions
 
 ### Automated Tests
-**There are no automated tests.** The project does not include Jest, Vitest, Playwright, Cypress, or any other test framework.
+
+The project now uses **Vitest** for unit/hook tests and **Playwright** for browser/export smoke tests.
+
+```bash
+# Run unit/hook tests (deterministic, jsdom)
+npm test
+
+# Run unit tests in watch mode
+npm run test:watch
+
+# Run a single test file
+npx vitest run app/hooks/__tests__/useBreathTimer.test.ts
+
+# Run static export smoke checks (files present + HTTP 200s)
+npm run smoke
+
+# Run Playwright browser smoke tests (requires `npx playwright install`)
+npm run test:e2e
+```
+
+### Playwright setup
+
+Browser binaries are not installed by `npm install`. One-time setup:
+
+```bash
+npx playwright install chromium
+```
+
+In CI, prefer `npx playwright install --with-deps chromium`.
 
 ### Manual Testing Checklist
 
@@ -350,6 +387,13 @@ python deploy.py
 ### Static Hosting
 Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complete static site and can be served by any static host (Netlify, Vercel, GitHub Pages, S3, etc.).
 
+- No `basePath` is set, and `assetPrefix: './'` produces relative asset URLs, so the export works at the root of any domain or behind a reverse proxy that strips a sub-path prefix.
+- If the host serves `out/` directly under a sub-path **without** stripping the prefix (e.g. GitHub Pages project sites), build with:
+  ```bash
+  NEXT_PUBLIC_BASE_PATH=/yoga npm run build
+  ```
+  This prefix is applied by `app/lib/resolveAssetUrl.ts` to runtime-fetched public assets.
+
 ---
 
 ## Security Considerations
@@ -365,10 +409,11 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 1. **Editing the wrong timer hook** — `useBreathTimer.ts` is the active one. `useSacredBreathTimer.ts` and `useBreathingTimer.ts` are legacy.
 2. **Editing the wrong visualizer** — `WebGPUShader.tsx` is the active one. `BreathingVisualizer.tsx` is legacy.
 3. **PostureGuide is unused** — `PostureGuide.tsx` exists but is not imported by `page.tsx`. Do not assume it renders.
-4. **Old multi-pass shaders are unused** — Files in `public/shaders/` (bloom, particle, aurora, composite) and `public/yoga-breath.wgsl` are not loaded by the active component. The only active shader is `public/sacred-monk.wgsl`.
+4. **Old multi-pass shaders are unused** — Legacy shader files now live in `archive/shaders/` (legacy reference shaders, multi-pass compute passes, and swarm experiments). They are not loaded by the active component. See `docs/shaders/SHADER_INVENTORY.md` for the full manifest.
 5. **Duplicating `Uniforms` struct in WGSL** — The active shader already declares `struct Uniforms`. Adding another definition will cause a compilation error.
-6. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
-7. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
+6. **Editing uniform indices by hand** — The buffer layout lives in `app/lib/shaderContract.ts` and is consumed by `WebGPUShader.tsx` and the WebGL2 fallback. Update the contract and run `npm run validate:shaders` rather than chasing magic indices.
+7. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
+8. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
 
 ---
 
@@ -393,15 +438,20 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `TECHNIQUES.md` | Technique catalog & shader mappings | **Active** |
 | `app/page.tsx` | Main page orchestrator | **Active** |
 | `app/layout.tsx` | Root layout | **Active** |
-| `app/manifest.ts` | PWA manifest | **Active** |
 | `app/globals.css` | Tailwind v4 styles | **Active** |
+| `public/manifest.webmanifest` | PWA manifest | **Active** |
 | `public/sacred-monk.wgsl` | Active scene shader | **Active** |
+| `public/sacred-lotus-final.wgsl` | Active lotus + ribbons shader | **Active** |
+| `public/sacred-ultra.wgsl` | Active cinematic ultra shader | **Active** |
+| `public/yoga-regular.wgsl` | Active simplified clinical-calm shader | **Active** |
+| `docs/shaders/SHADER_INVENTORY.md` | Shader asset manifest | **Active** |
 | `app/components/PostureGuide.tsx` | SVG posture guidance | Unused |
 | `app/components/BreathingVisualizer.tsx` | Legacy simple WebGPU canvas | Unused |
 | `app/hooks/useSacredBreathTimer.ts` | Legacy timer with chakra uniforms | Unused |
 | `app/hooks/useBreathingTimer.ts` | Legacy generic timer | Unused |
-| `public/shaders/*.wgsl` | Legacy compute / render passes | Unused |
-| `public/yoga-breath.wgsl` | Legacy base SDF scene shader | Unused |
+| `archive/shaders/legacy/*` | Superseded reference shaders | Archived |
+| `archive/shaders/experiments/*` | Multi-pass / modular / swarm experiments | Archived |
+| `archive/shaders/generated/*` | Agent outputs and summary docs | Archived |
 | `deploy.py` | SFTP deployment script | **Active** |
 
 ---

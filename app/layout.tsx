@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ManifestLink from "./components/ManifestLink";
+import ServiceWorkerRegistration from "./components/ServiceWorkerRegistration";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <ManifestLink />
+        <ServiceWorkerRegistration />
         {children}
       </body>
     </html>

@@ -14,6 +14,14 @@ interface CompletionScreenProps {
   nextStepLabel?: string;
   nextStepReason?: string;
   onTryNext?: () => void;
+  nextProgramSession?: {
+    programLabel: string;
+    dayIndex: number;
+    techniqueLabel: string;
+    techniqueEmoji: string;
+    duration: 5 | 10 | 15 | 'free';
+    note?: string;
+  };
 }
 
 const prefersReducedMotion = (): boolean =>
@@ -31,6 +39,7 @@ const CompletionScreen: React.FC<CompletionScreenProps> = ({
   nextStepLabel,
   nextStepReason,
   onTryNext,
+  nextProgramSession,
 }) => {
   useEffect(() => {
     if (prefersReducedMotion()) return;
@@ -129,6 +138,30 @@ const CompletionScreen: React.FC<CompletionScreenProps> = ({
 
         {isFirstSession && nextStepReason && (
           <p className="mb-6 text-[12px] text-white/50 leading-relaxed px-2">{nextStepReason}</p>
+        )}
+
+        {!isFirstSession && nextProgramSession && (
+          <div className="mb-8 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-left">
+            <p className="text-[10px] tracking-[0.2em] text-white/45 uppercase">
+              Next in {nextProgramSession.programLabel.toUpperCase()}
+            </p>
+            <p className="mt-2 text-lg text-white font-light">
+              {nextProgramSession.techniqueEmoji && (
+                <span className="mr-2">{nextProgramSession.techniqueEmoji}</span>
+              )}
+              Day {nextProgramSession.dayIndex + 1} · {nextProgramSession.techniqueLabel}
+            </p>
+            <p className="mt-1 text-[11px] text-white/55">
+              {nextProgramSession.duration === 'free'
+                ? 'Free session'
+                : `${nextProgramSession.duration} minutes`}
+            </p>
+            {nextProgramSession.note && (
+              <p className="mt-2 text-[12px] leading-relaxed text-cyan-200/75">
+                {nextProgramSession.note}
+              </p>
+            )}
+          </div>
         )}
 
         <button
