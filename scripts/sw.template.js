@@ -16,12 +16,12 @@ const PRECACHE_ASSETS = [
   './sacred-ultra.wgsl',
   './yoga-regular.wgsl',
   './backgrounds/void-nearblack-16x9.webp',
-  './instructor/inhale-raise-01.mp4',
+  './instructor/raise_arms.mp4',
 ];
 
 const optionalPrecacheAssets = new Set([
   './backgrounds/void-nearblack-16x9.webp',
-  './instructor/inhale-raise-01.mp4',
+  './instructor/raise_arms.mp4',
 ]);
 
 const isOptional = (url) => {

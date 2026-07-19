@@ -36,7 +36,7 @@ if (precacheMatch) {
 
   const optional = new Set([
     './backgrounds/void-nearblack-16x9.webp',
-    './instructor/inhale-raise-01.mp4',
+    './instructor/raise_arms.mp4',
   ]);
 
   for (const url of urls ?? []) {
