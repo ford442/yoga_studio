@@ -70,7 +70,29 @@ export default function Home() {
 
   const totalCycle = settings.inhale + settings.hold1 + settings.exhale + settings.hold2;
 
-  useBreathAudio(currentPhase, isRunning); // audio side effects only (chimes + drone)
+  const { phaseProgress: earlyPhaseProgress, remaining, phaseDuration } = useMemo(() => {
+    const elapsedInCycle = (breathPhase * totalCycle) % totalCycle;
+    let remaining = 0;
+    if (currentPhase === 'inhale') remaining = settings.inhale - elapsedInCycle;
+    else if (currentPhase === 'hold1') remaining = settings.hold1 - (elapsedInCycle - settings.inhale);
+    else if (currentPhase === 'exhale') remaining = settings.exhale - (elapsedInCycle - settings.inhale - settings.hold1);
+    else remaining = settings.hold2 - (elapsedInCycle - settings.inhale - settings.hold1 - settings.exhale);
+
+    const phaseDuration =
+      currentPhase === 'inhale' ? settings.inhale :
+      currentPhase === 'hold1' ? settings.hold1 :
+      currentPhase === 'exhale' ? settings.exhale :
+      settings.hold2;
+    const phaseElapsed = phaseDuration > 0
+      ? Math.max(0, phaseDuration - Math.max(0, remaining))
+      : 0;
+    const phaseProgress = phaseDuration > 0
+      ? Math.min(1, phaseElapsed / phaseDuration)
+      : 0;
+
+    return { phaseProgress, remaining, phaseDuration };
+  }, [breathPhase, totalCycle, currentPhase, settings]);
+
   const { stats, addPracticeTime } = useSessionStats();
   const {
     settings: voiceSettings,
@@ -106,6 +128,12 @@ export default function Home() {
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
   const [mouseStrength, setMouseStrength] = useState(0);
   const { playRipple } = useRippleAudio();
+  useBreathAudio({
+    currentPhase,
+    phaseProgress: earlyPhaseProgress,
+    isRunning,
+    themeIndex: selectedMode.theme,
+  });
   const {
     settings: rendererSettings,
     updateSettings: updateRendererSettings,
@@ -378,26 +406,7 @@ export default function Home() {
       }
     }
   }, []);
-  const elapsedInCycle = (breathPhase * totalCycle) % totalCycle;
-  let remaining = 0;
-  if (currentPhase === 'inhale') remaining = settings.inhale - elapsedInCycle;
-  else if (currentPhase === 'hold1') remaining = settings.hold1 - (elapsedInCycle - settings.inhale);
-  else if (currentPhase === 'exhale') remaining = settings.exhale - (elapsedInCycle - settings.inhale - settings.hold1);
-  else remaining = settings.hold2 - (elapsedInCycle - settings.inhale - settings.hold1 - settings.exhale);
-
-  // Compute how far through the current phase we are (0..1), used by
-  // the shader for accurate petal-bloom and ribbon timing.
-  const phaseDuration =
-    currentPhase === 'inhale' ? settings.inhale :
-    currentPhase === 'hold1'  ? settings.hold1  :
-    currentPhase === 'exhale' ? settings.exhale  :
-    settings.hold2;
-  const phaseElapsed = phaseDuration > 0
-    ? Math.max(0, phaseDuration - Math.max(0, remaining))
-    : 0;
-  const phaseProgress = phaseDuration > 0
-    ? Math.min(1, phaseElapsed / phaseDuration)
-    : 0;
+  const phaseProgress = earlyPhaseProgress;
 
   // Phase-aware intensity: rises 0→1 on inhale, holds at ~1, falls 1→0 on
   // exhale, rests at a gentle level during hold2. This drives lotus bloom,
