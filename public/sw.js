@@ -1,6 +1,6 @@
 // Service worker template. Generated at build time by scripts/generate-sw.mjs.
 // CACHE_VERSION is replaced with a versioned timestamp on every build.
-const CACHE_VERSION = '0.1.0-20260716121134';
+const CACHE_VERSION = '0.1.0-20260719104311';
 const APP_CACHE = `sacred-breath-app-${CACHE_VERSION}`;
 const BG_CACHE = `sacred-breath-backgrounds-${CACHE_VERSION}`;
 const MEDIA_CACHE = `sacred-breath-media-${CACHE_VERSION}`;
@@ -16,12 +16,12 @@ const PRECACHE_ASSETS = [
   './sacred-ultra.wgsl',
   './yoga-regular.wgsl',
   './backgrounds/void-nearblack-16x9.webp',
-  './instructor/inhale-raise-01.mp4',
+  './instructor/raise_arms.mp4',
 ];
 
 const optionalPrecacheAssets = new Set([
   './backgrounds/void-nearblack-16x9.webp',
-  './instructor/inhale-raise-01.mp4',
+  './instructor/raise_arms.mp4',
 ]);
 
 const isOptional = (url) => {

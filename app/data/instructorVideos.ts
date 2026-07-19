@@ -41,18 +41,21 @@ const clip = (
 });
 
 /**
- * Default "serene" instructor: a silhouette that raises on the inhale, holds
- * overhead, lowers on the exhale, and rests still. Most modes share it; add new
- * entries here and map them in STYLE_BY_POSE for style-specific instructors.
+ * Default "serene" instructor: filmed guide who raises her arms on the inhale,
+ * holds overhead, lowers on the exhale, and rests still. Source mp4s live in
+ * assets/video/ and are copied verbatim into public/instructor/, alongside
+ * vp9/opus webm re-encodes for browsers without an h264 decoder. All clips are
+ * authored at 6.04s. `still_arms_up` (a wider V-shape hold) is shipped as an
+ * alternate for hold1 — swap it in here if the overhead hold reads too tall.
  */
 const SERENE: InstructorStyle = {
   id: 'serene',
   label: 'Serene guide',
   clips: {
-    inhale: clip('inhale-raise-01', 4.0, 'Inhale · arms rise'),
-    hold1: clip('hold1-arms-high-01', 3.0, 'Hold · arms high'),
-    exhale: clip('exhale-lower-01', 4.0, 'Exhale · arms lower'),
-    hold2: clip('hold2-still-01', 3.0, 'Hold · stillness'),
+    inhale: clip('raise_arms', 6.04, 'Inhale · arms rise'),
+    hold1: clip('arms_up', 6.04, 'Hold · arms high'),
+    exhale: clip('lower_arms', 6.04, 'Exhale · arms lower'),
+    hold2: clip('still_arms_down', 6.04, 'Hold · stillness'),
   },
 };
 
