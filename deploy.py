@@ -25,7 +25,6 @@ import os
 import sys
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 import requests
 
@@ -37,9 +36,11 @@ BUILD_DIR: str = 'out'
 CONTABO_BASE_URL: str = "https://storage.noahcohn.com"
 DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NAME
 
-# Optional deploy token (recommended for security).
-# Set via environment: export DEPLOY_TOKEN="your_long_token_from_vps_env"
-DEPLOY_TOKEN: Optional[str] = "6de44dca5425348f2e2ef9456fc820bfe56a5ace68bddeb6da4a1c2a9d9cadc0"
+# Deploy token is required and must come from the environment:
+#   export DEPLOY_TOKEN="your_long_token_from_vps_env"
+DEPLOY_TOKEN: str = os.environ.get("DEPLOY_TOKEN") or sys.exit(
+    "ERROR: Set DEPLOY_TOKEN in your environment before running deploy.py"
+)
 # ============================================================
 DEPLOY_TARGET: str ="go"
 
