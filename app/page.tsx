@@ -153,6 +153,9 @@ function PracticeScreen() {
         hasEnvironment={hasEnvironment}
         effectivePerformanceMode={effectivePerformanceMode}
         reducedMotion={rendererSettings.reducedMotion || isPerformanceForced}
+        pauseRendering={showCompletion}
+        persistedGovernorTier={rendererSettings.governorTier}
+        onGovernorTierChange={(governorTier) => updateRendererSettings({ governorTier })}
         onDiagnostics={setRendererDiagnostics}
       />
 

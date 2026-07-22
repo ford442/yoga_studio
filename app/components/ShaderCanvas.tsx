@@ -4,8 +4,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GeometryOverlay } from '../renderer/overlay';
 import { probeCapabilities, mountRenderer, pickInitialMode } from '../renderer/selectBackend';
 import { resolveMaxDpr, resolveQualityPreset } from '../renderer/quality';
+import {
+  createFrameGovernor,
+  parseGovernorTier,
+  type FrameGovernor,
+  type GovernorSnapshot,
+  type GovernorTier,
+} from '../renderer/frameGovernor';
 import type { AnimatedUniformValues } from '../renderer/types';
-import { type RendererMode, type RendererDiagnosticsState } from '../types/renderer';
+import {
+  type RendererMode,
+  type RendererDiagnosticsState,
+  type GovernorPersistedTier,
+} from '../types/renderer';
 
 interface ShaderCanvasProps {
   breathPhase: number;
@@ -30,6 +41,11 @@ interface ShaderCanvasProps {
   vertexEntry?: string;
   fragmentEntry?: string;
   reducedMotion?: boolean;
+  /** Skip GPU work while the completion overlay covers the canvas. */
+  pauseRendering?: boolean;
+  /** Seed / persist adaptive quality tier across sessions. */
+  persistedGovernorTier?: GovernorPersistedTier;
+  onGovernorTierChange?: (tier: GovernorPersistedTier) => void;
   onDiagnostics?: (state: RendererDiagnosticsState) => void;
 }
 
@@ -56,6 +72,15 @@ type ShaderPropsRef = Required<
 
 const capabilities = probeCapabilities();
 
+const toBaseTier = (
+  qualityPreset: number,
+  overlayEnabled: boolean,
+): GovernorTier => ({
+  resolutionScale: 1,
+  qualityPreset: qualityPreset >= 0.5 ? 1 : 0,
+  overlayEnabled,
+});
+
 /** Thin React shell around the renderer backends: owns refs, prop plumbing, and diagnostics reporting. */
 const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   breathPhase,
@@ -80,6 +105,9 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   vertexEntry = 'vs',
   fragmentEntry = 'main',
   reducedMotion = false,
+  pauseRendering = false,
+  persistedGovernorTier,
+  onGovernorTierChange,
   onDiagnostics,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +115,14 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const [rendererMode, setRendererMode] = useState<RendererMode>(() => pickInitialMode(capabilities));
   const [fallbackReason, setFallbackReason] = useState<string | undefined>(undefined);
+  const [governorSnap, setGovernorSnap] = useState<GovernorSnapshot>(() => ({
+    resolutionScale: 1,
+    qualityPreset: 1,
+    overlayEnabled: true,
+    p75FrameMs: null,
+    stepDownCount: 0,
+    paused: false,
+  }));
 
   // Reduce motion: lower quality, cap DPR, and disable the overlay.
   const effectiveQualityPreset = reducedMotion ? 0 : resolveQualityPreset(qualityPreset);
@@ -95,6 +131,93 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     : maxDevicePixelRatio;
   const effectiveOverlayEnabled = reducedMotion ? false : overlayEnabled;
   const resolvedMaxDpr = resolveMaxDpr(effectiveQualityPreset, effectiveMaxDpr);
+
+  const pauseRef = useRef(pauseRendering);
+  const onGovernorTiersChangeRef = useRef(onGovernorTierChange);
+  const onDiagnosticsRef = useRef(onDiagnostics);
+  const diagMetaRef = useRef({
+    rendererMode,
+    fallbackReason,
+    shaderPath,
+    effectiveQualityPreset,
+    resolvedMaxDpr,
+    effectiveOverlayEnabled,
+    reducedMotion: Boolean(reducedMotion),
+    pauseRendering,
+  });
+  const governorRef = useRef<FrameGovernor | null>(null);
+  if (governorRef.current == null) {
+    governorRef.current = createFrameGovernor({
+      base: toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled),
+      initial: parseGovernorTier(persistedGovernorTier),
+    });
+  }
+
+  useEffect(() => {
+    pauseRef.current = pauseRendering;
+  }, [pauseRendering]);
+
+  useEffect(() => {
+    onGovernorTiersChangeRef.current = onGovernorTierChange;
+  }, [onGovernorTierChange]);
+
+  useEffect(() => {
+    onDiagnosticsRef.current = onDiagnostics;
+  }, [onDiagnostics]);
+
+  useEffect(() => {
+    diagMetaRef.current = {
+      rendererMode,
+      fallbackReason,
+      shaderPath,
+      effectiveQualityPreset,
+      resolvedMaxDpr,
+      effectiveOverlayEnabled,
+      reducedMotion: Boolean(reducedMotion),
+      pauseRendering,
+    };
+  }, [
+    rendererMode,
+    fallbackReason,
+    shaderPath,
+    effectiveQualityPreset,
+    resolvedMaxDpr,
+    effectiveOverlayEnabled,
+    reducedMotion,
+    pauseRendering,
+  ]);
+
+  // Keep the governor ceiling in sync with technique / performance-mode props.
+  useEffect(() => {
+    governorRef.current?.setBase(toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled));
+  }, [effectiveQualityPreset, effectiveOverlayEnabled]);
+
+  // Publish diagnostics + data-attribute snapshot on an interval (external timer callback).
+  useEffect(() => {
+    const publish = () => {
+      const snap = governorRef.current?.getSnapshot();
+      if (!snap) return;
+      setGovernorSnap(snap);
+      const meta = diagMetaRef.current;
+      onDiagnosticsRef.current?.({
+        mode: meta.rendererMode,
+        fallbackReason: meta.fallbackReason,
+        activeShader: meta.shaderPath,
+        qualityPreset: Math.min(meta.effectiveQualityPreset, snap.qualityPreset),
+        maxDevicePixelRatio: meta.resolvedMaxDpr * snap.resolutionScale,
+        overlayEnabled: snap.overlayEnabled && meta.effectiveOverlayEnabled,
+        reducedMotion: meta.reducedMotion,
+        batterySaver: false,
+        resolutionScale: snap.resolutionScale,
+        frameTimeP75Ms: snap.p75FrameMs,
+        governorStepDowns: snap.stepDownCount,
+        governorPaused: snap.paused || meta.pauseRendering,
+      });
+    };
+
+    const id = window.setInterval(publish, 500);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Mutable refs for animated values so the graphics backend only initializes once.
   const propsRef = useRef<ShaderPropsRef>({
@@ -138,15 +261,25 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    const governor = governorRef.current;
+    if (!canvas || !container || !governor) return;
 
+    // Overlay canvas is created when the base setting allows it; the governor
+    // may skip drawing it without tearing down the GL context.
     let overlay: GeometryOverlay | null = null;
     if (effectiveOverlayEnabled && overlayCanvasRef.current) {
       overlay = new GeometryOverlay(overlayCanvasRef.current);
       if (!overlay.init()) overlay = null;
     }
 
-    const getUniformSnapshot = (): AnimatedUniformValues => propsRef.current;
+    const getUniformSnapshot = (): AnimatedUniformValues => {
+      const base = propsRef.current;
+      const snap = governor.getSnapshot();
+      return {
+        ...base,
+        qualityPreset: Math.min(base.qualityPreset, snap.qualityPreset),
+      };
+    };
 
     const unmount = mountRenderer({
       mode: rendererMode,
@@ -157,9 +290,21 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       shaderPath,
       vertexEntry,
       fragmentEntry,
-      getMaxDevicePixelRatio: () => resolveMaxDpr(propsRef.current.qualityPreset, effectiveMaxDpr),
+      governor,
+      shouldRender: () => !pauseRef.current,
+      getMaxDevicePixelRatio: () =>
+        resolveMaxDpr(propsRef.current.qualityPreset, effectiveMaxDpr) * governor.getSnapshot().resolutionScale,
       getUniformSnapshot,
       getTimeScale: () => propsRef.current.timeScale,
+      onGovernorChange: () => {
+        const snap = governor.getSnapshot();
+        onGovernorTiersChangeRef.current?.({
+          resolutionScale: snap.resolutionScale,
+          qualityPreset: snap.qualityPreset,
+          overlayEnabled: snap.overlayEnabled,
+        });
+        setGovernorSnap(snap);
+      },
       onFallback: (nextMode, reason) => {
         setFallbackReason(reason);
         setRendererMode(nextMode);
@@ -172,21 +317,6 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     };
   }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveOverlayEnabled, effectiveMaxDpr]);
 
-  // Report renderer diagnostics whenever observable state changes.
-  useEffect(() => {
-    if (!onDiagnostics) return;
-    onDiagnostics({
-      mode: rendererMode,
-      fallbackReason,
-      activeShader: shaderPath,
-      qualityPreset: effectiveQualityPreset,
-      maxDevicePixelRatio: resolvedMaxDpr,
-      overlayEnabled: effectiveOverlayEnabled,
-      reducedMotion: Boolean(reducedMotion),
-      batterySaver: false,
-    });
-  }, [rendererMode, fallbackReason, shaderPath, effectiveQualityPreset, resolvedMaxDpr, effectiveOverlayEnabled, reducedMotion, onDiagnostics]);
-
   return (
     <div
       ref={containerRef}
@@ -194,9 +324,10 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       data-renderer={rendererMode}
       data-shader={shaderPath}
       data-fallback-reason={fallbackReason ?? ''}
-      data-quality={effectiveQualityPreset}
+      data-quality={Math.min(effectiveQualityPreset, governorSnap.qualityPreset)}
       data-dpr-cap={resolvedMaxDpr}
-      data-overlay={effectiveOverlayEnabled}
+      data-resolution-scale={governorSnap.resolutionScale}
+      data-overlay={governorSnap.overlayEnabled && effectiveOverlayEnabled}
       data-reduced-motion={Boolean(reducedMotion)}
     >
       <canvas

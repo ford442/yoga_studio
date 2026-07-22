@@ -39,8 +39,8 @@ jobs:
       - name: Static export smoke (files + HTTP 200s)
         run: npm run smoke
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

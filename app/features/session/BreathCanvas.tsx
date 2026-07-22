@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import ShaderCanvas from '../../components/ShaderCanvas';
 import { useRippleAudio } from '../../hooks/useRippleAudio';
-import type { PerformanceMode, RendererDiagnosticsState } from '../../types/renderer';
+import type { PerformanceMode, RendererDiagnosticsState, GovernorPersistedTier } from '../../types/renderer';
 import type { SessionMode } from '../../types/sessionMode';
 
 interface BreathCanvasProps {
@@ -15,6 +15,9 @@ interface BreathCanvasProps {
   hasEnvironment: boolean;
   effectivePerformanceMode: PerformanceMode;
   reducedMotion: boolean;
+  pauseRendering?: boolean;
+  persistedGovernorTier?: GovernorPersistedTier;
+  onGovernorTierChange?: (tier: GovernorPersistedTier) => void;
   onDiagnostics: (state: RendererDiagnosticsState) => void;
 }
 
@@ -28,6 +31,9 @@ export default function BreathCanvas({
   hasEnvironment,
   effectivePerformanceMode,
   reducedMotion,
+  pauseRendering = false,
+  persistedGovernorTier,
+  onGovernorTierChange,
   onDiagnostics,
 }: BreathCanvasProps) {
   const [mouse, setMouse] = useState({ x: -2, y: -2 });
@@ -75,6 +81,9 @@ export default function BreathCanvas({
         maxDevicePixelRatio={effectivePerformanceMode === 'performance' ? 1 : effectivePerformanceMode === 'quality' ? 2 : selectedMode.maxDevicePixelRatio}
         overlayEnabled={effectivePerformanceMode !== 'performance'}
         reducedMotion={reducedMotion}
+        pauseRendering={pauseRendering}
+        persistedGovernorTier={persistedGovernorTier}
+        onGovernorTierChange={onGovernorTierChange}
         shaderPath={selectedMode.shaderPath}
         vertexEntry={selectedMode.vertexEntry}
         fragmentEntry={selectedMode.fragmentEntry}

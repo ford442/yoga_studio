@@ -1,6 +1,7 @@
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 import { buildUniformBuffer, UNIFORM_BUFFER_SIZE } from '../lib/shaderContract';
 import { resizeCanvasForDpr } from './canvasUtils';
+import { attachVisibilityPause, beginFrame } from './frameGate';
 import type { RendererBackend, RendererBackendContext } from './types';
 
 /** WebGPU renderer: the primary pipeline, used whenever the browser supports it. */
@@ -12,6 +13,15 @@ export class WebGPUBackend implements RendererBackend {
   private device: GPUDevice | null = null;
   private animationFrame: number | null = null;
   private startTime: number | null = null;
+  private lastFrameMs: number | null = null;
+  private detachVisibility: (() => void) | null = null;
+  private resizeFn: (() => void) | null = null;
+  private loopArgs: {
+    context: GPUCanvasContext;
+    pipeline: GPURenderPipeline;
+    uniformBuffer: GPUBuffer;
+    bindGroup: GPUBindGroup;
+  } | null = null;
   private ctx: RendererBackendContext | null = null;
 
   async start(ctx: RendererBackendContext): Promise<void> {
@@ -62,6 +72,7 @@ export class WebGPUBackend implements RendererBackend {
       resizeCanvasForDpr(canvas, ctx.getMaxDevicePixelRatio(), configure);
       ctx.overlay?.resize(ctx.getMaxDevicePixelRatio());
     };
+    this.resizeFn = resize;
 
     resize();
     this.ro = new ResizeObserver(resize);
@@ -105,22 +116,54 @@ export class WebGPUBackend implements RendererBackend {
     // canvas has its real layout size even if the early measurement was 0.
     resize();
 
-    this.loop(context, pipeline, uniformBuffer, bindGroup);
+    this.loopArgs = { context, pipeline, uniformBuffer, bindGroup };
+    this.detachVisibility = attachVisibilityPause(
+      () => this.cancelFrame(),
+      () => this.scheduleFrame(),
+    );
+    this.scheduleFrame();
   }
 
-  private loop(
-    context: GPUCanvasContext,
-    pipeline: GPURenderPipeline,
-    uniformBuffer: GPUBuffer,
-    bindGroup: GPUBindGroup
-  ): void {
+  private cancelFrame(): void {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    this.lastFrameMs = null;
+  }
+
+  private scheduleFrame(): void {
+    if (this.cancelled || this.animationFrame != null || !this.loopArgs) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.animationFrame = requestAnimationFrame(() => this.loop());
+  }
+
+  private loop(): void {
+    this.animationFrame = null;
     const ctx = this.ctx;
     const device = this.device;
-    if (this.cancelled || !ctx || !device) return;
+    const args = this.loopArgs;
+    if (this.cancelled || !ctx || !device || !args) return;
 
+    const gate = beginFrame(ctx, this.lastFrameMs);
+    if (gate) this.lastFrameMs = gate.now;
+    else this.lastFrameMs = null;
+
+    if (gate?.governor.changed) this.resizeFn?.();
+
+    if (!gate) {
+      // Paused (completion / hidden) — only restart when visible; visibility
+      // listener handles hidden→visible. Completion pause keeps a cheap poll.
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        this.animationFrame = requestAnimationFrame(() => this.loop());
+      }
+      return;
+    }
+
+    const { context, pipeline, uniformBuffer, bindGroup } = args;
     const canvas = ctx.canvas;
     if (canvas.width === 0 || canvas.height === 0) {
-      this.animationFrame = requestAnimationFrame(() => this.loop(context, pipeline, uniformBuffer, bindGroup));
+      this.scheduleFrame();
       return;
     }
 
@@ -150,20 +193,24 @@ export class WebGPUBackend implements RendererBackend {
       pass.end();
 
       device.queue.submit([encoder.finish()]);
-      ctx.overlay?.render(currentTime, values);
+      if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
     } catch (error) {
       ctx.onFatalError('WebGPU render loop failed.', error);
       return;
     }
 
-    this.animationFrame = requestAnimationFrame(() => this.loop(context, pipeline, uniformBuffer, bindGroup));
+    this.scheduleFrame();
   }
 
   stop(): void {
     this.cancelled = true;
-    if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+    this.cancelFrame();
+    this.detachVisibility?.();
+    this.detachVisibility = null;
     this.ro?.disconnect();
     this.ro = null;
+    this.resizeFn = null;
+    this.loopArgs = null;
     if (this.device) {
       try {
         this.device.destroy();

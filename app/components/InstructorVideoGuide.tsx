@@ -7,6 +7,12 @@ import {
   type InstructorPhaseClip,
 } from '../data/instructorVideos';
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
+import {
+  SYNC_MIN_PHASE_SEC,
+  clamp,
+  computePlaybackRate,
+  computeTargetTime,
+} from '../lib/instructorSync';
 import type { BreathPhase } from '../hooks/useBreathTimer';
 import type {
   InstructorLayout,
@@ -53,22 +59,9 @@ const CORNER_POSITION: Record<InstructorPipCorner, string> = {
     'bottom-[max(11rem,calc(env(safe-area-inset-bottom)+10rem))] right-[max(1rem,env(safe-area-inset-right))]',
 };
 
-// Movement leads the numeric countdown by this much so it feels human-anticipatory.
-const ANTICIPATION_LEAD_SEC = 0.2;
-// Lockstep is held with a velocity control loop: rate = idealRate + GAIN*drift.
-// This keeps the clip moving smoothly forward (no backward stutter) while
-// converging on the countdown, even when the phase is much longer than the clip
-// (e.g. a 10s inhale over a 4s clip → ~0.4x slow-fill, which is exactly right).
-const RATE_GAIN = 4;
-// Soft rate envelope: low enough to slow-fill a long phase, capped so a short
-// phase over a long clip never looks comically fast.
-const RATE_MIN = 0.1;
-const RATE_MAX = 3.0;
-// Only hard-seek to recover from a real stall (tab backgrounded, buffering).
-const HARD_SNAP_SEC = 0.5;
 const CROSSFADE_MS = 320;
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const RATE_APPLY_EPS = 0.02;
+const IDLE_RATE_EPS = 0.01;
 
 interface Slot {
   clip: InstructorPhaseClip;
@@ -163,30 +156,27 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
       const clip = frontClipRef.current;
       const st = syncRef.current;
       if (v && clip && v.readyState >= 1) {
-        const synced = st.isRunning && st.phaseDurationSec > 0.05;
+        const synced = st.isRunning && st.phaseDurationSec > SYNC_MIN_PHASE_SEC;
         if (synced) {
           v.loop = false;
-          // Anticipation: target a moment slightly ahead of the countdown so the
-          // movement leads the numbers by ~200ms (feels human).
-          const lead = ANTICIPATION_LEAD_SEC / st.phaseDurationSec;
-          const tp = clamp(st.phaseProgress + lead, 0, 1);
-          const target = tp * clip.duration;
           if (v.readyState >= 2) {
-            const drift = target - v.currentTime;
-            if (Math.abs(drift) > HARD_SNAP_SEC) {
-              // Big gap (stall/resume) — snap to recover, then resume tracking.
-              try { v.currentTime = target; } catch { /* seeking guard */ }
-            } else {
-              const idealRate = clip.duration / st.phaseDurationSec;
-              const rate = clamp(idealRate + RATE_GAIN * drift, RATE_MIN, RATE_MAX);
-              if (Math.abs(v.playbackRate - rate) > 0.02) v.playbackRate = rate;
+            const action = computePlaybackRate({
+              phaseProgress: st.phaseProgress,
+              phaseDurationSec: st.phaseDurationSec,
+              clipDuration: clip.duration,
+              currentTime: v.currentTime,
+            });
+            if ('seekTo' in action) {
+              try { v.currentTime = action.seekTo; } catch { /* seeking guard */ }
+            } else if (Math.abs(v.playbackRate - action.rate) > RATE_APPLY_EPS) {
+              v.playbackRate = action.rate;
             }
             if (v.paused) v.play().catch(() => {});
           }
         } else {
           // Paused or free-form without an active phase: gentle ambient loop.
           v.loop = true;
-          if (Math.abs(v.playbackRate - 1) > 0.01) v.playbackRate = 1;
+          if (Math.abs(v.playbackRate - 1) > IDLE_RATE_EPS) v.playbackRate = 1;
           if (v.paused) v.play().catch(() => {});
         }
       }
@@ -211,9 +201,14 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
       // Seek straight to the live position so a fresh phase clip never flashes
       // its first frame before the rAF catches up.
       const st = syncRef.current;
-      if (st.isRunning && st.phaseDurationSec > 0.05) {
-        const tp = clamp(st.phaseProgress + ANTICIPATION_LEAD_SEC / st.phaseDurationSec, 0, 1);
-        try { el.currentTime = tp * frontClipRef.current.duration; } catch { /* not ready */ }
+      if (st.isRunning && st.phaseDurationSec > SYNC_MIN_PHASE_SEC) {
+        try {
+          el.currentTime = computeTargetTime(
+            st.phaseProgress,
+            st.phaseDurationSec,
+            frontClipRef.current.duration,
+          );
+        } catch { /* not ready */ }
       }
       el.play().catch(() => {});
     }

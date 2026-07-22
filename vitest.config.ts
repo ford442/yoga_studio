@@ -14,5 +14,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     include: ['app/**/*.test.ts', 'app/**/*.test.tsx'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      // Informational only — no thresholds / gates.
+    },
   },
 });

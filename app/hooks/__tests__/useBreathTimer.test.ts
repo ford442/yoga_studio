@@ -154,4 +154,123 @@ describe('useBreathTimer', () => {
     });
     await waitFor(() => expect(result.current.currentPhase).toBe('hold2'));
   });
+
+  it('skips a zero-duration hold2 and wraps exhale to inhale', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+
+    act(() => {
+      result.current.updateSettings({ inhale: 2, hold1: 2, exhale: 2, hold2: 0 });
+    });
+    act(() => {
+      result.current.startSession(10);
+    });
+
+    // Mid-exhale
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    await waitFor(() => expect(result.current.currentPhase).toBe('exhale'));
+
+    // Past cycle end (tct = 6s) — should wrap to inhale, never hold2
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await waitFor(() => expect(result.current.currentPhase).toBe('inhale'));
+    expect(result.current.currentPhase).not.toBe('hold2');
+  });
+
+  it('remaps wall-clock elapsed onto new tct when settings change mid-session', async () => {
+    // Current behavior: continuous elapsed % newTct (not preserve-progress rebase).
+    // A preserve-progress fix would be a follow-up; this pins the modulus jump.
+    const { result } = renderHook(() => useBreathTimer());
+
+    act(() => {
+      result.current.startSession(10);
+    });
+
+    // Defaults tct=16; past inhale+hold1 (8s) so we are in exhale
+    await act(async () => {
+      vi.advanceTimersByTime(4500);
+    });
+    await waitFor(() => expect(result.current.currentPhase).toBe('hold1'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(4500);
+    });
+    await waitFor(() => expect(result.current.currentPhase).toBe('exhale'));
+    // ~9/16 of the cycle
+    expect(result.current.breathPhase).toBeCloseTo(9 / 16, 1);
+
+    act(() => {
+      result.current.updateSettings({ inhale: 2, hold1: 2, exhale: 2, hold2: 2 });
+    });
+
+    // Next ticks: elapsed≈9, newTct=8 → 9%8=1 → inhale / breathPhase≈0.125
+    await act(async () => {
+      vi.advanceTimersByTime(16);
+    });
+    await waitFor(() => expect(result.current.currentPhase).toBe('inhale'));
+    expect(result.current.breathPhase).toBeCloseTo(1 / 8, 1);
+  });
+
+  it('auto-ends at the session boundary but not just under it', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+
+    act(() => {
+      result.current.startSession(5);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60_000 - 50);
+    });
+    expect(result.current.isRunning).toBe(true);
+    expect(result.current.sessionDuration).toBe(5);
+
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(result.current.isRunning).toBe(false);
+    expect(result.current.sessionDuration).toBeNull();
+  });
+
+  it('endSession stops the timer but preserves breaths and phase', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+
+    act(() => {
+      result.current.startSession(10);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(16_050);
+    });
+    await waitFor(() => expect(result.current.totalBreaths).toBe(1));
+    await waitFor(() => expect(result.current.currentPhase).toBe('inhale'));
+
+    const breathsBefore = result.current.totalBreaths;
+    const phaseBefore = result.current.currentPhase;
+
+    act(() => {
+      result.current.endSession();
+    });
+
+    expect(result.current.isRunning).toBe(false);
+    expect(result.current.sessionDuration).toBeNull();
+    expect(result.current.totalBreaths).toBe(breathsBefore);
+    expect(result.current.currentPhase).toBe(phaseBefore);
+  });
+
+  it('free-form practice never auto-ends after a long run', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+
+    act(() => {
+      result.current.toggleFree();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+
+    expect(result.current.isRunning).toBe(true);
+    expect(result.current.sessionDuration).toBeNull();
+  });
 });

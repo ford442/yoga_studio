@@ -16,6 +16,8 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
   const modeText =
     state.mode === 'webgpu' ? 'WebGPU' : state.mode === 'webgl2' ? 'WebGL2 fallback' : 'Static fallback';
   const fallback = state.fallbackReason ? `Fallback: ${state.fallbackReason}` : undefined;
+  const p75 =
+    state.frameTimeP75Ms == null ? '—' : `${state.frameTimeP75Ms.toFixed(1)}ms`;
 
   return (
     <div
@@ -29,11 +31,16 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
           }`}
         />
         <span className="font-semibold tracking-wide">{modeText}</span>
+        {state.governorPaused && <span className="text-amber-300">paused</span>}
       </div>
       <div className="space-y-0.5 text-white/70">
         <div>Shader: {state.activeShader}</div>
         <div>
-          Quality: {qualityLabel(state.qualityPreset)} · DPR cap: {state.maxDevicePixelRatio.toFixed(1)} · Overlay: {state.overlayEnabled ? 'on' : 'off'}
+          Quality: {qualityLabel(state.qualityPreset)} · Scale: {state.resolutionScale.toFixed(2)} · DPR:{' '}
+          {state.maxDevicePixelRatio.toFixed(2)} · Overlay: {state.overlayEnabled ? 'on' : 'off'}
+        </div>
+        <div>
+          Frame p75: {p75} · Step-downs: {state.governorStepDowns}
         </div>
         {state.reducedMotion && <div className="text-amber-300">Reduced motion active</div>}
         {fallback && <div className="text-amber-300/90 max-w-[260px] leading-tight">{fallback}</div>}

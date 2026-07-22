@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   DEFAULT_RENDERER_SETTINGS,
   RENDERER_STORAGE_KEY,
+  type GovernorPersistedTier,
   type PerformanceMode,
   type RendererSettings,
 } from '../types/renderer';
+import { parseGovernorTier } from '../renderer/frameGovernor';
 
 const isPerformanceMode = (v: unknown): v is PerformanceMode =>
   v === 'auto' || v === 'performance' || v === 'quality';
@@ -14,12 +16,25 @@ const isPerformanceMode = (v: unknown): v is PerformanceMode =>
 const parseSettings = (raw: unknown): RendererSettings => {
   if (!raw || typeof raw !== 'object') return DEFAULT_RENDERER_SETTINGS;
   const data = raw as Partial<RendererSettings>;
+  const parsed = parseGovernorTier(data.governorTier);
+  const governorTier: GovernorPersistedTier | undefined =
+    parsed &&
+    parsed.resolutionScale !== undefined &&
+    parsed.qualityPreset !== undefined &&
+    parsed.overlayEnabled !== undefined
+      ? {
+          resolutionScale: parsed.resolutionScale,
+          qualityPreset: parsed.qualityPreset,
+          overlayEnabled: parsed.overlayEnabled,
+        }
+      : undefined;
   return {
     performanceMode: isPerformanceMode(data.performanceMode)
       ? data.performanceMode
       : DEFAULT_RENDERER_SETTINGS.performanceMode,
     reducedMotion: Boolean(data.reducedMotion),
     showDiagnostics: Boolean(data.showDiagnostics),
+    ...(governorTier ? { governorTier } : {}),
   };
 };
 

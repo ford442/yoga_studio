@@ -100,6 +100,28 @@ describe('mountRenderer', () => {
       qualityPreset: 1,
     }),
     getTimeScale: () => 1,
+    governor: {
+      setBase: () => {},
+      setPaused: () => {},
+      noteFrame: () => ({
+        resolutionScale: 1,
+        qualityPreset: 1,
+        overlayEnabled: true,
+        p75FrameMs: null,
+        stepDownCount: 0,
+        paused: false,
+        changed: false,
+      }),
+      getSnapshot: () => ({
+        resolutionScale: 1,
+        qualityPreset: 1 as const,
+        overlayEnabled: true,
+        p75FrameMs: null,
+        stepDownCount: 0,
+        paused: false,
+      }),
+    },
+    shouldRender: () => true,
   });
 
   it('starts the backend for the requested mode', () => {

@@ -1,5 +1,6 @@
 import { UNIFORM_FIELDS, WEBGL_MAIN_UNIFORM_MAP, type UniformValues } from '../lib/shaderContract';
 import { buildGLUniforms, createProgramFromSources, resizeCanvasForDpr, uploadUniform } from './canvasUtils';
+import { attachVisibilityPause, beginFrame } from './frameGate';
 import { WEBGL_VERTEX_SHADER } from './overlay';
 import type { GLUniforms, RendererBackend, RendererBackendContext } from './types';
 
@@ -172,6 +173,9 @@ export class WebGL2Backend implements RendererBackend {
   private uniforms: GLUniforms = {};
   private animationFrame: number | null = null;
   private startTime: number | null = null;
+  private lastFrameMs: number | null = null;
+  private detachVisibility: (() => void) | null = null;
+  private resizeFn: (() => void) | null = null;
   private onContextLost = (event: Event) => {
     event.preventDefault();
     this.ctx?.onFatalError('WebGL2 context was lost.');
@@ -207,22 +211,55 @@ export class WebGL2Backend implements RendererBackend {
       gl.viewport(0, 0, canvas.width, canvas.height);
       ctx.overlay?.resize(ctx.getMaxDevicePixelRatio());
     };
+    this.resizeFn = resize;
 
     resize();
     this.ro = new ResizeObserver(resize);
     this.ro.observe(ctx.container);
 
-    this.loop();
+    this.detachVisibility = attachVisibilityPause(
+      () => this.cancelFrame(),
+      () => this.scheduleFrame(),
+    );
+    this.scheduleFrame();
+  }
+
+  private cancelFrame(): void {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    this.lastFrameMs = null;
+  }
+
+  private scheduleFrame(): void {
+    if (this.cancelled || this.animationFrame != null) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.animationFrame = requestAnimationFrame(this.loop);
   }
 
   private loop = (): void => {
+    this.animationFrame = null;
     const ctx = this.ctx;
     const gl = this.gl;
     if (this.cancelled || !ctx || !gl || !this.program) return;
 
+    const gate = beginFrame(ctx, this.lastFrameMs);
+    if (gate) this.lastFrameMs = gate.now;
+    else this.lastFrameMs = null;
+
+    if (gate?.governor.changed) this.resizeFn?.();
+
+    if (!gate) {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        this.animationFrame = requestAnimationFrame(this.loop);
+      }
+      return;
+    }
+
     const canvas = ctx.canvas;
     if (canvas.width === 0 || canvas.height === 0) {
-      this.animationFrame = requestAnimationFrame(this.loop);
+      this.scheduleFrame();
       return;
     }
 
@@ -249,16 +286,19 @@ export class WebGL2Backend implements RendererBackend {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    ctx.overlay?.render(currentTime, values);
+    if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
 
-    this.animationFrame = requestAnimationFrame(this.loop);
+    this.scheduleFrame();
   };
 
   stop(): void {
     this.cancelled = true;
-    if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+    this.cancelFrame();
+    this.detachVisibility?.();
+    this.detachVisibility = null;
     this.ro?.disconnect();
     this.ro = null;
+    this.resizeFn = null;
     this.ctx?.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     if (this.vertexArray) this.gl?.deleteVertexArray(this.vertexArray);
     if (this.program) this.gl?.deleteProgram(this.program);
