@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import WebGPUShader from '../../components/WebGPUShader';
+import ShaderCanvas from '../../components/ShaderCanvas';
 import { useRippleAudio } from '../../hooks/useRippleAudio';
 import type { PerformanceMode, RendererDiagnosticsState } from '../../types/renderer';
 import type { SessionMode } from '../../types/sessionMode';
@@ -56,7 +56,7 @@ export default function BreathCanvas({
       onPointerLeave={() => { setMouse({ x: -2, y: -2 }); setMouseStrength(0); }}
       onPointerUp={() => { setMouse({ x: -2, y: -2 }); setMouseStrength(0); }}
     >
-      <WebGPUShader
+      <ShaderCanvas
         breathPhase={breathPhase}
         intensity={intensity}
         chakraPhase={chakraPhase}
