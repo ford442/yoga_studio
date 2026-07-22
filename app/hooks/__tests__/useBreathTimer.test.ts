@@ -80,11 +80,11 @@ describe('useBreathTimer', () => {
     const { result } = renderHook(() => useBreathTimer());
 
     act(() => {
-      result.current.startSession(1);
+      result.current.startSession(5);
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(60_050);
+      vi.advanceTimersByTime(5 * 60_050);
     });
 
     expect(result.current.isRunning).toBe(false);

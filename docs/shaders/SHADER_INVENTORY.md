@@ -17,10 +17,10 @@ public/                          # Copied to out/ during static export — runti
 archive/shaders/                 # Not exported; historical preservation
 ├── legacy/                      # Superseded reference shaders
 ├── experiments/                 # Multi-pass / modular / swarm experiments
-└── generated/                   # Agent outputs and summary docs
+├── generated/                   # Agent outputs and summary docs
+└── swarm-outputs/               # Consolidated ultra shaders from earlier swarms
 
 agents/swarm-outputs/            # Swarm task outputs (already non-public)
-swarm-outputs/                   # Merged swarm outputs (already non-public)
 ```
 
 ## Active runtime shaders
@@ -83,7 +83,7 @@ These are compute passes, swarm experiments, and composable modules that were ne
 | Location | Note |
 |----------|------|
 | `agents/swarm-outputs/` | Per-task WGSL outputs and merge summary from earlier shader swarms. |
-| `swarm-outputs/` | Consolidated ultra shaders (`ultra-background.wgsl`, `ultra-figure.wgsl`, `ultra-lotus.wgsl`). |
+| `archive/shaders/swarm-outputs/` | Consolidated ultra shaders (`ultra-background.wgsl`, `ultra-figure.wgsl`, `ultra-lotus.wgsl`). |
 
 ## Adding a new active shader
 

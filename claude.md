@@ -29,8 +29,7 @@ app/
 │   ├── SessionModeSwitcher.tsx   # 6 visualization preset buttons
 │   ├── CompletionScreen.tsx      # End-of-session overlay + confetti
 │   ├── ExportStats.tsx           # 1080×1080 PNG stats export
-│   ├── InstallPrompt.tsx         # PWA beforeinstallprompt handler
-│   └── ThemeSwitcher.tsx         # (legacy in current UI flow)
+│   └── InstallPrompt.tsx         # PWA beforeinstallprompt handler
 ├── hooks/
 │   ├── useBreathTimer.ts         # Core timer + presets + session auto-end (ACTIVE)
 │   ├── useBreathAudio.ts         # Phase chimes + ambient drone
@@ -56,8 +55,6 @@ archive/shaders/                  # Non-public preservation
 
 docs/shaders/SHADER_INVENTORY.md  # Active vs legacy vs experimental manifest
 ```
-
-**Legacy files (present but not imported by page.tsx):** `useSacredBreathTimer.ts`, `useBreathingTimer.ts`, `PostureGuide.tsx`, `BreathingVisualizer.tsx`, `BreathTimer.tsx` (deleted).
 
 ## Key Technologies
 
@@ -188,7 +185,6 @@ Static export means no API routes or `getServerSideProps`.
 
 **Timer not advancing or phases stuck**
 - Check `isRunning` and that `useBreathTimer` is the hook imported in page.tsx
-- Legacy `useSacredBreathTimer.ts` is not wired to the current UI
 
 **New shader looks wrong or crashes**
 - Confirm it declares the exact `struct Uniforms` (16 fields + padding) that the other active shaders use

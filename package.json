@@ -17,7 +17,8 @@
     "test:e2e": "playwright test",
     "validate:shaders": "node --experimental-strip-types scripts/validate-shaders.ts",
     "validate:content": "node --experimental-strip-types scripts/validate-content.ts",
-    "check": "npm run lint && npm run validate:shaders && npm run validate:content"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json",
+    "check": "npm run lint && npm run typecheck && npm run validate:shaders && npm run validate:content"
   },
   "dependencies": {
     "next": "16.1.6",

@@ -75,8 +75,7 @@ app/
 │   ├── WebGPUShader.tsx          # Single-pass WebGPU renderer (sacred-monk.wgsl)
 │   ├── InstallPrompt.tsx         # PWA beforeinstallprompt install button
 │   ├── ExportStats.tsx           # Generates 1080×1080 PNG of today's practice stats
-│   ├── CompletionScreen.tsx      # Session-end overlay with confetti animation
-│   └── ThemeSwitcher.tsx         # Theme (Cosmic/Golden/Ocean) + mandala style toggles
+│   └── CompletionScreen.tsx      # Session-end overlay with confetti animation
 └── hooks/
     ├── useBreathTimer.ts         # Core breathing logic, presets, session auto-end
     ├── useBreathAudio.ts         # Phase-transition chimes + ambient drone
@@ -91,16 +90,7 @@ app/
 
 > **Agent caution:** Session-state (breath phase, timer, derived intensity) lives in `SessionProvider`/`useSession()` — read it via context rather than re-deriving it or threading new props through `page.tsx`. Mode selection, program session tracking, and completion-overlay state live in `usePracticeSession` / `useSessionCompletion` respectively; extend those hooks instead of adding new `useState` calls directly in `page.tsx`.
 
-### Legacy / Unused Files (present but not imported by `page.tsx`)
-
-| File | Status | Note |
-|------|--------|------|
-| `app/components/PostureGuide.tsx` | Unused | SVG stick-figure with rotating arms; not imported by current page |
-| `app/components/BreathingVisualizer.tsx` | Unused | Simpler WebGPU canvas with inline WGSL |
-| `app/hooks/useSacredBreathTimer.ts` | Unused | Older timer with strength levels and chakra uniform generation |
-| `app/hooks/useBreathingTimer.ts` | Unused | Generic 4-phase timer hook with `globalProgress` |
-
-> **Agent caution:** When modifying behavior, edit `useBreathTimer.ts` and `WebGPUShader.tsx`, not the legacy files above, unless you are explicitly reviving them.
+> **Agent caution:** When modifying behavior, edit `useBreathTimer.ts` and `WebGPUShader.tsx` — the app's only timer hook and single-pass WebGPU renderer.
 
 ### Static Assets
 
@@ -425,14 +415,13 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 
 ## Common Pitfalls for Agents
 
-1. **Editing the wrong timer hook** — `useBreathTimer.ts` is the active one. `useSacredBreathTimer.ts` and `useBreathingTimer.ts` are legacy.
-2. **Editing the wrong visualizer** — `WebGPUShader.tsx` is the active one. `BreathingVisualizer.tsx` is legacy.
-3. **PostureGuide is unused** — `PostureGuide.tsx` exists but is not imported by `page.tsx`. Do not assume it renders.
-4. **Old multi-pass shaders are unused** — Legacy shader files now live in `archive/shaders/` (legacy reference shaders, multi-pass compute passes, and swarm experiments). They are not loaded by the active component. See `docs/shaders/SHADER_INVENTORY.md` for the full manifest.
-5. **Duplicating `Uniforms` struct in WGSL** — The active shader already declares `struct Uniforms`. Adding another definition will cause a compilation error.
-6. **Editing uniform indices by hand** — The buffer layout lives in `app/lib/shaderContract.ts` and is consumed by `WebGPUShader.tsx` and the WebGL2 fallback. Update the contract and run `npm run validate:shaders` rather than chasing magic indices.
-7. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
-8. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
+1. **`useBreathTimer.ts` is the only timer hook** — there is no legacy alternative to confuse it with.
+2. **`WebGPUShader.tsx` is the only visualizer** — there is no legacy alternative to confuse it with.
+3. **Old multi-pass shaders are unused** — Legacy shader files now live in `archive/shaders/` (legacy reference shaders, multi-pass compute passes, and swarm experiments). They are not loaded by the active component. See `docs/shaders/SHADER_INVENTORY.md` for the full manifest.
+4. **Duplicating `Uniforms` struct in WGSL** — The active shader already declares `struct Uniforms`. Adding another definition will cause a compilation error.
+5. **Editing uniform indices by hand** — The buffer layout lives in `app/lib/shaderContract.ts` and is consumed by `WebGPUShader.tsx` and the WebGL2 fallback. Update the contract and run `npm run validate:shaders` rather than chasing magic indices.
+6. **Assuming tests exist** — Always run `npm run build` and manual browser verification instead of relying on a test suite.
+7. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
 
 ---
 
@@ -449,7 +438,6 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `app/components/InstallPrompt.tsx` | PWA install prompt | **Active** |
 | `app/components/ExportStats.tsx` | Stats PNG export | **Active** |
 | `app/components/CompletionScreen.tsx` | Session completion overlay | **Active** |
-| `app/components/ThemeSwitcher.tsx` | Theme & mandala style toggles | **Active** |
 | `app/components/TechniquesLibrary.tsx` | Techniques Library UI (goals, science sheet) | **Active** |
 | `app/components/TechniqueScienceSheet.tsx` | Per-technique science detail sheet | **Active** |
 | `app/data/techniques.ts` | Named technique profiles (source of truth) | **Active** |
@@ -464,13 +452,10 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `public/sacred-ultra.wgsl` | Active cinematic ultra shader | **Active** |
 | `public/yoga-regular.wgsl` | Active simplified clinical-calm shader | **Active** |
 | `docs/shaders/SHADER_INVENTORY.md` | Shader asset manifest | **Active** |
-| `app/components/PostureGuide.tsx` | SVG posture guidance | Unused |
-| `app/components/BreathingVisualizer.tsx` | Legacy simple WebGPU canvas | Unused |
-| `app/hooks/useSacredBreathTimer.ts` | Legacy timer with chakra uniforms | Unused |
-| `app/hooks/useBreathingTimer.ts` | Legacy generic timer | Unused |
 | `archive/shaders/legacy/*` | Superseded reference shaders | Archived |
 | `archive/shaders/experiments/*` | Multi-pass / modular / swarm experiments | Archived |
 | `archive/shaders/generated/*` | Agent outputs and summary docs | Archived |
+| `archive/shaders/swarm-outputs/*` | Consolidated ultra shaders from earlier swarms | Archived |
 | `deploy.py` | SFTP deployment script | **Active** |
 
 ---
@@ -485,3 +470,11 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 - `npm run lint` emits 3 pre-existing `react-hooks/exhaustive-deps` warnings (0 errors); this is the expected clean baseline.
 - No automated test suite exists; validate changes with `npm run build` plus manual browser checks (see Manual Testing Checklist above).
 - `next.config.ts` uses `output: 'export'` with `assetPrefix: './'` and `trailingSlash: true`; do not add server-only Next.js features.
+
+---
+
+## Commit / PR Hygiene
+
+- Write commit messages and PR titles that describe the actual change (e.g. `fix: correct phase timing rounding`), not placeholders like `add` or `codepit`.
+- Don't commit session debris — logs, one-off debug scripts, editor scratch files — even temporarily; add it to `.gitignore` or delete it before committing.
+- Generated files (e.g. `public/sw.js`, built by `prebuild`) should never be tracked; if a build step produces a file, gitignore it and let CI/consumers regenerate it.
