@@ -45,7 +45,7 @@ const isNonEmptyString = (value: unknown): boolean =>
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
-const isInteger = (value: unknown): boolean => isNumber(value) && Number.isInteger(value);
+const isInteger = (value: unknown): value is number => isNumber(value) && Number.isInteger(value);
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
 
