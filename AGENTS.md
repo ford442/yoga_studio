@@ -128,6 +128,17 @@ archive/shaders/                  # Non-public historical preservation
 
 See `docs/shaders/SHADER_INVENTORY.md` for the full asset manifest.
 
+#### Instructor video reshoot workflow
+
+Filmed instructor clips are derived assets, not hand-authored ones. To add or replace a clip:
+
+1. Drop the mp4 in `assets/video/<name>.mp4`.
+2. Run `npm run media:instructor` (requires `ffmpeg`/`ffprobe` on `PATH`). This copies the mp4 into `public/instructor/`, encodes a VP9/Opus `.webm` fallback and a first-frame `.webp` poster, probes the real duration/dimensions/audio via `ffprobe`, and regenerates `app/data/instructorClips.generated.json`.
+3. Reference `<name>` from `app/data/instructorVideos.ts` via `clip('<name>', label)` — durations come from the generated manifest, never hardcode them. `clip()` throws at import time if `<name>` isn't in the manifest.
+4. Commit the mp4/webm/webp under `public/instructor/`, the source mp4 under `assets/video/`, and the updated `instructorClips.generated.json`.
+
+`npm run validate:content` cross-checks that every manifest entry has its mp4/webm/webp on disk and that every clip referenced from `instructorVideos.ts` exists in the manifest — run it before pushing. Encoding is a dev-machine step; CI only validates the committed outputs.
+
 ### Configuration Files
 
 | File | Purpose |

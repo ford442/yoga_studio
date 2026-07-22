@@ -11,6 +11,7 @@
     "lint": "eslint",
     "smoke:files": "node scripts/smoke-export.mjs",
     "smoke:assets": "node scripts/smoke-assets.mjs",
+    "media:instructor": "node assets/video/encode.mjs",
     "smoke": "npm run smoke:files && npm run smoke:assets",
     "test": "vitest run",
     "test:watch": "vitest",

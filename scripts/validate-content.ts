@@ -15,10 +15,13 @@ import {
   INSTRUCTOR_STYLES,
   type InstructorPhaseClips,
 } from '../app/data/instructorVideos.ts';
+import clipManifest from '../app/data/instructorClips.generated.json' with { type: 'json' };
 import type { SessionMode } from '../app/types/sessionMode.ts';
 import type { Environment } from '../app/types/environment.ts';
 import type { InstructorStyle } from '../app/data/instructorVideos.ts';
 import type { Program, ProgramDay } from '../app/types/program.ts';
+
+const CLIP_MANIFEST = clipManifest as Record<string, { name: string; duration: number }>;
 
 const ROOT = process.cwd();
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -543,6 +546,34 @@ function validateInstructorStyle(
         assertFileExists(result, clip.webm, clipPath);
       }
     }
+    if ('poster' in clip && clip.poster !== undefined) {
+      if (!isString(clip.poster)) {
+        addError(result, `${clipPath}: "poster" must be a string`);
+      } else {
+        assertFileExists(result, clip.poster, clipPath);
+      }
+    }
+
+    if ('src' in clip && isString(clip.src)) {
+      const name = clip.src.replace(/^instructor\//, '').replace(/\.mp4$/, '');
+      if (!(name in CLIP_MANIFEST)) {
+        addError(
+          result,
+          `${clipPath}: clip "${name}" referenced but missing from app/data/instructorClips.generated.json ` +
+            '(run `npm run media:instructor`)',
+        );
+      }
+    }
+  }
+}
+
+function validateInstructorManifest(result: ValidationResult): void {
+  for (const name of Object.keys(CLIP_MANIFEST)) {
+    result.checked += 1;
+    const path = `app/data/instructorClips.generated.json: "${name}"`;
+    for (const ext of ['mp4', 'webm', 'webp'] as const) {
+      assertFileExists(result, `instructor/${name}.${ext}`, path);
+    }
   }
 }
 
@@ -633,6 +664,7 @@ async function main(): Promise<void> {
   Object.values(INSTRUCTOR_STYLES).forEach((style, index) => {
     validateInstructorStyle(instructorResult, style, index, seenInstructorIds);
   });
+  validateInstructorManifest(instructorResult);
 
   validateSmokeTestAssets(assetResult);
   await validateBackgroundManifest(assetResult);

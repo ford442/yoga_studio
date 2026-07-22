@@ -1,0 +1,37 @@
+{
+  "arms_up": {
+    "name": "arms_up",
+    "duration": 6.042,
+    "width": 1280,
+    "height": 720,
+    "hasAudio": true
+  },
+  "lower_arms": {
+    "name": "lower_arms",
+    "duration": 6.042,
+    "width": 1280,
+    "height": 720,
+    "hasAudio": true
+  },
+  "raise_arms": {
+    "name": "raise_arms",
+    "duration": 6.042,
+    "width": 1280,
+    "height": 720,
+    "hasAudio": true
+  },
+  "still_arms_down": {
+    "name": "still_arms_down",
+    "duration": 6.042,
+    "width": 1280,
+    "height": 720,
+    "hasAudio": true
+  },
+  "still_arms_up": {
+    "name": "still_arms_up",
+    "duration": 6.042,
+    "width": 1280,
+    "height": 720,
+    "hasAudio": true
+  }
+}
