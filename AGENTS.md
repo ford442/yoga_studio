@@ -8,7 +8,7 @@ An AI coding agent guide for this Next.js React application featuring a WebGPU-p
 
 **Yoga Studio** is a full-screen pranayama practice companion. It displays a large breath-phase countdown, an animated WebGPU visualization of a sacred monk silhouette with mandala and particle effects, and a suite of supporting features: timed sessions, breath presets, theme switching, voice guidance (English / Sanskrit), practice stats with streak tracking, and a PWA install prompt.
 
-The runtime architecture is intentionally minimal but has grown beyond a single hook: `page.tsx` orchestrates one timer hook, one WebGPU canvas, and several small UI components and effect hooks.
+`page.tsx` is a thin composition root (~270 lines): it mounts `SessionProvider` (breath-timer state + derived intensity/phase timing) and wires together the feature components and hooks under `app/features/` and `app/hooks/`. It holds no business logic of its own beyond a handful of local UI-visibility flags (settings drawer, program selector) and prop plumbing.
 
 ---
 
@@ -57,8 +57,20 @@ npm run lint
 app/
 ├── layout.tsx                    # Root layout with metadata
 ├── manifest.ts                   # PWA manifest (force-static)
-├── page.tsx                      # Main page: countdown, controls, WebGPU, stats, settings
+├── page.tsx                      # Composition root: SessionProvider + feature wiring only
 ├── globals.css                   # Tailwind v4 import + CSS variables
+├── features/                     # Page-level feature slices (own context/state + UI)
+│   ├── session/
+│   │   ├── SessionProvider.tsx   # Context: useBreathTimer + derived intensity/phaseProgress
+│   │   ├── deriveSessionPhase.ts # Pure functions: computePhaseTiming, computeIntensity (unit tested)
+│   │   ├── BreathCanvas.tsx      # Pointer-driven ripple/mouse uniforms + WebGPUShader
+│   │   ├── StatsHeader.tsx       # Top bar: title + today's minutes/breaths/streak + export
+│   │   ├── PhaseDisplay.tsx      # Phase label + countdown + progress ring + avatar
+│   │   └── SessionControls.tsx   # Bottom bar: resume/program/mode-switcher/quick-start/begin-pause
+│   ├── settings/
+│   │   └── SettingsDrawer.tsx    # ⚙️ drawer: environment, instructor guide, renderer, phase sliders
+│   └── practice/
+│       └── PracticeShell.tsx     # Welcome panel + guided intro tour composition
 ├── components/
 │   ├── WebGPUShader.tsx          # Single-pass WebGPU renderer (sacred-monk.wgsl)
 │   ├── InstallPrompt.tsx         # PWA beforeinstallprompt install button
@@ -70,8 +82,14 @@ app/
     ├── useBreathAudio.ts         # Phase-transition chimes + ambient drone
     ├── useVoiceGuidance.ts       # SpeechSynthesis voice guidance (EN / Sanskrit)
     ├── useSessionStats.ts        # localStorage-backed stats (minutes, breaths, streak)
-    └── useRippleAudio.ts         # Interactive ripple sound on canvas pointer move
+    ├── useRippleAudio.ts         # Interactive ripple sound on canvas pointer move
+    ├── useLastSession.ts         # Persists/restores the last-practiced mode+duration
+    ├── usePracticeSession.ts     # Technique selection, favorites, start/pause/program handlers
+    ├── useSessionCompletion.ts   # Completion detection, completion-overlay state, next-step logic
+    └── useIntroTourFlow.ts       # First-run guided tour show/skip/complete state
 ```
+
+> **Agent caution:** Session-state (breath phase, timer, derived intensity) lives in `SessionProvider`/`useSession()` — read it via context rather than re-deriving it or threading new props through `page.tsx`. Mode selection, program session tracking, and completion-overlay state live in `usePracticeSession` / `useSessionCompletion` respectively; extend those hooks instead of adding new `useState` calls directly in `page.tsx`.
 
 ### Legacy / Unused Files (present but not imported by `page.tsx`)
 

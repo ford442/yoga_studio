@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import { FIRST_SESSION_BENEFIT } from '../data/onboarding';
 
-interface CompletionScreenProps {
+export interface CompletionScreenProps {
   minutes: number;
   breaths: number;
   streak: number;
