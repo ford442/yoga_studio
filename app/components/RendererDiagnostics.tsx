@@ -13,7 +13,8 @@ const qualityLabel = (preset: number): string =>
 export default function RendererDiagnostics({ state }: RendererDiagnosticsProps) {
   if (!state) return null;
 
-  const modeText = state.mode === 'webgpu' ? 'WebGPU' : 'WebGL2 fallback';
+  const modeText =
+    state.mode === 'webgpu' ? 'WebGPU' : state.mode === 'webgl2' ? 'WebGL2 fallback' : 'Static fallback';
   const fallback = state.fallbackReason ? `Fallback: ${state.fallbackReason}` : undefined;
 
   return (
@@ -24,7 +25,7 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
       <div className="flex items-center gap-2 mb-1">
         <span
           className={`inline-block w-2 h-2 rounded-full ${
-            state.mode === 'webgpu' ? 'bg-emerald-400' : 'bg-amber-400'
+            state.mode === 'webgpu' ? 'bg-emerald-400' : state.mode === 'webgl2' ? 'bg-amber-400' : 'bg-red-400'
           }`}
         />
         <span className="font-semibold tracking-wide">{modeText}</span>

@@ -1,5 +1,5 @@
 export type PerformanceMode = 'auto' | 'performance' | 'quality';
-export type RendererMode = 'webgpu' | 'webgl2';
+export type RendererMode = 'webgpu' | 'webgl2' | 'static';
 
 export interface RendererDiagnosticsState {
   mode: RendererMode;
