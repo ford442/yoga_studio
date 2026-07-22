@@ -264,6 +264,7 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
       playsInline
       muted
       preload="auto"
+      poster={slot.clip.poster ? resolveAssetUrl(slot.clip.poster) : undefined}
       disablePictureInPicture
       onError={isFront ? handleError : undefined}
     >
