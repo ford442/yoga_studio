@@ -375,13 +375,14 @@ When making changes, verify the following in a WebGPU-compatible browser (Chrome
 npm run build
 ```
 
-### SFTP Deploy
+### Deploy
 ```bash
+export DEPLOY_TOKEN="your_long_token_from_vps_env"
 python deploy.py
 ```
 
-- `deploy.py` uses `paramiko` to upload the `out/` directory recursively.
-- It contains hardcoded server credentials (`HOSTNAME`, `USERNAME`, `PASSWORD`).
+- `deploy.py` zips the `out/` directory and uploads it as a single bundle to `storage.noahcohn.com`.
+- `DEPLOY_TOKEN` **must** be set in the environment; the script exits immediately with an error if it is missing. Never hardcode the token in the file.
 - If the `out/` directory is missing, the script prints an error reminding you to run `npm run build` first.
 
 ### Static Hosting
@@ -398,7 +399,7 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 
 ## Security Considerations
 
-- `deploy.py` contains a **hardcoded plaintext password**. Do not commit this file to public repositories without refactoring it to use environment variables or a secrets manager.
+- `deploy.py` requires `DEPLOY_TOKEN` to be set in the environment (`export DEPLOY_TOKEN=...`) and refuses to run without it. **Never** hardcode a token value in this file or commit one — the repo's CI runs gitleaks and GitHub push protection to catch this.
 - The app runs entirely client-side after build; there is no server-side API or database.
 - `localStorage` is used for stats and voice settings; no sensitive data is stored.
 
