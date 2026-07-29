@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { SessionDuration } from './useBreathTimer';
+import type { CompletedTimerSegment } from './useBreathTimer';
 import type { CompletionScreenProps } from '../components/CompletionScreen';
 import { SESSION_MODES } from '../data/sessionModes';
 import { getProgramById, getNextSessionDay, resolveProgramSessionTechnique } from '../data/programs';
@@ -19,9 +19,7 @@ export type CompletionMeta = {
 };
 
 interface UseSessionCompletionOptions {
-  isRunning: boolean;
-  sessionDuration: SessionDuration;
-  totalBreaths: number;
+  completedSegment: CompletedTimerSegment | null;
   selectedMode: SessionMode;
   activeProgramSession: ActiveProgramSession | null;
   clearActiveProgramSession: () => void;
@@ -36,9 +34,7 @@ interface UseSessionCompletionOptions {
 
 /** Detects timed-session completion, computes the completion overlay's data, and drives its handlers. */
 export function useSessionCompletion({
-  isRunning,
-  sessionDuration,
-  totalBreaths,
+  completedSegment,
   selectedMode,
   activeProgramSession,
   clearActiveProgramSession,
@@ -54,17 +50,18 @@ export function useSessionCompletion({
   const [completedInfo, setCompletedInfo] = useState({ minutes: 5, breaths: 0 });
   const [completionMeta, setCompletionMeta] = useState<CompletionMeta | null>(null);
   const [nextProgramSession, setNextProgramSession] = useState<NextProgramSession | null>(null);
-  const prevSessionDurationRef = useRef<SessionDuration>(null);
+  const handledSegmentIdRef = useRef(0);
 
-  // Show completion screen when a timed session ends (use prev ref because
-  // endSession() inside the timer hook nulls sessionDuration on the same update).
+  // Only the timer's explicit auto-completion event may finish a timed session.
+  // Manual stops, resets, and replacements intentionally emit no event.
   useEffect(() => {
-    if (prevSessionDurationRef.current !== null && !isRunning && totalBreaths > 0) {
+    if (completedSegment?.kind === 'timed' && completedSegment.id !== handledSegmentIdRef.current) {
+      handledSegmentIdRef.current = completedSegment.id;
       const isFirstSession = onboardingHasLoaded && !hasCompletedFirstSession;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCompletedInfo({
-        minutes: prevSessionDurationRef.current || 5,
-        breaths: totalBreaths,
+        minutes: Math.max(1, Math.round(completedSegment.durationSec / 60)),
+        breaths: completedSegment.breaths,
       });
       setCompletionMeta({
         isFirstSession,
@@ -106,11 +103,8 @@ export function useSessionCompletion({
       setShowCompletion(true);
       clearBeginnerSession();
     }
-    prevSessionDurationRef.current = sessionDuration;
   }, [
-    isRunning,
-    sessionDuration,
-    totalBreaths,
+    completedSegment,
     onboardingHasLoaded,
     hasCompletedFirstSession,
     selectedMode,

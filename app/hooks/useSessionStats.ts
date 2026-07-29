@@ -1,108 +1,99 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  LEGACY_STATS_STORAGE_KEY,
+  SESSION_LEDGER_STORAGE_KEY,
+  aggregateSessionStats,
+  appendSession,
+  createEmptyLedger,
+  getRollingDailyTrends,
+  getTechniqueTotals,
+  mergeLedgers,
+  migrateLegacyStats,
+  parseLedgerJson,
+  validateLedger,
+  type MergeResult,
+  type SessionLedgerEnvelope,
+  type SessionLogEntry,
+} from '../lib/sessionLedger';
 
-interface SessionStats {
-  todayMinutes: number;
-  todayBreaths: number;
-  currentStreak: number;
-  lastPracticeDate: string;
-}
+const readLedger = (): SessionLedgerEnvelope => {
+  const stored = localStorage.getItem(SESSION_LEDGER_STORAGE_KEY);
+  if (stored) return parseLedgerJson(stored);
 
-const STORAGE_KEY = 'sacred-breath-stats';
+  const legacyRaw = localStorage.getItem(LEGACY_STATS_STORAGE_KEY);
+  if (!legacyRaw) return createEmptyLedger();
 
-const getTodayKey = () => new Date().toISOString().split('T')[0];
-
-const getDefaultStats = (): SessionStats => ({
-  todayMinutes: 0,
-  todayBreaths: 0,
-  currentStreak: 0,
-  lastPracticeDate: getTodayKey(),
-});
-
-const readStoredStats = (): SessionStats => {
-  const today = getTodayKey();
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return { ...getDefaultStats(), lastPracticeDate: today };
-
-  const parsed = JSON.parse(saved) as Partial<SessionStats>;
-  if (parsed.lastPracticeDate !== today) {
-    return {
-      todayMinutes: 0,
-      todayBreaths: 0,
-      currentStreak: parsed.currentStreak ?? 0,
-      lastPracticeDate: parsed.lastPracticeDate ?? today,
-    };
+  let migrated: SessionLedgerEnvelope | null = null;
+  try {
+    migrated = migrateLegacyStats(JSON.parse(legacyRaw) as unknown);
+  } catch {
+    // The legacy payload remains untouched when it cannot be migrated.
   }
+  if (!migrated) return createEmptyLedger();
 
-  return {
-    todayMinutes: parsed.todayMinutes ?? 0,
-    todayBreaths: parsed.todayBreaths ?? 0,
-    currentStreak: parsed.currentStreak ?? 0,
-    lastPracticeDate: parsed.lastPracticeDate ?? today,
-  };
+  // Removal happens only after the durable replacement write succeeds.
+  localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(migrated));
+  localStorage.removeItem(LEGACY_STATS_STORAGE_KEY);
+  return migrated;
 };
 
 export const useSessionStats = () => {
-  const [stats, setStats] = useState<SessionStats>(getDefaultStats);
+  const [ledger, setLedger] = useState<SessionLedgerEnvelope>(createEmptyLedger);
+  const ledgerRef = useRef(ledger);
   const [hasLoadedStats, setHasLoadedStats] = useState(false);
 
   useEffect(() => {
     try {
-      setStats(readStoredStats());
+      const loaded = readLedger();
+      ledgerRef.current = loaded;
+      setLedger(loaded);
     } catch {
-      console.warn('Invalid sacred-breath-stats localStorage payload');
-      setStats(getDefaultStats());
+      console.warn('Invalid sacred-breath session history localStorage payload');
+      setLedger(createEmptyLedger());
     } finally {
       setHasLoadedStats(true);
     }
   }, []);
 
-  // Save to localStorage whenever stats change
   useEffect(() => {
     if (!hasLoadedStats) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
-  }, [hasLoadedStats, stats]);
+    localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(ledger));
+  }, [hasLoadedStats, ledger]);
 
-  const addPracticeTime = useCallback((seconds: number) => {
-    const today = getTodayKey();
-
-    setStats((prev) => {
-      const newMinutes = prev.todayMinutes + Math.round(seconds / 60);
-      const newBreaths = prev.todayBreaths + 1;
-      const isNewDay = prev.lastPracticeDate !== today;
-
-      // Update streak
-      let newStreak = prev.currentStreak;
-      if (isNewDay) {
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-        if (prev.lastPracticeDate === yesterday) {
-          newStreak = prev.currentStreak + 1;
-        } else if (prev.lastPracticeDate !== today) {
-          newStreak = 1; // reset streak if gap
-        }
-      }
-
-      return {
-        todayMinutes: newMinutes,
-        todayBreaths: newBreaths,
-        currentStreak: newStreak,
-        lastPracticeDate: today,
-      };
-    });
+  const recordSession = useCallback((entry: SessionLogEntry) => {
+    const next = appendSession(ledgerRef.current, entry);
+    ledgerRef.current = next;
+    setLedger(next);
   }, []);
 
-  const resetStats = () => {
-    const today = getTodayKey();
-    setStats({
-      todayMinutes: 0,
-      todayBreaths: 0,
-      currentStreak: 0,
-      lastPracticeDate: today,
-    });
-  };
+  const importLedgerJson = useCallback((json: string): MergeResult => {
+    // Parse and validate before setState so a bad file cannot mutate local data.
+    const imported = parseLedgerJson(json);
+    const result = mergeLedgers(ledgerRef.current, imported);
+    ledgerRef.current = result.envelope;
+    setLedger(result.envelope);
+    return result;
+  }, []);
+
+  const replaceLedgerForRestore = useCallback((value: unknown) => {
+    const restored = validateLedger(value);
+    ledgerRef.current = restored;
+    setLedger(restored);
+  }, []);
+
+  const stats = useMemo(() => aggregateSessionStats(ledger), [ledger]);
+  const trends = useMemo(() => getRollingDailyTrends(ledger), [ledger]);
+  const techniqueTotals = useMemo(() => getTechniqueTotals(ledger), [ledger]);
 
   return {
     stats,
-    addPracticeTime,
-    resetStats,
+    ledger,
+    trends,
+    techniqueTotals,
+    hasLoadedStats,
+    recordSession,
+    exportLedgerJson: () => JSON.stringify(ledger, null, 2),
+    importLedgerJson,
+    replaceLedgerForRestore,
   };
 };

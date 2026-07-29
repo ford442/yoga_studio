@@ -1,5 +1,5 @@
 import type { UniformValues } from '../lib/shaderContract';
-import type { RendererMode } from '../types/renderer';
+import type { PerformanceMode, RendererBackendDiagnostics, RendererMode } from '../types/renderer';
 import type { FrameGovernor } from './frameGovernor';
 import type { GeometryOverlay } from './overlay';
 
@@ -16,6 +16,7 @@ export interface RendererBackendContext {
   shaderPath: string;
   vertexEntry: string;
   fragmentEntry: string;
+  performanceMode: PerformanceMode;
   /** Called on every resize/frame to read the current DPR cap (includes governor scale). */
   getMaxDevicePixelRatio: () => number;
   /** Pulls the latest animated prop values without re-triggering React effects. */
@@ -27,6 +28,8 @@ export interface RendererBackendContext {
   shouldRender: () => boolean;
   /** Fired when the governor tier changes so React can persist / report diagnostics. */
   onGovernorChange?: () => void;
+  /** Publishes backend-specific adapter, compiler, and recovery details. */
+  onBackendDiagnostics?: (diagnostics: RendererBackendDiagnostics) => void;
   /**
    * Backend hit an unrecoverable error (device lost, context lost, init
    * failure). The caller decides whether/how to fall back.

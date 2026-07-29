@@ -16,6 +16,8 @@ import {
   type RendererMode,
   type RendererDiagnosticsState,
   type GovernorPersistedTier,
+  type PerformanceMode,
+  type RendererBackendDiagnostics,
 } from '../types/renderer';
 
 interface ShaderCanvasProps {
@@ -36,6 +38,7 @@ interface ShaderCanvasProps {
   qualityPreset?: number; // 0=mobile, 1=high, undefined=auto-detect
   maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
   overlayEnabled?: boolean; // WebGL2 transparent geometry layer on top of the main renderer
+  effectivePerformanceMode: PerformanceMode;
   className?: string;
   shaderPath?: string;
   vertexEntry?: string;
@@ -100,6 +103,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   qualityPreset,
   maxDevicePixelRatio,
   overlayEnabled = true,
+  effectivePerformanceMode,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
   vertexEntry = 'vs',
@@ -135,6 +139,10 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   const pauseRef = useRef(pauseRendering);
   const onGovernorTiersChangeRef = useRef(onGovernorTierChange);
   const onDiagnosticsRef = useRef(onDiagnostics);
+  const backendDiagnosticsRef = useRef<RendererBackendDiagnostics>({
+    compilationMessages: [],
+    recoveryStatus: 'idle',
+  });
   const diagMetaRef = useRef({
     rendererMode,
     fallbackReason,
@@ -212,6 +220,9 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         frameTimeP75Ms: snap.p75FrameMs,
         governorStepDowns: snap.stepDownCount,
         governorPaused: snap.paused || meta.pauseRendering,
+        adapterInfo: backendDiagnosticsRef.current.adapterInfo,
+        compilationMessages: backendDiagnosticsRef.current.compilationMessages ?? [],
+        recoveryStatus: backendDiagnosticsRef.current.recoveryStatus ?? 'idle',
       });
     };
 
@@ -290,6 +301,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       shaderPath,
       vertexEntry,
       fragmentEntry,
+      performanceMode: effectivePerformanceMode,
       governor,
       shouldRender: () => !pauseRef.current,
       getMaxDevicePixelRatio: () =>
@@ -305,6 +317,12 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         });
         setGovernorSnap(snap);
       },
+      onBackendDiagnostics: (next) => {
+        backendDiagnosticsRef.current = {
+          ...backendDiagnosticsRef.current,
+          ...next,
+        };
+      },
       onFallback: (nextMode, reason) => {
         setFallbackReason(reason);
         setRendererMode(nextMode);
@@ -315,7 +333,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       unmount();
       overlay?.destroy();
     };
-  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveOverlayEnabled, effectiveMaxDpr]);
+  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveOverlayEnabled, effectiveMaxDpr, effectivePerformanceMode]);
 
   return (
     <div

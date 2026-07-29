@@ -89,6 +89,7 @@ describe('useBreathTimer', () => {
 
     expect(result.current.isRunning).toBe(false);
     expect(result.current.sessionDuration).toBeNull();
+    expect(result.current.completedSegment).toMatchObject({ kind: 'timed', durationSec: 300 });
   });
 
   it('toggles free-form practice without a duration', () => {
@@ -110,6 +111,44 @@ describe('useBreathTimer', () => {
     });
 
     expect(result.current.isRunning).toBe(false);
+    expect(result.current.completedSegment).toBeNull();
+  });
+
+  it('records a free segment on pause after a completed breath', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+    act(() => result.current.toggleFree());
+    await act(async () => vi.advanceTimersByTime(16_050));
+    await waitFor(() => expect(result.current.totalBreaths).toBe(1));
+    act(() => result.current.toggleFree());
+    expect(result.current.completedSegment).toMatchObject({ kind: 'free', breaths: 1 });
+    expect(result.current.completedSegment?.durationSec).toBeGreaterThanOrEqual(16);
+  });
+
+  it('keeps cumulative breaths while logging separate free segments', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+    act(() => result.current.toggleFree());
+    await act(async () => vi.advanceTimersByTime(16_050));
+    await waitFor(() => expect(result.current.totalBreaths).toBe(1));
+    act(() => result.current.toggleFree());
+    const firstId = result.current.completedSegment?.id;
+    const breathsAfterFirst = result.current.totalBreaths;
+    act(() => result.current.toggleFree());
+    await act(async () => vi.advanceTimersByTime(16_050));
+    await waitFor(() => expect(result.current.totalBreaths).toBeGreaterThan(breathsAfterFirst));
+    act(() => result.current.toggleFree());
+    expect(result.current.completedSegment).toMatchObject({ kind: 'free' });
+    expect(result.current.completedSegment?.breaths).toBe(result.current.totalBreaths - breathsAfterFirst);
+    expect(result.current.completedSegment?.id).not.toBe(firstId);
+    expect(result.current.totalBreaths).toBeGreaterThan(breathsAfterFirst);
+  });
+
+  it('discards a running free segment on reset', async () => {
+    const { result } = renderHook(() => useBreathTimer());
+    act(() => result.current.toggleFree());
+    await act(async () => vi.advanceTimersByTime(16_050));
+    await waitFor(() => expect(result.current.totalBreaths).toBe(1));
+    act(() => result.current.reset());
+    expect(result.current.completedSegment).toBeNull();
   });
 
   it('reset returns everything to the initial state', () => {

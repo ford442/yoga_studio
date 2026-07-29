@@ -17,7 +17,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      // Informational only — no thresholds / gates.
+      include: ['app/**/*.{ts,tsx}'],
+      exclude: ['app/**/*.test.{ts,tsx}', 'app/**/__tests__/**'],
+      thresholds: {
+        'app/lib/**': { lines: 90 },
+        'app/renderer/**': { lines: 70 },
+        'app/hooks/useBreathTimer.ts': { lines: 95 },
+      },
     },
   },
 });

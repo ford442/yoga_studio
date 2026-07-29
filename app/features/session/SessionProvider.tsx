@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useMemo } from 'react';
-import { useBreathTimer, type BreathPhase, type BreathSettings, type SessionDuration } from '../../hooks/useBreathTimer';
+import { useBreathTimer, type BreathPhase, type BreathSettings, type CompletedTimerSegment, type SessionDuration } from '../../hooks/useBreathTimer';
 import { computeIntensity, computePhaseTiming } from './deriveSessionPhase';
 
 interface SessionContextValue {
@@ -11,6 +11,8 @@ interface SessionContextValue {
   settings: BreathSettings;
   sessionDuration: SessionDuration;
   totalBreaths: number;
+  completedSegment: CompletedTimerSegment | null;
+  activeSegmentId: number;
   totalCycle: number;
   phaseProgress: number;
   remaining: number;
@@ -32,6 +34,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     settings,
     sessionDuration,
     totalBreaths,
+    completedSegment,
+    activeSegmentId,
     startSession,
     toggleFree,
     reset,
@@ -56,6 +60,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       settings,
       sessionDuration,
       totalBreaths,
+      completedSegment,
+      activeSegmentId,
       totalCycle,
       phaseProgress,
       remaining,
@@ -73,6 +79,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       settings,
       sessionDuration,
       totalBreaths,
+      completedSegment,
+      activeSegmentId,
       totalCycle,
       phaseProgress,
       remaining,

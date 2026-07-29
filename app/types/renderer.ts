@@ -1,6 +1,28 @@
 export type PerformanceMode = 'auto' | 'performance' | 'quality';
 export type RendererMode = 'webgpu' | 'webgl2' | 'static';
 
+export interface RendererAdapterInfo {
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
+}
+
+export interface RendererCompilationMessage {
+  type: 'error' | 'warning' | 'info';
+  text: string;
+  line: number;
+  column: number;
+}
+
+export type RendererRecoveryStatus = 'idle' | 'recovering' | 'recovered' | 'failed';
+
+export interface RendererBackendDiagnostics {
+  adapterInfo?: RendererAdapterInfo;
+  compilationMessages?: RendererCompilationMessage[];
+  recoveryStatus?: RendererRecoveryStatus;
+}
+
 /** Last stable adaptive-quality tier persisted across sessions. */
 export interface GovernorPersistedTier {
   resolutionScale: number;
@@ -25,6 +47,9 @@ export interface RendererDiagnosticsState {
   governorStepDowns: number;
   /** True when the render loop is skipping GPU work. */
   governorPaused: boolean;
+  adapterInfo?: RendererAdapterInfo;
+  compilationMessages: RendererCompilationMessage[];
+  recoveryStatus: RendererRecoveryStatus;
 }
 
 export interface RendererSettings {

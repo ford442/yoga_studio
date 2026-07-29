@@ -4,7 +4,7 @@
  * `struct Uniforms` layout described in `app/lib/shaderContract.ts`.
  *
  * Run with:
- *   node --experimental-strip-types scripts/validate-shaders.ts
+ *   npm run validate:shaders
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

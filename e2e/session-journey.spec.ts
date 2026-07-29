@@ -3,14 +3,15 @@ import { test, expect, type Page } from '@playwright/test';
 test.setTimeout(90_000);
 
 async function dismissOnboarding(page: Page) {
-  const skipOnboarding = page.getByText('Skip onboarding');
+  const skipOnboarding = page.getByRole('button', { name: /Skip onboarding/ });
   if (await skipOnboarding.isVisible().catch(() => false)) {
     await skipOnboarding.click({ force: true });
+    await page.clock.fastForward(16);
   }
 }
 
 async function setShortPhases(page: Page) {
-  await page.getByRole('button', { name: '⚙️' }).click({ force: true });
+  await page.getByRole('button', { name: 'Open settings' }).click({ force: true });
   await expect(page.getByRole('heading', { name: 'Customize Breath' })).toBeVisible();
 
   const sliders = page.getByRole('slider');
@@ -38,11 +39,11 @@ test.describe('session journey', () => {
     await setShortPhases(page);
 
     // Timed session required for the completion overlay.
-    await page.getByRole('button', { name: '5 MIN' }).first().click({ force: true });
-    await expect(page.getByRole('button', { name: 'PAUSE', exact: true })).toBeVisible();
-
+    // Use the footer quick-start; the technique-card button reapplies mode defaults.
+    await page.getByRole('button', { name: '5 MIN' }).last().click({ force: true });
     // Fire the first rAF so the timer loop captures startTime and paints inhale.
     await page.clock.fastForward(16);
+    await expect(page.getByRole('button', { name: 'PAUSE', exact: true })).toBeVisible();
 
     const phase = page.locator('[data-tour="phase"]');
     await expect(phase).toBeVisible();
@@ -61,11 +62,12 @@ test.describe('session journey', () => {
     ).toBeGreaterThanOrEqual(3);
 
     // Instructor guide — media clock is independent of page.clock.
-    const instructorToggle = page.getByTitle('Show instructor guide');
-    await expect(instructorToggle).toBeVisible({ timeout: 15_000 });
-    await instructorToggle.click({ force: true });
-
     const video = page.locator('video').first();
+    if (!(await video.isVisible().catch(() => false))) {
+      const instructorToggle = page.getByTitle('Show instructor guide');
+      await expect(instructorToggle).toBeVisible({ timeout: 15_000 });
+      await instructorToggle.click({ force: true });
+    }
     await expect(video).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(
@@ -84,9 +86,13 @@ test.describe('session journey', () => {
       await page.clock.fastForward(100);
     }
 
-    // Jump past the 5-minute session boundary, then nudge one more frame.
-    await page.clock.fastForward(5 * 60_000);
-    await page.clock.fastForward(50);
+    // Move wall-clock time past the scheduled boundary, then nudge one frame.
+    // setSystemTime is explicit here: fastForward executes queued rAF callbacks
+    // at their due timestamps and can leave Date.now() short of a coarse jump.
+    await page.clock.setSystemTime(new Date('2026-07-22T12:05:01.000Z'));
+    for (let i = 0; i < 10 && !(await page.getByRole('dialog').isVisible().catch(() => false)); i++) {
+      await page.clock.fastForward(50);
+    }
 
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Session Complete/)).toBeVisible();

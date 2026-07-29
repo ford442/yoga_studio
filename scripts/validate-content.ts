@@ -4,7 +4,7 @@
  * referenced public/ assets are consistent and present.
  *
  * Run with:
- *   node --experimental-strip-types scripts/validate-content.ts
+ *   npm run validate:content
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -191,6 +191,7 @@ const assertFileExists = (
   relativePath: string,
   context: string,
 ): void => {
+  result.checked += 1;
   if (!fileExists(relativePath)) {
     addError(result, `${context}: referenced asset "${formatPath(relativePath)}" does not exist`);
   }

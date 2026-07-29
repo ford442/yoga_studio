@@ -82,6 +82,7 @@ describe('mountRenderer', () => {
     shaderPath: 'sacred-lotus-final.wgsl',
     vertexEntry: 'vs',
     fragmentEntry: 'main',
+    performanceMode: 'auto',
     getMaxDevicePixelRatio: () => 2,
     getUniformSnapshot: () => ({
       breathPhase: 0,

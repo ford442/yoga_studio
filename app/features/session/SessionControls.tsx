@@ -130,7 +130,7 @@ export default function SessionControls({
           >
             {isRunning ? 'PAUSE' : 'BEGIN'}
           </button>
-          <button onClick={onReset} className="px-4 py-4 text-sm font-light tracking-widest border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
+          <button onClick={onReset} aria-label="Reset session" className="px-4 py-4 text-sm font-light tracking-widest border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
             ↺
           </button>
           <button
@@ -160,7 +160,7 @@ export default function SessionControls({
               🧘
             </button>
           )}
-          <button onClick={onOpenSettings} className="px-4 py-4 text-xl border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
+          <button onClick={onOpenSettings} aria-label="Open settings" className="px-4 py-4 text-xl border border-white/30 rounded-3xl bg-black/20 backdrop-blur-md hover:bg-black/30 transition-all text-white/95 [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
             ⚙️
           </button>
         </div>

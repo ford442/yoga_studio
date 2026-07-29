@@ -80,6 +80,7 @@ export default function BreathCanvas({
         qualityPreset={effectivePerformanceMode === 'performance' ? 0 : effectivePerformanceMode === 'quality' ? 1 : selectedMode.qualityPreset}
         maxDevicePixelRatio={effectivePerformanceMode === 'performance' ? 1 : effectivePerformanceMode === 'quality' ? 2 : selectedMode.maxDevicePixelRatio}
         overlayEnabled={effectivePerformanceMode !== 'performance'}
+        effectivePerformanceMode={effectivePerformanceMode}
         reducedMotion={reducedMotion}
         pauseRendering={pauseRendering}
         persistedGovernorTier={persistedGovernorTier}

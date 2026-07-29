@@ -89,8 +89,8 @@ The app detects unsupported browsers and displays a helpful fallback message.
 
 ### Prerequisites
 
-- **Node.js** v18 or higher
-- **npm** or yarn package manager
+- **Node.js** 22
+- **npm** 10 or newer
 - A **WebGPU-compatible browser** (Chrome/Edge 113+)
 
 ### Installation
@@ -447,7 +447,16 @@ The app ships a **Techniques Library** of evidence-informed pranayama profiles. 
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome. See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for the Node/npm setup, dependency-security policy, coverage thresholds, browser-test expectations, and canonical verification order:
+
+```bash
+npm run check
+npm test
+npm run build
+npm run smoke
+```
+
+Then:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)

@@ -25,7 +25,7 @@ agents/swarm-outputs/            # Swarm task outputs (already non-public)
 
 ## Active runtime shaders
 
-These files live in `public/` and are fetched at runtime by `WebGPUShader.tsx` via `resolveAssetUrl(shaderPath)`. Every active shader must declare the **same** `struct Uniforms` layout defined in `app/lib/shaderContract.ts` and use `@group(0) @binding(0) var<uniform> u: Uniforms;`.
+These files live in `public/` and are fetched at runtime by the WebGPU backend mounted through `ShaderCanvas.tsx`, using `resolveAssetUrl(shaderPath)`. Every active shader must declare the **same** `struct Uniforms` layout defined in `app/lib/shaderContract.ts` and use `@group(0) @binding(0) var<uniform> u: Uniforms;`.
 
 | File | Entry points | Used by technique | Visual role |
 |------|--------------|-------------------|-------------|
@@ -96,3 +96,13 @@ These are compute passes, swarm experiments, and composable modules that were ne
 7. Update this inventory.
 
 Do **not** add a second `struct Uniforms` definition; the shader itself is the only place that struct should be declared.
+
+## Renderer lifecycle and fallback policy
+
+`app/components/ShaderCanvas.tsx` owns the runtime backend chain: WebGPU, then WebGL2, then the static 2D gradient. The same `FrameGovernor` instance is retained while React advances through that chain, so frame samples, adaptive-quality step-downs, the persisted tier, and overlay decisions survive backend recovery and fallback.
+
+WebGPU adapter selection is explicit. Performance mode requests a `low-power` adapter; auto and quality modes request `high-performance`. All requests set `forceFallbackAdapter: false`. Devices are labeled `Sacred Breath WebGPU Device` and request no required features or limits, maximizing compatibility with lower-end adapters. Available adapter metadata and normalized WGSL compiler messages are reported through renderer diagnostics. When `getCompilationInfo()` is implemented, messages are published before pipeline creation: errors stop setup and advance the fallback chain, while warnings and informational messages remain nonfatal.
+
+The WebGPU canvas is never assumed to stay configured across a backing-size or device change. A resize or replacement device performs a best-effort `unconfigure()` followed by `configure()` with the current device and preferred format. Each frame acquires a fresh current texture and view. The first acquisition failure forces one reconfiguration and skips that frame; a consecutive failure is fatal. An unexpected device loss cancels rendering and makes one generation-guarded recovery attempt beginning with a new `requestAdapter()` call. Recovery rebuilds every device-owned resource and reconfigures the existing canvas. A failed recovery or second device loss advances to WebGL2.
+
+WebGL2 prevents the browser's default context-loss behavior, pauses rendering, and waits up to two seconds for `webglcontextrestored`. One restoration rebuilds its program, vertex array, uniform locations, viewport, and frame loop. A rebuild failure, timeout, or second loss advances to the static gradient. Backend cleanup always removes context listeners and the restoration timer.

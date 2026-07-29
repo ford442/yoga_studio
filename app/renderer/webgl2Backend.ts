@@ -176,15 +176,51 @@ export class WebGL2Backend implements RendererBackend {
   private lastFrameMs: number | null = null;
   private detachVisibility: (() => void) | null = null;
   private resizeFn: (() => void) | null = null;
+  private restorationTimer: number | null = null;
+  private contextLossHandled = false;
+  private waitingForRestore = false;
   private onContextLost = (event: Event) => {
     event.preventDefault();
-    this.ctx?.onFatalError('WebGL2 context was lost.');
+    const ctx = this.ctx;
+    if (!ctx || this.cancelled) return;
+    this.cancelFrame();
+    if (this.contextLossHandled) {
+      ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
+      ctx.onFatalError('WebGL2 context was lost again.');
+      return;
+    }
+    this.contextLossHandled = true;
+    this.waitingForRestore = true;
+    ctx.onBackendDiagnostics?.({ recoveryStatus: 'recovering' });
+    this.restorationTimer = window.setTimeout(() => {
+      if (!this.waitingForRestore || this.cancelled) return;
+      this.waitingForRestore = false;
+      ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
+      ctx.onFatalError('WebGL2 context restoration timed out after 2 seconds.');
+    }, 2000);
+  };
+  private onContextRestored = () => {
+    const ctx = this.ctx;
+    if (!ctx || this.cancelled || !this.waitingForRestore) return;
+    this.waitingForRestore = false;
+    this.clearRestorationTimer();
+    try {
+      this.buildResources();
+      this.resizeFn?.();
+      ctx.onBackendDiagnostics?.({ recoveryStatus: 'recovered' });
+      this.scheduleFrame();
+    } catch (error) {
+      ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
+      ctx.onFatalError('WebGL2 context restoration failed.', error);
+    }
   };
   private ctx: RendererBackendContext | null = null;
 
   start(ctx: RendererBackendContext): void {
     this.ctx = ctx;
     this.cancelled = false;
+    this.contextLossHandled = false;
+    this.waitingForRestore = false;
     const { canvas } = ctx;
     this.startTime = Date.now();
 
@@ -195,16 +231,14 @@ export class WebGL2Backend implements RendererBackend {
     }
     this.gl = gl;
     canvas.addEventListener('webglcontextlost', this.onContextLost);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored);
 
     try {
-      this.program = createProgramFromSources(gl, WEBGL_VERTEX_SHADER, WEBGL_FRAGMENT_SHADER);
-      this.vertexArray = gl.createVertexArray();
+      this.buildResources();
     } catch (error) {
       ctx.onFatalError('WebGL2 fallback setup failed.', error);
       return;
     }
-
-    this.uniforms = buildGLUniforms(gl, this.program, WEBGL_MAIN_UNIFORM_MAP);
 
     const resize = () => {
       resizeCanvasForDpr(canvas, ctx.getMaxDevicePixelRatio(), () => gl.viewport(0, 0, canvas.width, canvas.height));
@@ -222,6 +256,29 @@ export class WebGL2Backend implements RendererBackend {
       () => this.scheduleFrame(),
     );
     this.scheduleFrame();
+  }
+
+  private buildResources(): void {
+    const gl = this.gl;
+    if (!gl) throw new Error('WebGL2 context is unavailable.');
+    if (this.vertexArray) gl.deleteVertexArray(this.vertexArray);
+    if (this.program) gl.deleteProgram(this.program);
+    const program = createProgramFromSources(gl, WEBGL_VERTEX_SHADER, WEBGL_FRAGMENT_SHADER);
+    const vertexArray = gl.createVertexArray();
+    if (!vertexArray) {
+      gl.deleteProgram(program);
+      throw new Error('Unable to create a WebGL2 vertex array.');
+    }
+    this.program = program;
+    this.vertexArray = vertexArray;
+    this.uniforms = buildGLUniforms(gl, program, WEBGL_MAIN_UNIFORM_MAP);
+  }
+
+  private clearRestorationTimer(): void {
+    if (this.restorationTimer != null) {
+      window.clearTimeout(this.restorationTimer);
+      this.restorationTimer = null;
+    }
   }
 
   private cancelFrame(): void {
@@ -299,7 +356,10 @@ export class WebGL2Backend implements RendererBackend {
     this.ro?.disconnect();
     this.ro = null;
     this.resizeFn = null;
+    this.waitingForRestore = false;
+    this.clearRestorationTimer();
     this.ctx?.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.ctx?.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     if (this.vertexArray) this.gl?.deleteVertexArray(this.vertexArray);
     if (this.program) this.gl?.deleteProgram(this.program);
     this.gl = null;

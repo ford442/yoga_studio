@@ -18,6 +18,18 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
   const fallback = state.fallbackReason ? `Fallback: ${state.fallbackReason}` : undefined;
   const p75 =
     state.frameTimeP75Ms == null ? '—' : `${state.frameTimeP75Ms.toFixed(1)}ms`;
+  const adapter = state.adapterInfo
+    ? [state.adapterInfo.vendor, state.adapterInfo.architecture, state.adapterInfo.device, state.adapterInfo.description]
+      .filter(Boolean)
+      .join(' · ')
+    : '';
+  const visibleMessages = state.compilationMessages
+    .filter((message) => message.type !== 'info')
+    .slice(0, 3);
+  const hiddenMessageCount = Math.max(
+    0,
+    state.compilationMessages.filter((message) => message.type !== 'info').length - visibleMessages.length,
+  );
 
   return (
     <div
@@ -42,6 +54,19 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
         <div>
           Frame p75: {p75} · Step-downs: {state.governorStepDowns}
         </div>
+        {adapter && <div className="max-w-[320px] leading-tight">Adapter: {adapter}</div>}
+        {state.recoveryStatus !== 'idle' && (
+          <div className="text-amber-300">Recovery: {state.recoveryStatus}</div>
+        )}
+        {visibleMessages.map((message, index) => (
+          <div
+            key={`${message.type}-${message.line}-${message.column}-${index}`}
+            className={message.type === 'error' ? 'text-red-300 max-w-[320px] leading-tight' : 'text-amber-300 max-w-[320px] leading-tight'}
+          >
+            {message.type.toUpperCase()} {message.line}:{message.column} {message.text}
+          </div>
+        ))}
+        {hiddenMessageCount > 0 && <div>+{hiddenMessageCount} more compiler messages</div>}
         {state.reducedMotion && <div className="text-amber-300">Reduced motion active</div>}
         {fallback && <div className="text-amber-300/90 max-w-[260px] leading-tight">{fallback}</div>}
       </div>

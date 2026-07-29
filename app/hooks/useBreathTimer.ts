@@ -11,6 +11,23 @@ export interface BreathSettings {
 
 export type SessionDuration = 5 | 10 | 15 | null;
 
+export interface CompletedTimerSegment {
+  id: number;
+  kind: 'timed' | 'free';
+  endedAt: string;
+  durationSec: number;
+  breaths: number;
+}
+
+interface ActiveTimerSegment {
+  id: number;
+  kind: 'timed' | 'free';
+  startedAt: number;
+  startBreaths: number;
+  countedBreaths: number;
+  scheduledDurationSec?: number;
+}
+
 const defaultSettings: BreathSettings = { inhale: 4, hold1: 4, exhale: 6, hold2: 2 };
 
 export const useBreathTimer = () => {
@@ -21,33 +38,50 @@ export const useBreathTimer = () => {
   const [sessionDuration, setSessionDuration] = useState<SessionDuration>(null);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [totalBreaths, setTotalBreaths] = useState(0);
+  const [completedSegment, setCompletedSegment] = useState<CompletedTimerSegment | null>(null);
+  const [activeSegmentId, setActiveSegmentId] = useState(0);
 
   // Refs for rAF loop (avoid effect re-runs on every frame)
   const settingsRef = useRef(settings);
   const sessionDurationRef = useRef(sessionDuration);
   const sessionStartTimeRef = useRef(sessionStartTime);
-  const prevBreathPhaseRef = useRef(0);
   const isRunningRef = useRef(isRunning);
-
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
-  useEffect(() => { sessionDurationRef.current = sessionDuration; }, [sessionDuration]);
-  useEffect(() => { sessionStartTimeRef.current = sessionStartTime; }, [sessionStartTime]);
-  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  const totalBreathsRef = useRef(0);
+  const activeSegmentRef = useRef<ActiveTimerSegment | null>(null);
+  const segmentIdRef = useRef(0);
 
   const startSession = (minutes: SessionDuration) => {
+    if (minutes === null) return;
+    const startedAt = Date.now();
     setSessionDuration(minutes);
-    setSessionStartTime(Date.now());
+    sessionDurationRef.current = minutes;
+    setSessionStartTime(startedAt);
+    sessionStartTimeRef.current = startedAt;
     setTotalBreaths(0);
+    totalBreathsRef.current = 0;
     setIsRunning(true);
+    isRunningRef.current = true;
     setBreathPhase(0);
     setCurrentPhase('inhale');
-    prevBreathPhaseRef.current = 0;
+    activeSegmentRef.current = {
+      id: ++segmentIdRef.current,
+      kind: 'timed',
+      startedAt,
+      startBreaths: 0,
+      countedBreaths: 0,
+      scheduledDurationSec: minutes * 60,
+    };
+    setActiveSegmentId(segmentIdRef.current);
   };
 
   const endSession = useCallback(() => {
+    activeSegmentRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
     setSessionDuration(null);
+    sessionDurationRef.current = null;
     setSessionStartTime(null);
+    sessionStartTimeRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -75,11 +109,17 @@ export const useBreathTimer = () => {
 
       setCurrentPhase(newPhase);
 
-      // Count completed breaths
-      if (cycleProgress < 0.05 && prevBreathPhaseRef.current > 0.95) {
-        setTotalBreaths(b => b + 1);
+      // Count every full elapsed cycle, even when a throttled/dropped frame skips
+      // the narrow visual wrap boundary.
+      const active = activeSegmentRef.current;
+      const completedCycles = active
+        ? Math.floor(Math.max(0, (Date.now() - active.startedAt) / 1000) / tct)
+        : 0;
+      if (active && completedCycles > active.countedBreaths) {
+        totalBreathsRef.current += completedCycles - active.countedBreaths;
+        active.countedBreaths = completedCycles;
+        setTotalBreaths(totalBreathsRef.current);
       }
-      prevBreathPhaseRef.current = cycleProgress;
 
       // Auto-end session
       const sd = sessionDurationRef.current;
@@ -87,6 +127,17 @@ export const useBreathTimer = () => {
       if (sd && sst) {
         const sessionElapsed = (Date.now() - sst) / 1000 / 60;
         if (sessionElapsed >= sd) {
+          const active = activeSegmentRef.current;
+          const breaths = active ? totalBreathsRef.current - active.startBreaths : 0;
+          if (active?.kind === 'timed' && breaths > 0) {
+            setCompletedSegment({
+              id: active.id,
+              kind: 'timed',
+              endedAt: new Date().toISOString(),
+              durationSec: active.scheduledDurationSec ?? sd * 60,
+              breaths,
+            });
+          }
           endSession();
           return;
         }
@@ -100,23 +151,60 @@ export const useBreathTimer = () => {
   }, [isRunning, endSession]);
 
   const toggleFree = () => {
+    const now = Date.now();
+    if (isRunningRef.current) {
+      const active = activeSegmentRef.current;
+      const breaths = active ? totalBreathsRef.current - active.startBreaths : 0;
+      if (active?.kind === 'free' && breaths > 0) {
+        setCompletedSegment({
+          id: active.id,
+          kind: 'free',
+          endedAt: new Date(now).toISOString(),
+          durationSec: Math.max(1, Math.floor((now - active.startedAt) / 1000)),
+          breaths,
+        });
+      }
+      activeSegmentRef.current = null;
+      isRunningRef.current = false;
+      setIsRunning(false);
+    } else {
+      activeSegmentRef.current = {
+        id: ++segmentIdRef.current,
+        kind: 'free',
+        startedAt: now,
+        startBreaths: totalBreathsRef.current,
+        countedBreaths: 0,
+      };
+      setActiveSegmentId(segmentIdRef.current);
+      isRunningRef.current = true;
+      setIsRunning(true);
+    }
     setSessionDuration(null);
+    sessionDurationRef.current = null;
     setSessionStartTime(null);
-    setIsRunning(v => !v);
+    sessionStartTimeRef.current = null;
   };
 
   const reset = () => {
+    activeSegmentRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
     setBreathPhase(0);
     setTotalBreaths(0);
+    totalBreathsRef.current = 0;
     setSessionDuration(null);
+    sessionDurationRef.current = null;
     setSessionStartTime(null);
+    sessionStartTimeRef.current = null;
     setCurrentPhase('inhale');
-    prevBreathPhaseRef.current = 0;
   };
 
   const updateSettings = (newSettings: Partial<BreathSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings(prev => {
+      const next = { ...prev, ...newSettings };
+      settingsRef.current = next;
+      return next;
+    });
   };
 
   return {
@@ -126,6 +214,8 @@ export const useBreathTimer = () => {
     settings,
     sessionDuration,
     totalBreaths,
+    completedSegment,
+    activeSegmentId,
     startSession,
     toggleFree,
     reset,

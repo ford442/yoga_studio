@@ -2,6 +2,7 @@
   "name": "yoga_studio",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/generate-sw.mjs",
@@ -17,8 +18,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "validate:shaders": "node --experimental-strip-types scripts/validate-shaders.ts",
-    "validate:content": "node --experimental-strip-types scripts/validate-content.ts",
+    "validate:shaders": "node --import tsx scripts/validate-shaders.ts",
+    "validate:content": "node --import tsx scripts/validate-content.ts",
+    "audit:high": "npm audit --audit-level=high",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json",
     "check": "npm run lint && npm run typecheck && npm run validate:shaders && npm run validate:content"
   },
@@ -42,6 +44,7 @@
     "eslint-config-next": "16.1.6",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

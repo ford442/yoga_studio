@@ -39,7 +39,7 @@ jobs:
       - name: Static export smoke (files + HTTP 200s)
         run: npm run smoke
 
-      - name: Unit tests with coverage
+      - name: Unit tests with core coverage thresholds
         run: npm run test:coverage
 
       - name: Install Playwright browsers

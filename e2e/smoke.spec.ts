@@ -99,6 +99,56 @@ test.describe('app loads and controls render', () => {
     await context.close();
   });
 
+  test('renders a nonblank static gradient when WebGPU adapter rejection has no WebGL2 fallback', async ({ browser }) => {
+    const context = await browser.newContext();
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'gpu', {
+        configurable: true,
+        value: {
+          requestAdapter: () => Promise.reject(new Error('synthetic adapter rejection')),
+          getPreferredCanvasFormat: () => 'bgra8unorm',
+        },
+      });
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      const callOriginalGetContext = originalGetContext as unknown as (
+        this: HTMLCanvasElement,
+        kind: string,
+        ...args: unknown[]
+      ) => RenderingContext | null;
+      Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+        configurable: true,
+        value: function (this: HTMLCanvasElement, kind: string, ...args: unknown[]) {
+          if (kind === 'webgl2') return null;
+          if (kind === 'webgpu') return {};
+          return callOriginalGetContext.call(this, kind, ...args);
+        },
+      });
+    });
+    const staticPage = await context.newPage();
+    await staticPage.goto('/');
+    const skipOnboarding = staticPage.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+
+    const container = staticPage.locator('[data-renderer]').first();
+    await expect(container).toHaveAttribute('data-renderer', 'static');
+    const fallbackReason = await container.getAttribute('data-fallback-reason');
+    expect(fallbackReason).toBeTruthy();
+    const pixels = await container.locator('canvas').first().evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
+      const c2d = canvas.getContext('2d');
+      if (!c2d) return null;
+      const center = c2d.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+      const edge = c2d.getImageData(1, 1, 1, 1).data;
+      return { width: canvas.width, height: canvas.height, center: [...center], edge: [...edge] };
+    });
+    expect(pixels?.width).toBeGreaterThan(0);
+    expect(pixels?.height).toBeGreaterThan(0);
+    expect(pixels?.center[3]).toBe(255);
+    expect(pixels?.center.slice(0, 3)).not.toEqual([0, 0, 0]);
+    expect(pixels?.center).not.toEqual(pixels?.edge);
+    await context.close();
+  });
+
   test('does not crash when WebGPU is available', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -134,5 +184,111 @@ test.describe('app loads and controls render', () => {
     expect(canvasBox?.height).toBeGreaterThan(0);
 
     expect(errors).toHaveLength(0);
+  });
+
+  test('keeps an active renderer nonblank through repeated viewport shape changes', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('/');
+    const skipOnboarding = page.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+    await page.getByRole('button', { name: 'BEGIN', exact: true }).click();
+
+    for (const viewport of [{ width: 960, height: 540 }, { width: 540, height: 960 }, { width: 1100, height: 620 }]) {
+      await page.setViewportSize(viewport);
+      await page.waitForTimeout(350);
+      const rendererCanvas = page.locator('[data-renderer] canvas').first();
+      const backingSize = await rendererCanvas.evaluate((element) => {
+        const canvas = element as HTMLCanvasElement;
+        return { width: canvas.width, height: canvas.height };
+      });
+      const screenshot = await rendererCanvas.screenshot();
+      const energy = await page.evaluate(async (dataUrl) => {
+        const source = new Image();
+        source.src = dataUrl;
+        await source.decode();
+        const probe = document.createElement('canvas');
+        probe.width = 8;
+        probe.height = 8;
+        const c2d = probe.getContext('2d');
+        if (!c2d) return 0;
+        c2d.drawImage(source, 0, 0, 8, 8);
+        const data = c2d.getImageData(0, 0, 8, 8).data;
+        let energy = 0;
+        for (let i = 0; i < data.length; i += 4) energy += data[i] + data[i + 1] + data[i + 2];
+        return energy;
+      }, `data:image/png;base64,${screenshot.toString('base64')}`);
+      expect(backingSize.width).toBeGreaterThan(0);
+      expect(backingSize.height).toBeGreaterThan(0);
+      expect(energy).toBeGreaterThan(0);
+    }
+    expect(errors).toHaveLength(0);
+  });
+
+  test('restores ledger stats and supports trends plus JSON portability', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
+      Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+        configurable: true,
+        value: () => null,
+      });
+      const date = new Date().toISOString().slice(0, 10);
+      if (!localStorage.getItem('sacred-breath-session-ledger')) localStorage.setItem('sacred-breath-session-ledger', JSON.stringify({
+        version: 1,
+        legacyBaseline: { todayMinutes: 2, todayBreaths: 3, currentStreak: 4, lastPracticeDate: date },
+        sessions: [{
+          endedAt: `${date}T08:00:00.000Z`,
+          durationSec: 300,
+          breaths: 12,
+          modeId: 'ujjayi',
+          techniqueId: 'ujjayi',
+          settings: { inhale: 4, hold1: 2, exhale: 6, hold2: 2 },
+        }],
+      }));
+    });
+    await page.goto('/');
+
+    const skipOnboarding = page.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+
+    const stats = page.getByRole('button', { name: 'Open practice trends' });
+    await expect(stats).toContainText('7');
+    await expect(stats).toContainText('15');
+    await stats.click();
+    await expect(page.getByRole('dialog', { name: 'Practice trends' })).toBeVisible();
+    await expect(page.locator('[data-date]')).toHaveCount(28);
+    await expect(page.getByText('Ujjayi', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Close practice trends' }).click();
+
+    await page.getByRole('button', { name: 'Open settings' }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'EXPORT JSON' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^sacred-breath-history-\d{4}-\d{2}-\d{2}\.json$/);
+
+    const date = new Date().toISOString().slice(0, 10);
+    await page.getByLabel('Import practice history JSON').setInputFiles({
+      name: 'history.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({
+        version: 1,
+        sessions: [{
+          endedAt: `${date}T10:00:00.000Z`,
+          durationSec: 600,
+          breaths: 20,
+          modeId: 'classic-mandala',
+          techniqueId: 'classic-mandala',
+          settings: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
+        }],
+      })),
+    });
+    await expect(page.getByRole('status')).toContainText('1 imported');
+    await page.getByRole('button', { name: 'DONE' }).click();
+    await expect(stats).toContainText('17');
+    await expect(stats).toContainText('35');
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Open practice trends' })).toContainText('17');
   });
 });
