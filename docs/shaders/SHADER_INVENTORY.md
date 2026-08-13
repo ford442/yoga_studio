@@ -7,8 +7,10 @@ This document is the single source of truth for WGSL/GLSL assets in the Sacred B
 ```
 public/                          # Copied to out/ during static export — runtime only
 ├── sacred-monk.wgsl             # Active shader
-├── sacred-lotus-final.wgsl      # Active shader
-├── sacred-ultra.wgsl            # Active shader
+├── sacred-lotus-final.wgsl      # Active shader entry/include manifest
+├── sacred-lotus-final/          # Cohesive Sacred Lotus WGSL modules
+├── sacred-ultra.wgsl            # Active shader entry/include manifest
+├── sacred-ultra/                # Cohesive Sacred Ultra WGSL modules
 ├── yoga-regular.wgsl            # Active shader
 ├── manifest.webmanifest         # PWA manifest
 ├── backgrounds/                 # Runtime background images
@@ -30,8 +32,8 @@ These files live in `public/` and are fetched at runtime by the WebGPU backend m
 | File | Entry points | Used by technique | Visual role |
 |------|--------------|-------------------|-------------|
 | `public/sacred-monk.wgsl` | `vs` / `main` | Box Breathing (`classic-mandala`), Grounding (`grounding`) | Mandala + sacred monk silhouette + neon glow |
-| `public/sacred-lotus-final.wgsl` | `vs` / `main` | Nadi Shodhana, Ujjayi, Lotus Heart, Prana Flow, Deep Release | Lotus bloom + prana ribbons + ethereal figure |
-| `public/sacred-ultra.wgsl` | `vs` / `main` | Sacred Integration (`sacred-ultra`) | Cinematic composition: ribbons, figure, chakras, lotus, post-processing |
+| `public/sacred-lotus-final.wgsl` + `public/sacred-lotus-final/*.wgsl` | `vs` / `main` | Nadi Shodhana, Ujjayi, Lotus Heart, Prana Flow, Deep Release | Runtime-composed modules for shared helpers, atmosphere, lotus/symbol, ribbons, and post-processing/figure/composition |
+| `public/sacred-ultra.wgsl` + `public/sacred-ultra/*.wgsl` | `vs` / `main` | Sacred Integration (`sacred-ultra`) | Runtime-composed modules for shared helpers, background/geometry, figure/energy, lotus/ribbons, and post-processing/composition |
 | `public/yoga-regular.wgsl` | `vs_main` / `fs_main` | Coherent Breath (`nervous-system-reg`) | Simpler geometry and figure for clinical-calm pacing |
 
 Validate any contract changes with:
@@ -39,6 +41,11 @@ Validate any contract changes with:
 ```bash
 npm run validate:shaders
 ```
+
+`sacred-lotus-final.wgsl` and `sacred-ultra.wgsl` are thin entry files whose
+`// @include "..."` directives are resolved by the WebGPU loader. Keep each file
+in their matching module directories under 700 lines; `validate:shaders`
+enforces this limit and validates each composed source.
 
 ## Legacy reference shaders (`archive/shaders/legacy/`)
 

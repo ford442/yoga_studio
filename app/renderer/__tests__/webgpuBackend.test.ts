@@ -9,8 +9,9 @@ const deferred = <T,>() => {
 };
 
 const flush = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 6; index += 1) {
+    await Promise.resolve();
+  }
 };
 
 function makeDevice(messages: Array<Partial<GPUCompilationMessage>> = []) {
@@ -138,6 +139,38 @@ describe('WebGPUBackend', () => {
     expect(first.device.createBuffer).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath Uniform Buffer' }));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ adapterInfo: { vendor: 'Example GPU', architecture: 'mock' } });
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ compilationMessages: [{ type: 'warning', text: 'portable warning', line: 4, column: 2 }] });
+    backend.stop();
+  });
+
+  it('composes a modular shader entry before creating the shader module', async () => {
+    const first = makeDevice();
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === './sacred-ultra.wgsl') {
+        return {
+          ok: true,
+          status: 200,
+          url: 'https://example.test/app/sacred-ultra.wgsl',
+          text: async () => '// @include "./sacred-ultra/core.wgsl"\n// @include "./sacred-ultra/main.wgsl"\n',
+        };
+      }
+      const source = path.endsWith('/core.wgsl') ? 'const PI: f32 = 3.14;\n' : '@fragment fn main() {}\n';
+      return { ok: true, status: 200, url: path, text: async () => source };
+    }));
+    const ctx = makeContext(makeCanvas());
+    ctx.shaderPath = 'sacred-ultra.wgsl';
+    const backend = new WebGPUBackend();
+
+    await backend.start(ctx);
+
+    expect(first.device.createShaderModule).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'const PI: f32 = 3.14;\n@fragment fn main() {}\n',
+    }));
+    expect(fetch).toHaveBeenCalledTimes(3);
     backend.stop();
   });
 

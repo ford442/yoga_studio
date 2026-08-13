@@ -7,7 +7,17 @@ const requiredRootAssets = [
   '/manifest.webmanifest',
   '/sacred-monk.wgsl',
   '/sacred-lotus-final.wgsl',
+  '/sacred-lotus-final/core.wgsl',
+  '/sacred-lotus-final/background-atmosphere.wgsl',
+  '/sacred-lotus-final/lotus-symbol.wgsl',
+  '/sacred-lotus-final/energy-ribbons.wgsl',
+  '/sacred-lotus-final/post-figure-composition.wgsl',
   '/sacred-ultra.wgsl',
+  '/sacred-ultra/core.wgsl',
+  '/sacred-ultra/background-geometry.wgsl',
+  '/sacred-ultra/figure-energy.wgsl',
+  '/sacred-ultra/lotus-ribbons.wgsl',
+  '/sacred-ultra/post-composition.wgsl',
   '/yoga-regular.wgsl',
 ];
 
@@ -183,6 +193,72 @@ test.describe('app loads and controls render', () => {
     expect(canvasBox?.width).toBeGreaterThan(0);
     expect(canvasBox?.height).toBeGreaterThan(0);
 
+    expect(errors).toHaveLength(0);
+  });
+
+  test('loads the modular Sacred Integration shader without runtime errors', async ({ page }) => {
+    const errors: string[] = [];
+    const loadedModules = new Map<string, number>();
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('response', (response) => {
+      const path = new URL(response.url()).pathname;
+      const match = path.match(/\/sacred-ultra\/([^/]+\.wgsl)$/);
+      if (match) loadedModules.set(match[1], response.status());
+    });
+
+    await page.goto('/');
+    const skipOnboarding = page.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+    await page.getByRole('button', { name: 'BROWSE TECHNIQUES' }).click();
+    await page.getByRole('button', { name: /Sacred Integration/ }).click();
+
+    const container = page.locator('[data-renderer]').first();
+    await expect(container).toHaveAttribute('data-shader', 'sacred-ultra.wgsl');
+    await page.waitForTimeout(750);
+    const renderer = await container.getAttribute('data-renderer');
+    expect(renderer === 'webgpu' || renderer === 'webgl2').toBe(true);
+    if (renderer === 'webgpu') {
+      await expect.poll(() => loadedModules.size).toBe(5);
+      expect([...loadedModules.values()]).toEqual([200, 200, 200, 200, 200]);
+    }
+
+    const canvasBox = await container.locator('canvas').first().boundingBox();
+    expect(canvasBox?.width).toBeGreaterThan(0);
+    expect(canvasBox?.height).toBeGreaterThan(0);
+    expect(errors).toHaveLength(0);
+  });
+
+  test('loads the modular Sacred Lotus shader without runtime errors', async ({ page }) => {
+    const errors: string[] = [];
+    const loadedModules = new Map<string, number>();
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('response', (response) => {
+      const path = new URL(response.url()).pathname;
+      const match = path.match(/\/sacred-lotus-final\/([^/]+\.wgsl)$/);
+      if (match) loadedModules.set(match[1], response.status());
+    });
+
+    await page.goto('/');
+    const skipOnboarding = page.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+    await page.getByRole('button', { name: 'BROWSE TECHNIQUES' }).click();
+    await page.getByRole('button', { name: /Alternate Nostril Foundation/ }).click();
+
+    const container = page.locator('[data-renderer]').first();
+    await expect(container).toHaveAttribute('data-shader', 'sacred-lotus-final.wgsl');
+    await page.waitForTimeout(750);
+    const renderer = await container.getAttribute('data-renderer');
+    expect(renderer === 'webgpu' || renderer === 'webgl2').toBe(true);
+    if (renderer === 'webgpu') {
+      await expect.poll(() => loadedModules.size).toBe(5);
+      expect([...loadedModules.values()]).toEqual([200, 200, 200, 200, 200]);
+    }
+
+    const canvasBox = await container.locator('canvas').first().boundingBox();
+    expect(canvasBox?.width).toBeGreaterThan(0);
+    expect(canvasBox?.height).toBeGreaterThan(0);
     expect(errors).toHaveLength(0);
   });
 
