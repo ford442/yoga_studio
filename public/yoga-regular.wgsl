@@ -71,7 +71,7 @@ fn opSmoothUnion(d1: f32, d2: f32, k: f32) -> f32 {
 // BREATH HELPERS (rich organic feel)
 // ============================================================================
 fn getArmAngle() -> f32 {
-  let p = u.chakraPhaseProgress;
+  let p = u.phaseProgress;
   let i = u.intensity;
   switch(u32(u.chakraPhase)) {
     case 0u: { return mix(0.0, PI*1.02, 1.0-pow(1.0-p,2.5)) * i; }
@@ -83,7 +83,7 @@ fn getArmAngle() -> f32 {
 }
 
 fn getBreathScale() -> vec2<f32> {
-  let p = u.chakraPhaseProgress;
+  let p = u.phaseProgress;
   let i = u.intensity;
   switch(u32(u.chakraPhase)) {
     case 0u: { let s = 1.0 + p*0.08*i; return vec2<f32>(s,s); }
@@ -113,8 +113,13 @@ fn map(p_in: vec3<f32>) -> f32 {
 
   var armL = p - vec3<f32>(-0.5,1.5,0.0);
   var armR = p - vec3<f32>(0.5,1.5,0.0);
-  armL.yz = rot2(armAngle) * armL.yz;
-  armR.yz = rot2(armAngle) * armR.yz;
+  // WGSL disallows assignment to swizzles — write components individually.
+  let armLRot = rot2(armAngle) * armL.yz;
+  armL.y = armLRot.x;
+  armL.z = armLRot.y;
+  let armRRot = rot2(armAngle) * armR.yz;
+  armR.y = armRRot.x;
+  armR.z = armRRot.y;
   let sweep = select(0.0, sin(armAngle*0.5)*0.3, u32(u.chakraPhase) == 0u);
   armL.x += sweep; armR.x -= sweep;
 
@@ -137,7 +142,7 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
   var col = vec3<f32>(0.0);
   let phase = u.chakraPhase;
   let phaseU = u32(phase);
-  let progress = u.chakraPhaseProgress;
+  let progress = u.phaseProgress;
   let intensity = u.intensity;
   let t = u.time;
   
@@ -171,15 +176,16 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
     var ccol = CHAKRA_COLORS[i];
     ccol = mix(ccol, phaseTint + vec3<f32>(0.5), 0.3);
     
-    var active: f32 = 0.0;
-    if phaseU == 0u && (i == 3 || i == 4) { active = 1.0; }
-    if phaseU == 1u && i == 2 { active = 1.0; }
-    if phaseU == 2u && i == 0 { active = 1.0; }
-    if phaseU == 3u && i == 6 { active = 1.0; }
+    // `active` is a reserved WGSL keyword — use isActive instead.
+    var isActive: f32 = 0.0;
+    if phaseU == 0u && (i == 3 || i == 4) { isActive = 1.0; }
+    if phaseU == 1u && i == 2 { isActive = 1.0; }
+    if phaseU == 2u && i == 0 { isActive = 1.0; }
+    if phaseU == 3u && i == 6 { isActive = 1.0; }
     
     let pulse = 0.8 + 0.2 * sin(t * 3.0 + fi * 0.8);
-    let size = 0.03 + 0.015 * waveGlow + 0.01 * active;
-    let glow = exp(-dist / size) * (0.5 + waveGlow * 0.5 + active * 0.3) * pulse;
+    let size = 0.03 + 0.015 * waveGlow + 0.01 * isActive;
+    let glow = exp(-dist / size) * (0.5 + waveGlow * 0.5 + isActive * 0.3) * pulse;
     
     col += ccol * glow * intensity;
     
@@ -229,7 +235,7 @@ fn triRing(uv: vec2<f32>, r: f32) -> f32 {
 }
 
 fn ringExpansion(idx: i32) -> f32 {
-  let p = u.chakraPhaseProgress;
+  let p = u.phaseProgress;
   let i = u.intensity;
   let t = u.time;
   var exp: f32 = 0.0;
@@ -280,8 +286,12 @@ fn kalei(p_in: vec3<f32>, time: f32) -> vec3<f32> {
   for(var i: i32 = 0; i < 4; i = i + 1) {
     let fi = f32(i);
     p = vec3<f32>(abs(p.x) - 0.2, p.y, p.z);
-    p.xz = rot2(sin(f32(i)) + 0.2 * time + 0.1 * at) * p.xz;
-    p.xy = rot2(sin(2.0 * f32(i)) + 0.2 * time) * p.xy;
+    let pXz = rot2(sin(f32(i)) + 0.2 * time + 0.1 * at) * p.xz;
+    p.x = pXz.x;
+    p.z = pXz.y;
+    let pXy = rot2(sin(2.0 * f32(i)) + 0.2 * time) * p.xy;
+    p.x = pXy.x;
+    p.y = pXy.y;
     p.y = p.y + 1.0 - exp(-p.z * 0.1 * f32(i));
   }
   p.x = abs(p.x) + 2.5;
@@ -451,7 +461,7 @@ fn mapStars(uv: vec2<f32>) -> vec3<f32> {
 
 fn getBreathColorGrade(col: vec3<f32>) -> vec3<f32> {
   let phase = u.chakraPhase;
-  let p = u.chakraPhaseProgress;
+  let p = u.phaseProgress;
   let i = u.intensity;
   let s = u.strengthLevel;
   
@@ -792,15 +802,15 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   
   // Sacred geometry background with phase-aware fog
   let bgCol = renderBackground(uv, u.time, u32(u.chakraPhase), 
-                                u.chakraPhaseProgress, u.intensity);
+                                u.phaseProgress, u.intensity);
   col = mix(col, bgCol, 0.7);
   
   // Phase background tint
   switch(u32(u.chakraPhase)) {
-    case 0u: { col = mix(col, INHALE_COLOR * 0.1, u.chakraPhaseProgress); }
-    case 1u: { col = mix(INHALE_COLOR * 0.1, HOLD1_COLOR * 0.15, u.chakraPhaseProgress); }
-    case 2u: { col = mix(HOLD1_COLOR * 0.15, EXHALE_COLOR * 0.1, u.chakraPhaseProgress); }
-    case 3u: { col = mix(EXHALE_COLOR * 0.1, vec3<f32>(0.02, 0.03, 0.05), u.chakraPhaseProgress); }
+    case 0u: { col = mix(col, INHALE_COLOR * 0.1, u.phaseProgress); }
+    case 1u: { col = mix(INHALE_COLOR * 0.1, HOLD1_COLOR * 0.15, u.phaseProgress); }
+    case 2u: { col = mix(HOLD1_COLOR * 0.15, EXHALE_COLOR * 0.1, u.phaseProgress); }
+    case 3u: { col = mix(EXHALE_COLOR * 0.1, vec3<f32>(0.02, 0.03, 0.05), u.phaseProgress); }
     default: {}
   }
   
@@ -827,7 +837,7 @@ fn mainImage(fragColor: ptr<function, vec4<f32>>, fragCoord: vec2<f32>) {
   col *= 0.92 + 0.08 * sin(u.time * 1.8 + u.chakraPhase * 1.57);
   
   // Breath timing HUD
-  renderBreathHUD(&col, uv, u.chakraPhaseProgress, u.breathPhase, 
+  renderBreathHUD(&col, uv, u.phaseProgress, u.breathPhase, 
                   u32(u.chakraPhase), u.time);
   
   // Vignette and gamma
