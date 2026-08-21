@@ -162,8 +162,10 @@ yoga_studio/
 │   └── page.tsx                    # Main page
 ├── public/                         # Runtime assets only
 │   ├── sacred-monk.wgsl            # Active scene shader
-│   ├── sacred-lotus-final.wgsl     # Active lotus + ribbons shader
-│   ├── sacred-ultra.wgsl           # Active cinematic ultra shader
+│   ├── sacred-lotus-final.wgsl     # Active lotus + ribbons entry/include manifest
+│   ├── sacred-lotus-final/         # Sacred Lotus source modules
+│   ├── sacred-ultra.wgsl           # Active cinematic ultra entry/include manifest
+│   ├── sacred-ultra/               # Sacred Ultra source modules
 │   ├── yoga-regular.wgsl           # Active simplified shader
 │   ├── manifest.webmanifest        # PWA manifest
 │   ├── backgrounds/                # Runtime background images

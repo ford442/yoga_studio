@@ -16,7 +16,17 @@ const requiredFiles = [
   'sw.js',
   'sacred-monk.wgsl',
   'sacred-lotus-final.wgsl',
+  'sacred-lotus-final/core.wgsl',
+  'sacred-lotus-final/background-atmosphere.wgsl',
+  'sacred-lotus-final/lotus-symbol.wgsl',
+  'sacred-lotus-final/energy-ribbons.wgsl',
+  'sacred-lotus-final/post-figure-composition.wgsl',
   'sacred-ultra.wgsl',
+  'sacred-ultra/core.wgsl',
+  'sacred-ultra/background-geometry.wgsl',
+  'sacred-ultra/figure-energy.wgsl',
+  'sacred-ultra/lotus-ribbons.wgsl',
+  'sacred-ultra/post-composition.wgsl',
   'yoga-regular.wgsl',
 ];
 

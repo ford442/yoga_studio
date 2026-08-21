@@ -1,5 +1,6 @@
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 import { buildUniformBuffer, UNIFORM_BUFFER_SIZE } from '../lib/shaderContract';
+import { loadWgslSource } from '../lib/wgslModules';
 import type {
   RendererAdapterInfo,
   RendererCompilationMessage,
@@ -129,14 +130,16 @@ export class WebGPUBackend implements RendererBackend {
       return;
     }
 
-    const shaderResponse = await fetch(resolveAssetUrl(ctx.shaderPath));
-    if (!shaderResponse.ok) {
+    let shaderSource: string;
+    try {
+      shaderSource = await loadWgslSource(resolveAssetUrl(ctx.shaderPath));
+    } catch (error) {
       device.destroy();
-      throw new Error(`Shader load failed: ${shaderResponse.status} ${shaderResponse.url}`);
+      throw error;
     }
     const shaderModule = device.createShaderModule({
       label: `Sacred Breath shader: ${ctx.shaderPath}`,
-      code: await shaderResponse.text(),
+      code: shaderSource,
     }) as ShaderModuleWithOptionalInfo;
     if (!this.isCurrent(generation)) {
       device.destroy();

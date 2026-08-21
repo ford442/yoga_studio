@@ -16,9 +16,46 @@ import {
   type SessionLogEntry,
 } from '../lib/sessionLedger';
 
+const isQuotaExceededError = (error: unknown): boolean => {
+  if (!(error instanceof DOMException)) return false;
+  return (
+    error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error.code === 22 ||
+    error.code === 1014
+  );
+};
+
+// Retries the write, aggressively dropping the oldest (tail) sessions on
+// quota errors until it fits or nothing is left to trim.
+const persistLedger = (envelope: SessionLedgerEnvelope): SessionLedgerEnvelope | null => {
+  let candidate = envelope;
+  for (;;) {
+    try {
+      localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(candidate));
+      return candidate;
+    } catch (error) {
+      if (!isQuotaExceededError(error) || candidate.sessions.length === 0) {
+        console.warn('Unable to persist sacred-breath session history to localStorage.', error);
+        return null;
+      }
+      const nextLength = Math.floor(candidate.sessions.length / 2);
+      candidate = { ...candidate, sessions: candidate.sessions.slice(0, nextLength) };
+    }
+  }
+};
+
 const readLedger = (): SessionLedgerEnvelope => {
   const stored = localStorage.getItem(SESSION_LEDGER_STORAGE_KEY);
-  if (stored) return parseLedgerJson(stored);
+  if (stored) {
+    try {
+      return parseLedgerJson(stored);
+    } catch {
+      console.warn('Invalid sacred-breath session history localStorage payload; clearing it.');
+      localStorage.removeItem(SESSION_LEDGER_STORAGE_KEY);
+      return createEmptyLedger();
+    }
+  }
 
   const legacyRaw = localStorage.getItem(LEGACY_STATS_STORAGE_KEY);
   if (!legacyRaw) return createEmptyLedger();
@@ -32,9 +69,10 @@ const readLedger = (): SessionLedgerEnvelope => {
   if (!migrated) return createEmptyLedger();
 
   // Removal happens only after the durable replacement write succeeds.
-  localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(migrated));
+  const persisted = persistLedger(migrated);
+  if (!persisted) return migrated;
   localStorage.removeItem(LEGACY_STATS_STORAGE_KEY);
-  return migrated;
+  return persisted;
 };
 
 export const useSessionStats = () => {
@@ -57,7 +95,13 @@ export const useSessionStats = () => {
 
   useEffect(() => {
     if (!hasLoadedStats) return;
-    localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(ledger));
+    const persisted = persistLedger(ledger);
+    // Trimming happened to fit under quota; sync state so the UI matches
+    // what is actually durable and future appends build on the right base.
+    if (persisted && persisted !== ledger) {
+      ledgerRef.current = persisted;
+      setLedger(persisted);
+    }
   }, [hasLoadedStats, ledger]);
 
   const recordSession = useCallback((entry: SessionLogEntry) => {

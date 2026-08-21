@@ -7,8 +7,9 @@
  *   npm run validate:shaders
  */
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, normalize } from 'node:path';
 import { UNIFORM_FIELDS, UNIFORM_BUFFER_SIZE } from '../app/lib/shaderContract.ts';
+import { parseWgslModule } from '../app/lib/wgslModules.ts';
 
 const ROOT = process.cwd();
 
@@ -20,6 +21,7 @@ const ACTIVE_SHADERS = [
 ];
 
 const EXPECTED_BINDING = '@group(0) @binding(0) var<uniform> u: Uniforms;';
+const MAX_MODULE_LINES = 699;
 
 interface ParsedField {
   name: string;
@@ -47,10 +49,61 @@ function normalizeType(type: string): string {
   return type.replace(/\s+/g, '');
 }
 
+interface ShaderTree {
+  source: string;
+  files: Map<string, string>;
+}
+
+function readShaderTree(filePath: string, ancestors: readonly string[] = []): ShaderTree {
+  const normalizedPath = normalize(filePath);
+  if (ancestors.includes(normalizedPath)) {
+    throw new Error(`circular include: ${[...ancestors, normalizedPath].join(' -> ')}`);
+  }
+
+  const rawSource = readFileSync(join(ROOT, normalizedPath), 'utf-8');
+  const files = new Map([[normalizedPath, rawSource]]);
+  const source: string[] = [];
+  for (const part of parseWgslModule(rawSource)) {
+    if (part.kind === 'source') {
+      source.push(part.value);
+      continue;
+    }
+
+    const childPath = normalize(join(dirname(normalizedPath), part.value));
+    if (childPath.startsWith('..') || childPath.startsWith('/')) {
+      throw new Error(`include escapes the repository: ${part.value}`);
+    }
+    const child = readShaderTree(childPath, [...ancestors, normalizedPath]);
+    source.push(child.source);
+    for (const [path, childSource] of child.files) files.set(path, childSource);
+  }
+  return { source: source.join(''), files };
+}
+
+function lineCount(source: string): number {
+  if (source.length === 0) return 0;
+  const lines = source.split('\n').length;
+  return source.endsWith('\n') ? lines - 1 : lines;
+}
+
 function validateShader(filePath: string): string[] {
-  const fullPath = join(ROOT, filePath);
-  const source = readFileSync(fullPath, 'utf-8');
   const errors: string[] = [];
+  let tree: ShaderTree;
+  try {
+    tree = readShaderTree(filePath);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+  const source = tree.source;
+
+  if (tree.files.size > 1) {
+    for (const [modulePath, moduleSource] of tree.files) {
+      const lines = lineCount(moduleSource);
+      if (lines > MAX_MODULE_LINES) {
+        errors.push(`${modulePath} has ${lines} lines; expected fewer than 700`);
+      }
+    }
+  }
 
   if (!source.includes(EXPECTED_BINDING)) {
     errors.push(`missing or unexpected binding declaration (expected: ${EXPECTED_BINDING})`);

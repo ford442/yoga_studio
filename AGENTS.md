@@ -97,8 +97,10 @@ app/
 ```
 public/                           # Runtime assets only (copied to out/)
 ├── sacred-monk.wgsl              # Active scene shader (mandala + monk SDF + particles)
-├── sacred-lotus-final.wgsl       # Active lotus + ribbons shader
-├── sacred-ultra.wgsl             # Active cinematic ultra shader
+├── sacred-lotus-final.wgsl       # Active lotus + ribbons entry/include manifest
+├── sacred-lotus-final/           # Sacred Lotus source modules (<700 lines each)
+├── sacred-ultra.wgsl             # Active cinematic ultra entry/include manifest
+├── sacred-ultra/                 # Sacred Ultra source modules (<700 lines each)
 ├── yoga-regular.wgsl             # Active simplified clinical-calm shader
 ├── manifest.webmanifest          # PWA manifest
 ├── backgrounds/                  # Runtime background images
@@ -154,7 +156,7 @@ Filmed instructor clips are derived assets, not hand-authored ones. To add or re
 
 ## WebGPU Shader Architecture
 
-`WebGPUShader.tsx` is a **single-pass** renderer. It fetches the active `.wgsl` file (e.g. `public/sacred-monk.wgsl`) at runtime, creates one render pipeline, and draws a full-screen triangle.
+`WebGPUShader.tsx` is a **single-pass** renderer. It fetches the active `.wgsl` entry (e.g. `public/sacred-monk.wgsl`) at runtime, composes any `// @include "..."` modules, creates one render pipeline, and draws a full-screen triangle.
 
 ### Uniform Buffer Layout
 
@@ -162,8 +164,8 @@ The React side writes a 72-byte uniform buffer every frame. The single source of
 
 Active shaders:
 - `public/sacred-monk.wgsl`
-- `public/sacred-lotus-final.wgsl`
-- `public/sacred-ultra.wgsl`
+- `public/sacred-lotus-final.wgsl` + `public/sacred-lotus-final/*.wgsl`
+- `public/sacred-ultra.wgsl` + `public/sacred-ultra/*.wgsl`
 - `public/yoga-regular.wgsl`
 
 Run the dev-time validator after any layout change:
@@ -174,7 +176,7 @@ npm run validate:shaders
 
 **Critical:** When adding or reordering uniforms, update `app/lib/shaderContract.ts` first, then update every active `.wgsl` file, and run `npm run validate:shaders` to catch drift. `WebGPUShader.tsx` now reads the buffer size and field order from the contract, so it should not need manual index updates. WebGPU will hard crash (blank canvas) on size or layout mismatch.
 
-The shader defines its own `struct Uniforms` at the top of each active `.wgsl` file. Do **not** duplicate this struct elsewhere.
+Each composed shader source defines one `struct Uniforms`. Standalone shaders keep it at the top of their `.wgsl` file; Sacred Lotus and Sacred Ultra keep it in their respective `core.wgsl` modules. Do **not** duplicate this struct elsewhere.
 
 ### Shader Features
 
@@ -459,8 +461,8 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `app/globals.css` | Tailwind v4 styles | **Active** |
 | `public/manifest.webmanifest` | PWA manifest | **Active** |
 | `public/sacred-monk.wgsl` | Active scene shader | **Active** |
-| `public/sacred-lotus-final.wgsl` | Active lotus + ribbons shader | **Active** |
-| `public/sacred-ultra.wgsl` | Active cinematic ultra shader | **Active** |
+| `public/sacred-lotus-final.wgsl` + `public/sacred-lotus-final/*` | Active modular lotus + ribbons shader | **Active** |
+| `public/sacred-ultra.wgsl` + `public/sacred-ultra/*` | Active modular cinematic ultra shader | **Active** |
 | `public/yoga-regular.wgsl` | Active simplified clinical-calm shader | **Active** |
 | `docs/shaders/SHADER_INVENTORY.md` | Shader asset manifest | **Active** |
 | `archive/shaders/legacy/*` | Superseded reference shaders | Archived |
