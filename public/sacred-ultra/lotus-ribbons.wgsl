@@ -195,7 +195,7 @@ fn sacredSymbol(
     col += fill * shimmer * coreCol * 0.18 * (0.4 + expand);
 
     var omRipple = 0.0;
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 4; i = i + 1) {
         let fi = f32(i);
         let ringRad = 0.06 + fi * 0.035;
         let ringPhase = sin(r * 5.0 - t * 2.5 + fi * 1.57) * 0.5 + 0.5;
@@ -205,7 +205,7 @@ fn sacredSymbol(
     col += omRipple * haloCol * 0.15 * (0.5 + expand * 0.5);
 
     let seedR = 0.045 * (1.0 + expand * 0.35);
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         let ang = -t * 0.35 + f32(i) * (TAU / 3.0);
         let p = uv - vec2<f32>(cos(ang), sin(ang)) * seedR;
         let dd = length(p);

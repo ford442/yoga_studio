@@ -154,7 +154,7 @@ fn sacredSymbol(
     // Counter-rotating tri-seed mandala (bindu-like). Three soft dots
     // orbiting the centre, gently scaling with the breath.
     let seedR = 0.045 * (1.0 + expand * 0.35);
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         let ang = -t * 0.35 * (1.0 + u.interference) + f32(i) * (TAU / 3.0);
         let p = uv - vec2<f32>(cos(ang), sin(ang)) * seedR;
         let dd = length(p);

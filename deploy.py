@@ -6,8 +6,9 @@ Copy this file into your project as `deploy.py` (or deploy_contabo.py).
 Customize the constants at the top for your project.
 
 Usage:
-  1. Build your project:  npm run build   (or python build, etc.)
-  2. python deploy.py
+  1. python deploy.py              # validate shaders, rebuild out/, upload full bundle
+  2. python deploy.py --skip-build # upload an existing out/ directory
+  3. Set DEPLOY_TOKEN in the environment (required)
 
 This script contacts https://storage.noahcohn.com (your Contabo storage manager)
 to upload your entire build as a single zip archive.  The server extracts it and
@@ -20,8 +21,10 @@ Requirements:
   pip install requests
 """
 
+import argparse
 import io
 import os
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -38,87 +41,67 @@ DEPLOY_FOLDER: str = ""  # override remote target folder; empty = use PROJECT_NA
 
 # Deploy token is required and must come from the environment:
 #   export DEPLOY_TOKEN="your_long_token_from_vps_env"
-DEPLOY_TOKEN: str = os.environ.get("DEPLOY_TOKEN") or sys.exit(
-    "ERROR: Set DEPLOY_TOKEN in your environment before running deploy.py"
-)
+DEPLOY_TOKEN: str = os.environ.get("DEPLOY_TOKEN") or ""
 # ============================================================
-DEPLOY_TARGET: str ="go"
+DEPLOY_TARGET: str = os.environ.get("DEPLOY_TARGET") or "go"
 
 
-def fetch_remote_sizes(target_folder, target_site="test"):
-    """Ask the VPS for {rel_path: bytes} already on the deploy target."""
-    base = CONTABO_BASE_URL.rstrip("/")
-    url = f"{base}/api/deploy/{PROJECT_NAME}/sizes"
-    headers = {}
-    token = globals().get("DEPLOY_TOKEN")
-    if token:
-        headers["X-Deploy-Token"] = token
-    params = {"target_site": target_site or "test"}
-    if target_folder:
-        params["target_folder"] = target_folder
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=60)
-        if response.status_code == 200:
-            files = response.json().get("files") or {}
-            print(f"Remote size map: {len(files)} file(s)")
-            return {str(k).replace("\\", "/"): int(v) for k, v in files.items()}
-        print(f"  ! sizes HTTP {response.status_code}; uploading all files")
-    except Exception as exc:
-        print(f"  ! Could not fetch remote sizes ({exc}); uploading all files")
-    return {}
+def run_full_rebuild() -> None:
+    """Validate shaders (via prebuild) and produce a fresh static export."""
+    print("Running full production rebuild (`npm run build`)...")
+    result = subprocess.run(["npm", "run", "build"], check=False)
+    if result.returncode != 0:
+        print("ERROR: `npm run build` failed; refusing to deploy a stale or partial tree.")
+        sys.exit(result.returncode)
 
 
-def build_zip(build_path: Path, skip_sizes=None) -> bytes:
-    """Zip the contents of build_path into an in-memory archive."""
+def build_zip(build_path: Path) -> bytes:
+    """Zip every file under build_path into an in-memory archive (no size-skip)."""
     buf = io.BytesIO()
+    count = 0
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(build_path.rglob("*")):
             if file.is_dir():
                 continue
             rel = file.relative_to(build_path)
-            # Skip common junk
             parts = rel.parts
             if any(p in (".git", "node_modules", "__pycache__") for p in parts):
                 continue
             rel_s = str(rel).replace("\\", "/")
-            local_size = file.stat().st_size
-            if (skip_sizes or {}).get(rel_s) == local_size:
-                print(f"  = {rel} ({local_size} bytes, unchanged)")
-                continue
             zf.write(file, rel_s)
+            count += 1
             print(f"  + {rel}")
+    print(f"Archived {count} file(s) for a full deploy")
     return buf.getvalue()
 
 
 def deploy_bundle(build_path: Path) -> bool:
-    """Zip the build and upload it as a single bundle."""
+    """Zip the build and upload it as a single full bundle."""
     target_folder = DEPLOY_FOLDER or PROJECT_NAME
     url = f"{CONTABO_BASE_URL}/api/deploy/{PROJECT_NAME}/bundle"
     headers = {}
     if DEPLOY_TOKEN:
         headers["X-Deploy-Token"] = DEPLOY_TOKEN
 
-    print("Building zip archive...")
-    target_folder_for_sizes = globals().get("DEPLOY_FOLDER") or globals().get("TARGET_FOLDER") or PROJECT_NAME
-    if "target_folder" in locals() and target_folder:
-        target_folder_for_sizes = target_folder
-    target_site_for_sizes = globals().get("DEPLOY_TARGET", "test")
-    print("Checking remote file sizes...")
-    skip_sizes = fetch_remote_sizes(target_folder_for_sizes, target_site_for_sizes)
-    zip_bytes = build_zip(build_path, skip_sizes)
+    print("Building zip archive of the complete export...")
+    zip_bytes = build_zip(build_path)
     print(f"Archive size: {len(zip_bytes) / 1024:.1f} KB\n")
 
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as _zf:
         if not _zf.namelist():
-            print("All files identical in size on the target; nothing to upload.")
-            return True
+            print("ERROR: Build zip is empty; refusing to deploy.")
+            return False
 
-    print("Uploading bundle...")
+    print(f"Uploading full bundle (target_folder={target_folder}, target_site={DEPLOY_TARGET})...")
     try:
         response = requests.post(
             url,
             files={"bundle": ("build.zip", zip_bytes, "application/zip")},
-            data={"target_folder": target_folder},
+            data={
+                "target_folder": target_folder,
+                "target_site": DEPLOY_TARGET,
+                "full": "1",
+            },
             headers=headers,
             timeout=300,
         )
@@ -134,18 +117,36 @@ def deploy_bundle(build_path: Path) -> bool:
             for f in data["failed"]:
                 print(f"    \u2717 {f['path']}: {f['error']}")
         return not data.get("failed")
-    else:
-        print(f"  \u2717 {response.status_code}: {response.text[:400]}")
-        return False
+    print(f"  \u2717 {response.status_code}: {response.text[:400]}")
+    return False
 
 
-def main():
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Rebuild and fully deploy the static export.")
+    parser.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Do not run `npm run build`; upload the existing out/ directory.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if not DEPLOY_TOKEN:
+        print("ERROR: Set DEPLOY_TOKEN in your environment before running deploy.py")
+        sys.exit(1)
     print(f"\n=== Deploying '{PROJECT_NAME}' via Contabo -> storage.1ink.us ===\n")
+
+    if not args.skip_build:
+        run_full_rebuild()
+    else:
+        print("Skipping rebuild (--skip-build); using existing out/ contents.")
 
     build_path = Path(BUILD_DIR)
     if not build_path.exists() or not build_path.is_dir():
         print(f"ERROR: Build directory '{BUILD_DIR}/' does not exist.")
-        print("Please run your build command first (e.g. `npm run build`).")
+        print("Please run `npm run build` first, or omit --skip-build.")
         sys.exit(1)
 
     try:
@@ -155,7 +156,7 @@ def main():
     except Exception:
         print("Warning: Could not contact storage.noahcohn.com (continuing anyway).")
 
-    print(f"\nUploading bundle from {BUILD_DIR}/ ...\n")
+    print(f"\nUploading full bundle from {BUILD_DIR}/ ...\n")
 
     success = deploy_bundle(build_path)
 

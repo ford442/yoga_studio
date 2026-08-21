@@ -134,7 +134,7 @@ fn humanFigureLotus(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32
     let nadiD = abs(p.x) - 0.0035;
     var nadiColor = vec3<f32>(0.9, 0.95, 1.0);
     if (u.chakraFocus >= 0.0) {
-        nadiColor = mix(nadiColor, CHAKRA[u32(clamp(u.chakraFocus, 0.0, 6.0))], 0.45);
+        nadiColor = mix(nadiColor, CHAKRA[i32(clamp(u.chakraFocus, 0.0, 6.0))], 0.45);
     }
     col += exp(-abs(nadiD) * 65.0) * nadiColor * 0.22 * (0.6 + expand * 0.4);
 

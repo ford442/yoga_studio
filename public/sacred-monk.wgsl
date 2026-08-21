@@ -69,7 +69,7 @@ fn chakraFocusTint() -> vec3<f32> {
     if (u.chakraFocus < 0.0) {
         return vec3<f32>(1.0);
     }
-    let idx = u32(clamp(u.chakraFocus, 0.0, 6.0));
+    let idx = i32(clamp(u.chakraFocus, 0.0, 6.0));
     return CHAKRA[idx];
 }
 
@@ -78,12 +78,12 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let ringCount = i32(clamp(3.0 + density * 4.0, 3.0, 9.0));
     let dotCountBase = 8.0 + density * 12.0;
-    for (var i = 0; i < ringCount; i++) {
+    for (var i = 0; i < ringCount; i = i + 1) {
         let fi = f32(i);
         let rr = 0.06 + fi * 0.05 * (1.0 + density * 0.15);
         let band = exp(-abs(r - rr) * 40.0);
         let dots = i32(clamp(dotCountBase + fi * 4.0, 4.0, 36.0));
-        for (var d = 0; d < dots; d++) {
+        for (var d = 0; d < dots; d = d + 1) {
             let fd = f32(d);
             let ang = fd * TAU / f32(dots) + t * 0.15 * (1.0 + fi * 0.25);
             let p = vec2<f32>(cos(ang), sin(ang)) * rr;
@@ -99,7 +99,7 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
 fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let n = clamp(count + i32(density * 18.0), 6, 48);
-    for (var i = 0; i < n; i++) {
+    for (var i = 0; i < n; i = i + 1) {
         let fi = f32(i);
         let r = 0.015 + sqrt(fi) * 0.014 * density;
         let a = fi * GOLDEN_ANGLE + t * 0.25;
@@ -130,7 +130,7 @@ fn mandala(uv: vec2<f32>, t: f32, breath: f32) -> vec3<f32> {
         col += abs(sin(a * (9.0 + density * 6.0) - t * 1.6 * (1.0 + inter))) * 0.07 * vec3<f32>(1.0, 0.8, 0.5);
         // nested rotating yantra triangles
         let triCount = i32(clamp(3.0 + density * 4.0, 3.0, 10.0));
-        for (var i = 0; i < triCount; i++) {
+        for (var i = 0; i < triCount; i = i + 1) {
             let fi = f32(i);
             let sector = TAU / 3.0;
             let sa = pmod(a + t * 0.1 * (1.0 + inter) * (fi + 1.0), sector) - sector * 0.5;
@@ -155,7 +155,7 @@ fn cosmicBackground(uv: vec2<f32>, t: f32) -> vec3<f32> {
 fn volumetricShafts(uv: vec2<f32>, t: f32, breath: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let angle = atan2(uv.y, uv.x);
-    for (var i = 0; i < 5; i++) {
+    for (var i = 0; i < 5; i = i + 1) {
         let fi = f32(i);
         let shaft = pow(max(0.0, cos(angle - t * 0.12 + fi * 1.256) * 3.0), 12.0);
         let fade = exp(-length(uv) * (2.8 + fi * 0.3));
@@ -166,7 +166,7 @@ fn volumetricShafts(uv: vec2<f32>, t: f32, breath: f32) -> vec3<f32> {
 
 fn particles(uv: vec2<f32>, t: f32, breath: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
-    for (var i = 0; i < 9; i++) {
+    for (var i = 0; i < 9; i = i + 1) {
         let fi = f32(i);
         let y = fract(uv.y * 1.75 + t * (0.35 + fi * 0.06) + fi);
         let x = uv.x + sin(t * 0.45 + fi) * 0.28 * (1.0 - y * y);
@@ -508,7 +508,7 @@ fn figureDetailsMonk(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f3
         let nadiD = abs(p.x) - 0.012;
         var nadiColor = vec3<f32>(0.9, 0.95, 1.0);
         if (u.chakraFocus >= 0.0) {
-            nadiColor = mix(nadiColor, CHAKRA[u32(clamp(u.chakraFocus, 0.0, 6.0))], 0.45);
+            nadiColor = mix(nadiColor, CHAKRA[i32(clamp(u.chakraFocus, 0.0, 6.0))], 0.45);
         } else if (u.chakraPhase < 0.5) {
             nadiColor = mix(nadiColor, vec3<f32>(1.0, 0.85, 0.4), u.phaseProgress * 0.30);
         } else if (u.chakraPhase > 1.5 && u.chakraPhase < 2.5) {
