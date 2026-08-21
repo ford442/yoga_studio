@@ -96,7 +96,7 @@ fn emanationRays(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let r = length(uv);
 
     // Wide, soft spiritual rays emanating from center
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 6; i = i + 1) {
         let fi = f32(i);
         let ray = pow(max(0.0, cos(a - t * 0.025 + fi * 1.047198)), 10.0);
         let fade = exp(-r * (1.6 + fi * 0.25));
@@ -142,7 +142,7 @@ fn lightShafts(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let a = atan2(uv.y, uv.x);
     let r = length(uv);
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         let fi = f32(i);
         let beam = pow(max(0.0, cos(a - t * 0.06 + fi * 2.094395)), 20.0);
         let fade = exp(-r * (2.4 + fi * 0.4));

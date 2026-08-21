@@ -86,7 +86,7 @@ fn emanationRays(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let a = atan2(uv.y, uv.x);
     let r = length(uv);
 
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 6; i = i + 1) {
         let fi = f32(i);
         let ray = pow(max(0.0, cos(a - t * 0.025 + fi * PI / 3.0)), 10.0);
         let fade = exp(-r * (1.6 + fi * 0.25));
@@ -122,7 +122,7 @@ fn lightShafts(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let a = atan2(uv.y, uv.x);
     let r = length(uv);
 
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         let fi = f32(i);
         let beam = pow(max(0.0, cos(a - t * 0.06 + fi * TAU / 3.0)), 20.0);
         let fade = exp(-r * (2.4 + fi * 0.4));
@@ -149,7 +149,7 @@ fn godRays(uv: vec2<f32>, t: f32, intensity: f32, expand: f32) -> vec3<f32> {
         phaseScale = 0.0;
     }
 
-    for (var i = 0; i < steps; i++) {
+    for (var i = 0; i < steps; i = i + 1) {
         let s = (f32(i) + 0.5) / f32(steps);
         let sp = uv - dir * s * 0.9;
         let sa = atan2(sp.y, sp.x);
@@ -200,7 +200,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         col += triGlow * vec3<f32>(1.0, 0.85, 0.25) * 0.4;
 
         let ringCount = i32(clamp(select(2.0, 2.0 + density * 3.0, isHighQuality()), 2.0, 7.0));
-        for (var i = 0; i < ringCount; i++) {
+        for (var i = 0; i < ringCount; i = i + 1) {
             let fi = f32(i);
             let rad = 0.20 + fi * 0.08 + breathe * 0.3;
             let circleD = abs(length(uv) - rad) - 0.012;
@@ -212,7 +212,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
 
     } else if (isYantra) {
         let layerCount = i32(clamp(select(4.0 + density * 3.0, 5.0 + density * 5.0, isHighQuality()), 4.0, 12.0));
-        for (var i = 0; i < layerCount; i++) {
+        for (var i = 0; i < layerCount; i = i + 1) {
             let fi = f32(i);
             let layerScale = 0.12 + fi * 0.055 / (1.0 + density * 0.1);
             let triDir = select(-1.0, 1.0, (i % 2) == 0);
@@ -226,7 +226,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         }
 
         let circleCount = i32(clamp(select(2.0 + density * 2.0, 3.0 + density * 3.0, isHighQuality()), 2.0, 8.0));
-        for (var i = 0; i < circleCount; i++) {
+        for (var i = 0; i < circleCount; i = i + 1) {
             let fi = f32(i);
             let cR = 0.08 + fi * 0.075;
             let cD = abs(sdCircle(uv, cR * (1.0 + breathe * 0.3))) - 0.004;
@@ -246,7 +246,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         }
 
         let tipCount = i32(clamp(select(2.0 + density * 2.0, 3.0 + density * 3.0, isHighQuality()), 2.0, 8.0));
-        for (var i = 0; i < tipCount; i++) {
+        for (var i = 0; i < tipCount; i = i + 1) {
             let fi = f32(i);
             let tipUV = kalei(uv, 3.0);
             let tipRot = t * 0.05 * (1.0 + u.interference) + fi * 0.4;
@@ -269,7 +269,7 @@ fn sacredGeometryRings(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<
         col += centerGlow * vec3<f32>(1.0, 0.95, 0.8) * 0.55;
 
         let seedCount = i32(clamp(select(12.0 + density * 14.0, 21.0 + density * 30.0, isHighQuality()), 12.0, 60.0));
-        for (var i = 0; i < seedCount; i++) {
+        for (var i = 0; i < seedCount; i = i + 1) {
             let fi = f32(i);
             let r = 0.04 + sqrt(fi) * 0.055 / (1.0 + density * 0.05);
             let a = fi * GOLDEN_ANGLE + t * 0.15 * (1.0 + u.interference * 0.5);
@@ -306,7 +306,7 @@ fn pranaParticles(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> 
     let flowSpeed = 0.25 + 0.15 * u.intensity;
     let particleCount = select(16.0, 32.0, isHighQuality());
 
-    for (var i: f32 = 0.0; i < particleCount; i += 1.0) {
+    for (var i: f32 = 0.0; i < particleCount; i = i + 1.0) {
         let seed = i * 13.37;
         let a = i * TAU / particleCount + t * flowSpeed + hash21(vec2<f32>(seed, 0.0));
         let r = 0.15 + fract(seed + t * 0.3) * 0.6;

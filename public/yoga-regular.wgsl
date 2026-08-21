@@ -28,8 +28,8 @@ struct Uniforms {
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const PI  = 3.14159265359;
-const TAU = 6.28318530718;
+const PI: f32  = 3.14159265359;
+const TAU: f32 = 6.28318530718;
 
 const CHAKRA_COLORS: array<vec3<f32>,7> = array<vec3<f32>,7>(
   vec3<f32>(0.93,0.27,0.27), vec3<f32>(0.98,0.45,0.09), vec3<f32>(0.92,0.72,0.03),
@@ -45,8 +45,8 @@ const HOLD2_COLOR  = vec3<f32>(0.7, 0.8, 0.7);
 // ============================================================================
 // SACRED GEOMETRY CONSTANTS
 // ============================================================================
-const HEX_COS = 0.866025404;
-const HEX_TAN = 0.577350269;
+const HEX_COS: f32 = 0.866025404;
+const HEX_TAN: f32 = 0.577350269;
 
 // ============================================================================
 // MATH HELPERS
@@ -54,6 +54,10 @@ const HEX_TAN = 0.577350269;
 fn rot2(a: f32) -> mat2x2<f32> {
   let c = cos(a); let s = sin(a);
   return mat2x2<f32>(c, s, -s, c);
+}
+
+fn pmod1(a: f32, b: f32) -> f32 {
+  return a - floor(a / b) * b;
 }
 
 fn sdPill(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, r: f32) -> f32 {
@@ -98,12 +102,12 @@ fn getBreathScale() -> vec2<f32> {
 // ============================================================================
 fn map(p_in: vec3<f32>) -> f32 {
   var p = p_in;
-  if length(p) > 3.5 { return length(p) - 3.0; } // early out
+  if (length(p) > 3.5) { return length(p) - 3.0; } // early out
 
   let armAngle = getArmAngle();
   let bs = getBreathScale();
 
-  if p.y > 0.0 { p.x *= bs.x; p.z *= bs.y; }
+  if (p.y > 0.0) { p.x *= bs.x; p.z *= bs.y; }
 
   let head = length(p - vec3<f32>(0.0,2.2,0.0)) - 0.35;
   let torso = sdPill(p, vec3<f32>(0.0,0.5,0.0), vec3<f32>(0.0,1.8,0.0), 0.22);
@@ -178,10 +182,10 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
     
     // `active` is a reserved WGSL keyword — use isActive instead.
     var isActive: f32 = 0.0;
-    if phaseU == 0u && (i == 3 || i == 4) { isActive = 1.0; }
-    if phaseU == 1u && i == 2 { isActive = 1.0; }
-    if phaseU == 2u && i == 0 { isActive = 1.0; }
-    if phaseU == 3u && i == 6 { isActive = 1.0; }
+    if (phaseU == 0u && (i == 3 || i == 4)) { isActive = 1.0; }
+    if (phaseU == 1u && i == 2) { isActive = 1.0; }
+    if (phaseU == 2u && i == 0) { isActive = 1.0; }
+    if (phaseU == 3u && i == 6) { isActive = 1.0; }
     
     let pulse = 0.8 + 0.2 * sin(t * 3.0 + fi * 0.8);
     let size = 0.03 + 0.015 * waveGlow + 0.01 * isActive;
@@ -189,7 +193,7 @@ fn chakras(uv: vec2<f32>) -> vec3<f32> {
     
     col += ccol * glow * intensity;
     
-    if phaseU == 0u && uv.y > y && uv.y < y + 0.3 {
+    if (phaseU == 0u && uv.y > y && uv.y < y + 0.3) {
       let flow = exp(-abs(uv.x) * 20.0) * progress * (1.0 - (uv.y - y) / 0.3);
       col += ccol * flow * 0.3 * intensity;
     }
@@ -266,7 +270,7 @@ fn rings(uv_in: vec2<f32>) -> vec3<f32> {
   let e4 = ringExpansion(3);
   col += vec3<f32>(0.8, 0.6, 0.4) * triRing(uv * rot2(-t * 0.3), 0.3 + e4 * 0.6) * 0.4;
   
-  if u32(u.chakraPhase) == 1u || u32(u.chakraPhase) == 3u {
+  if (u32(u.chakraPhase) == 1u || u32(u.chakraPhase) == 3u) {
     let pulse = 0.15 + 0.05 * sin(u.time * 3.0) * u.intensity;
     let micro = sin(u.time * 6.0) * 0.01 * u.intensity;
     col += vec3<f32>(1.0, 0.9, 0.7) * ring(uv, pulse + micro, 0.008) * 0.8;
@@ -379,12 +383,12 @@ fn starPattern(uv_in: vec2<f32>, time: f32) -> f32 {
   
   uv = toLogPolar(uv * 0.01) * 2.5;
   uv.x = uv.x + (-0.2 * time);
-  uv = vec2<f32>(uv.x % 1.0 - 0.5, uv.y % (HEX_COS * 2.0) - HEX_COS);
+  uv = vec2<f32>(pmod1(uv.x, 1.0) - 0.5, pmod1(uv.y, HEX_COS * 2.0) - HEX_COS);
   
   var id: f32 = 0.0;
   let reps: f32 = 5.0;
   let t: f32 = 0.07 * (time + 6.0);
-  let modid: f32 = (floor(0.1 * length(uv) - t) % reps + 3.0) * 2.0;
+  let modid: f32 = (pmod1(floor(0.1 * length(uv) - t), reps) + 3.0) * 2.0;
   let modt: f32 = pow(smoothstep(0.0, 0.3, abs(fract(0.1 * length(uvb) - t) - 0.5)), 500.0);
   let alpha: f32 = mix(6.0, 18.0, modt);
   
@@ -754,7 +758,7 @@ fn trace(ro: vec3<f32>, rd: vec3<f32>) -> vec4<f32> {
   for(var i: i32 = 0; i < maxSteps; i = i + 1) {
     let p = ro + rd * t;
     let d = map(p);
-    if d < 0.005 || t > 15.0 { break; }
+    if (d < 0.005 || t > 15.0) { break; }
     t += d * select(0.9, 0.5, d < 0.5);
   }
   return vec4<f32>(ro + rd * t, t);
@@ -771,7 +775,7 @@ fn dNormal(p: vec3<f32>) -> vec3<f32> {
 
 fn shade(ro: vec3<f32>, rd: vec3<f32>) -> vec3<f32> {
   let hit = trace(ro, rd);
-  if hit.w > 19.0 { return vec3<f32>(0.0); }
+  if (hit.w > 19.0) { return vec3<f32>(0.0); }
   
   let n = dNormal(hit.xyz);
   let l = normalize(vec3<f32>(0.5, 0.8, 0.3));

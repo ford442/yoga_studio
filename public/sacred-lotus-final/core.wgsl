@@ -121,7 +121,7 @@ fn chakraFocusTint() -> vec3<f32> {
     if (u.chakraFocus < 0.0) {
         return vec3<f32>(0.58, 0.48, 0.88);
     }
-    let idx = u32(clamp(u.chakraFocus, 0.0, 6.0));
+    let idx = i32(clamp(u.chakraFocus, 0.0, 6.0));
     return CHAKRA[idx];
 }
 
@@ -150,7 +150,7 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
     var sum = 0.0;
     var amp = 0.5;
     var freq = 1.0;
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         let fi = f32(i);
         sum += amp * noise2(p * freq + t * 0.2 * fi);
         amp *= 0.5;
@@ -169,12 +169,12 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let ringCount = i32(clamp(3.0 + density * 4.0, 3.0, 9.0));
     let dotCountBase = 8.0 + density * 12.0;
-    for (var i = 0; i < ringCount; i++) {
+    for (var i = 0; i < ringCount; i = i + 1) {
         let fi = f32(i);
         let rr = 0.05 + fi * 0.045 * (1.0 + density * 0.15);
         let band = exp(-abs(r - rr) * 40.0);
         let dots = i32(clamp(dotCountBase + fi * 4.0, 4.0, 36.0));
-        for (var d = 0; d < dots; d++) {
+        for (var d = 0; d < dots; d = d + 1) {
             let fd = f32(d);
             let ang = fd * TAU / f32(dots) + t * 0.15 * (1.0 + fi * 0.25);
             let p = vec2<f32>(cos(ang), sin(ang)) * rr;
@@ -190,7 +190,7 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
 fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let count = i32(clamp(n * density, 3.0, 20.0));
-    for (var i = 0; i < count; i++) {
+    for (var i = 0; i < count; i = i + 1) {
         let fi = f32(i);
         let a = fi * TAU / f32(count) + t * 0.25;
         let r = radius * (0.85 + 0.15 * sin(t + fi));
@@ -207,7 +207,7 @@ fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f
 fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let n = clamp(count + i32(density * 18.0), 6, 48);
-    for (var i = 0; i < n; i++) {
+    for (var i = 0; i < n; i = i + 1) {
         let fi = f32(i);
         let r = 0.015 + sqrt(fi) * 0.014 * density;
         let a = fi * GOLDEN_ANGLE + t * 0.25;

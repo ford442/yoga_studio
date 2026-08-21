@@ -125,7 +125,7 @@ fn fbm2(p: vec2<f32>, t: f32) -> f32 {
     var amp = 0.5;
     var freq = 1.0;
     let octaves = select(2, 3, isHighQuality());
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 3; i = i + 1) {
         if (i >= octaves) { break; }
         let fi = f32(i);
         sum += amp * noise2(p * freq + t * 0.2 * fi);
@@ -144,7 +144,7 @@ fn fbmWarp(p: vec2<f32>, t: f32, octaves: i32) -> f32 {
     var sum = 0.0;
     var amp = 0.5;
     var freq = 1.0;
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 6; i = i + 1) {
         if (i >= octaves) { break; }
         let warped = (p + q * 0.8) * freq + vec2<f32>(t * 0.12, -t * 0.09);
         sum += amp * noise2(warped);
@@ -200,7 +200,7 @@ fn deriveBreathExpand() -> f32 {
 }
 
 fn chakraColor(index: f32) -> vec3<f32> {
-    let idx = u32(clamp(index, 0.0, 6.0));
+    let idx = i32(clamp(index, 0.0, 6.0));
     return CHAKRA[idx];
 }
 
@@ -247,12 +247,12 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
     let qualityScale = select(0.55, 1.0, isHighQuality());
     let ringCount = i32(clamp(3.0 + density * 4.0 * qualityScale, 3.0, 9.0));
     let dotCountBase = 6.0 + density * 12.0 * qualityScale;
-    for (var i = 0; i < ringCount; i++) {
+    for (var i = 0; i < ringCount; i = i + 1) {
         let fi = f32(i);
         let rr = 0.08 + fi * 0.055 * (1.0 + density * 0.15);
         let band = exp(-abs(r - rr) * 35.0);
         let dots = i32(clamp(dotCountBase + fi * 4.0, 4.0, 36.0));
-        for (var d = 0; d < dots; d++) {
+        for (var d = 0; d < dots; d = d + 1) {
             let fd = f32(d);
             let ang = fd * TAU / f32(dots) + t * 0.12 * (1.0 + fi * 0.2);
             let p = vec2<f32>(cos(ang), sin(ang)) * rr;
@@ -268,7 +268,7 @@ fn dotLattice(uv: vec2<f32>, t: f32, density: f32) -> vec3<f32> {
 fn vesicaPiscisChain(uv: vec2<f32>, center: vec2<f32>, n: f32, radius: f32, t: f32, density: f32) -> vec3<f32> {
     var col = vec3<f32>(0.0);
     let count = i32(clamp(n * density, 3.0, 20.0));
-    for (var i = 0; i < count; i++) {
+    for (var i = 0; i < count; i = i + 1) {
         let fi = f32(i);
         let a = fi * TAU / f32(count) + t * 0.2;
         let r = radius * (0.85 + 0.15 * sin(t + fi));
@@ -286,7 +286,7 @@ fn goldenSeedField(uv: vec2<f32>, center: vec2<f32>, count: i32, t: f32, density
     var col = vec3<f32>(0.0);
     let qualityScale = select(0.55, 1.0, isHighQuality());
     let n = clamp(count + i32(density * 18.0 * qualityScale), 6, 48);
-    for (var i = 0; i < n; i++) {
+    for (var i = 0; i < n; i = i + 1) {
         let fi = f32(i);
         let r = 0.02 + sqrt(fi) * 0.018 * density;
         let a = fi * GOLDEN_ANGLE + t * 0.2;

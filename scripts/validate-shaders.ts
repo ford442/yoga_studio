@@ -8,8 +8,18 @@
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
+import { TECHNIQUES } from '../app/data/techniques.ts';
 import { UNIFORM_FIELDS, UNIFORM_BUFFER_SIZE } from '../app/lib/shaderContract.ts';
 import { parseWgslModule } from '../app/lib/wgslModules.ts';
+import {
+  findDuplicateDeclarations,
+  findEntryPointNames,
+  findFloatModulo,
+  findIncrementOperators,
+  findLeftoverIncludes,
+  findU32ArrayIndexes,
+  findUnparenthesizedIf,
+} from '../app/lib/wgslValidate.ts';
 
 const ROOT = process.cwd();
 
@@ -141,6 +151,34 @@ function validateShader(filePath: string): string[] {
     if (normalizeType(actual.type) !== normalizeType(expected.type)) {
       errors.push(
         `field[${i}] '${expected.name}' type mismatch: shader '${actual.type}' vs contract '${expected.type}'`
+      );
+    }
+  }
+
+  errors.push(
+    ...findLeftoverIncludes(source),
+    ...findDuplicateDeclarations(source),
+    ...findIncrementOperators(source),
+    ...findFloatModulo(source),
+    ...findU32ArrayIndexes(source),
+    ...findUnparenthesizedIf(source),
+  );
+
+  const entries = findEntryPointNames(source);
+  if (entries.vertex.length === 0) errors.push('missing @vertex entry point');
+  if (entries.fragment.length === 0) errors.push('missing @fragment entry point');
+
+  const relativePath = filePath.replace(/^public\//, '');
+  for (const technique of TECHNIQUES) {
+    if (technique.shaderPath !== relativePath) continue;
+    if (!entries.vertex.includes(technique.vertexEntry)) {
+      errors.push(
+        `technique '${technique.id}' expects vertex '${technique.vertexEntry}' (found: ${entries.vertex.join(', ') || 'none'})`,
+      );
+    }
+    if (!entries.fragment.includes(technique.fragmentEntry)) {
+      errors.push(
+        `technique '${technique.id}' expects fragment '${technique.fragmentEntry}' (found: ${entries.fragment.join(', ') || 'none'})`,
       );
     }
   }
