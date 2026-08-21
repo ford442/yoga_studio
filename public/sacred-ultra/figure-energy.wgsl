@@ -436,7 +436,7 @@ fn chakraColumn(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
     let intensityMult = 1.0 + 0.4 * u.intensity;
     let globalPulse   = 1.0 + 0.1 * sin(t * 2.0) * u.intensity;
 
-    for (var i: u32 = 0u; i < 7u; i++) {
+    for (var i: i32 = 0; i < 7; i = i + 1) {
         let fIdx = f32(i);
         let pos  = vec2<f32>(0.0, positions[i]);
         let dist = length(p - pos);
@@ -651,7 +651,7 @@ fn figureFramingGeometry(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec
         col += goldenSeedField(uv, headUV, 12, t, density) * 0.5;
     } else if (isYantra) {
         let tipCount = i32(clamp(3.0 + density * 3.0, 3.0, 8.0));
-        for (var i = 0; i < tipCount; i++) {
+        for (var i = 0; i < tipCount; i = i + 1) {
             let fi = f32(i);
             let tipUV = kalei(uv - heartUV, 3.0);
             let tipRot = t * 0.05 * (1.0 + u.interference) + fi * 0.4;

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/generate-sw.mjs",
+    "prebuild": "npm run validate:shaders && node scripts/generate-sw.mjs",
+    "deploy": "python3 deploy.py",
     "build": "next build",
     "start": "npx serve@latest out -l 3000",
     "preview": "npx serve@latest out -l 3000",
