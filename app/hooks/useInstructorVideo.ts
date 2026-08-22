@@ -10,6 +10,7 @@ import {
   type InstructorLayout,
   type InstructorVideoSettings,
 } from '../types/instructorVideo';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 const STORAGE_KEY = 'sacred-breath-instructor';
 
@@ -37,7 +38,7 @@ const parseSettings = (raw: unknown): InstructorVideoSettings => {
 };
 
 const readStoredSettings = (): InstructorVideoSettings => {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = safeGetItem(STORAGE_KEY);
   if (!raw) return DEFAULT_INSTRUCTOR_SETTINGS;
   try {
     return parseSettings(JSON.parse(raw));
@@ -99,7 +100,7 @@ export function useInstructorVideo() {
     (patch: Partial<InstructorVideoSettings>) => {
       setSettingsState((prev) => {
         const next = { ...prev, ...patch };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        safeSetItem(STORAGE_KEY, JSON.stringify(next));
         return next;
       });
     },
@@ -109,7 +110,7 @@ export function useInstructorVideo() {
   const toggleEnabled = useCallback(() => {
     setSettingsState((prev) => {
       const next = { ...prev, enabled: !prev.enabled };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      safeSetItem(STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   }, []);

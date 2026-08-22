@@ -4,13 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import type { EnvironmentId, EnvironmentOverride } from '../types/environment';
 import { DEFAULT_ENVIRONMENT_ID, isEnvironmentId } from '../data/environments';
 
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
+
 const STORAGE_KEY = 'sacred-breath-environment';
 
 const isEnvironmentOverride = (value: unknown): value is EnvironmentOverride =>
   value === 'auto' || isEnvironmentId(value);
 
 const readStoredOverride = (): EnvironmentOverride => {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = safeGetItem(STORAGE_KEY);
   if (!raw) return 'auto';
   try {
     const parsed = JSON.parse(raw);
@@ -31,7 +33,7 @@ export function useEnvironment(modeBackgroundId?: EnvironmentId) {
 
   const setOverride = useCallback((next: EnvironmentOverride) => {
     setOverrideState(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    safeSetItem(STORAGE_KEY, JSON.stringify(next));
   }, []);
 
   const activeId: EnvironmentId =

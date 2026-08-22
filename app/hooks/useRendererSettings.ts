@@ -9,6 +9,7 @@ import {
   type RendererSettings,
 } from '../types/renderer';
 import { parseGovernorTier } from '../renderer/frameGovernor';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 const isPerformanceMode = (v: unknown): v is PerformanceMode =>
   v === 'auto' || v === 'performance' || v === 'quality';
@@ -40,7 +41,7 @@ const parseSettings = (raw: unknown): RendererSettings => {
 
 const readStoredSettings = (): RendererSettings => {
   if (typeof window === 'undefined') return DEFAULT_RENDERER_SETTINGS;
-  const raw = localStorage.getItem(RENDERER_STORAGE_KEY);
+  const raw = safeGetItem(RENDERER_STORAGE_KEY);
   if (!raw) return DEFAULT_RENDERER_SETTINGS;
   try {
     return parseSettings(JSON.parse(raw));
@@ -113,15 +114,10 @@ export function useRendererSettings() {
     };
   }, []);
 
-  // Persist user-level settings whenever they change.
+  // Persist user-level settings whenever they change (best-effort).
   useEffect(() => {
     if (!hasLoaded || typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(RENDERER_STORAGE_KEY, JSON.stringify(settings));
-    } catch (error) {
-      // QuotaExceeded (or private-mode Storage) must not crash the app load path.
-      console.warn('Unable to persist sacred-breath renderer settings to localStorage.', error);
-    }
+    safeSetItem(RENDERER_STORAGE_KEY, JSON.stringify(settings));
   }, [hasLoaded, settings]);
 
   const updateSettings = useCallback((patch: Partial<RendererSettings>) => {

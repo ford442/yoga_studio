@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ONBOARDING_STORAGE_KEY } from '../data/onboarding';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 export interface OnboardingState {
   skipForever: boolean;
@@ -30,7 +31,7 @@ const parseState = (raw: unknown): OnboardingState => {
 
 const readStoredState = (): OnboardingState => {
   if (typeof window === 'undefined') return DEFAULT_STATE;
-  const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+  const raw = safeGetItem(ONBOARDING_STORAGE_KEY);
   if (!raw) return DEFAULT_STATE;
   try {
     return parseState(JSON.parse(raw));
@@ -54,7 +55,7 @@ export function useOnboarding() {
     (partial: Partial<OnboardingState>) => {
       setState((prev) => {
         const next = { ...prev, ...partial };
-        localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(next));
+        safeSetItem(ONBOARDING_STORAGE_KEY, JSON.stringify(next));
         return next;
       });
     },

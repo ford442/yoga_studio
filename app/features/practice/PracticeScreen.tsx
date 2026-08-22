@@ -54,7 +54,6 @@ export default function PracticeScreen() {
     settings: settingsUi,
   } = usePractice();
 
-  const hasEnvironment = environment.activeId !== 'none';
   const chakraPhase = CHAKRA_LABELS.indexOf(currentPhase);
 
   return (
@@ -88,7 +87,6 @@ export default function PracticeScreen() {
         chakraPhase={chakraPhase}
         phaseProgress={phaseProgress}
         selectedMode={practice.selectedMode}
-        hasEnvironment={hasEnvironment}
         effectivePerformanceMode={renderer.effectivePerformanceMode}
         reducedMotion={renderer.settings.reducedMotion || renderer.isPerformanceForced}
         pauseRendering={completion.showCompletion}
@@ -213,8 +211,6 @@ export default function PracticeScreen() {
         updateRendererSettings={renderer.updateSettings}
         effectivePerformanceMode={renderer.effectivePerformanceMode}
         isPerformanceForced={renderer.isPerformanceForced}
-        exportLedgerJson={history.exportLedgerJson}
-        importLedgerJson={history.importLedgerJson}
       />
 
       {renderer.settings.showDiagnostics && <RendererDiagnostics state={renderer.diagnostics} />}

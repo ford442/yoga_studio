@@ -10,6 +10,7 @@ import {
   type MergeResult,
   type SessionLogEntry,
 } from '../lib/sessionLedger';
+import { safeRemoveItem } from '../lib/safeStorage';
 
 /**
  * Practice-history persistence is disabled until the product is ready to retain
@@ -23,12 +24,8 @@ export const SESSION_LEDGER_PERSISTENCE_ENABLED = false;
 
 /** Drop any previously stored ledger/legacy stats so browsers stuck at quota can recover. */
 const clearStoredSessionHistory = (): void => {
-  try {
-    localStorage.removeItem(SESSION_LEDGER_STORAGE_KEY);
-    localStorage.removeItem(LEGACY_STATS_STORAGE_KEY);
-  } catch {
-    // ignore — Storage may be unavailable in private mode
-  }
+  safeRemoveItem(SESSION_LEDGER_STORAGE_KEY);
+  safeRemoveItem(LEGACY_STATS_STORAGE_KEY);
 };
 
 const EMPTY_IMPORT_RESULT = (envelope: ReturnType<typeof createEmptyLedger>): MergeResult => ({
@@ -78,3 +75,4 @@ export const useSessionStats = () => {
     replaceLedgerForRestore,
   };
 };
+

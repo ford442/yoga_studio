@@ -138,7 +138,6 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
     toggleFree,
     updateSettings,
     persistLastSession,
-    setVoiceEnabled: voiceGuidance.setVoiceEnabled,
     canUseInstructor: instructorVideo.canUseInstructor,
     enableInstructor: () => instructorVideo.updateSettings({ enabled: true }),
     dismissWelcome: onboardingState.dismissWelcome,

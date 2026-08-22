@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SettingsDrawer from '../SettingsDrawer';
 import { DEFAULT_MODE } from '../../../data/sessionModes';
@@ -20,35 +20,14 @@ const baseProps = {
   updateRendererSettings: vi.fn(),
   effectivePerformanceMode: 'auto' as const,
   isPerformanceForced: false,
-  exportLedgerJson: () => '{"version":1,"sessions":[]}',
-  importLedgerJson: vi.fn(() => ({
-    envelope: { version: 1 as const, sessions: [] },
-    imported: 3,
-    duplicates: 2,
-    conflicts: 1,
-    capDiscarded: 4,
-    baseline: 'conflict' as const,
-  })),
 };
 
-describe('SettingsDrawer history portability', () => {
-  it('shows detailed feedback after a validated import', async () => {
-    const file = new File(['{}'], 'history.json', { type: 'application/json' });
-    Object.defineProperty(file, 'text', { value: async () => '{}' });
+describe('SettingsDrawer', () => {
+  it('notes that practice history persistence is paused', () => {
     render(<SettingsDrawer {...baseProps} />);
     expect(screen.getByRole('dialog', { name: 'Customize Breath' })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Import practice history JSON'), { target: { files: [file] } });
-    await waitFor(() => expect(baseProps.importLedgerJson).toHaveBeenCalledWith('{}'));
-    expect(screen.getByRole('status').textContent).toContain('3 imported, 2 duplicates, 1 timestamp conflicts, 4 discarded');
-    expect(screen.getByRole('status').textContent).toContain('Baseline conflict');
-  });
-
-  it('reports rejection without replacing the UI state', async () => {
-    const reject = vi.fn(() => { throw new Error('Unsupported version'); });
-    const file = new File(['{}'], 'history.json', { type: 'application/json' });
-    Object.defineProperty(file, 'text', { value: async () => '{}' });
-    render(<SettingsDrawer {...baseProps} importLedgerJson={reject} />);
-    fireEvent.change(screen.getByLabelText('Import practice history JSON'), { target: { files: [file] } });
-    expect((await screen.findByRole('status')).textContent).toContain('Import rejected: Unsupported version');
+    expect(screen.getByText(/Session recording and history sync are paused/i)).toBeTruthy();
+    expect(screen.queryByLabelText('Import practice history JSON')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'EXPORT JSON' })).toBeNull();
   });
 });

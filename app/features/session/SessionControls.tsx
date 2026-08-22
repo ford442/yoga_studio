@@ -135,10 +135,16 @@ export default function SessionControls({
           </button>
           <button
             onClick={onToggleVoice}
-            className={`px-4 py-4 text-xl border rounded-3xl transition-all backdrop-blur-md [text-shadow:0_1px_6px_rgba(0,0,0,0.8)] ${voiceEnabled ? 'bg-black/20 border-white/30 hover:bg-black/30' : 'bg-black/10 border-white/10 opacity-40'}`}
+            aria-pressed={voiceEnabled}
+            aria-label={voiceEnabled ? 'Voice guidance on' : 'Voice guidance off'}
+            className={`px-3 py-4 text-[10px] tracking-widest border rounded-3xl transition-all backdrop-blur-md [text-shadow:0_1px_6px_rgba(0,0,0,0.8)] ${
+              voiceEnabled
+                ? 'bg-cyan-500/20 border-cyan-300/50 text-cyan-50 hover:bg-cyan-500/30'
+                : 'bg-black/20 border-white/25 text-white/80 hover:bg-black/30'
+            }`}
             title={voiceEnabled ? 'Voice guidance on' : 'Voice guidance off'}
           >
-            🗣️
+            {voiceEnabled ? 'VOICE ON' : 'VOICE OFF'}
           </button>
           <button
             onClick={onToggleSanskrit}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ActiveProgramProgress } from '../types/program';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '../lib/safeStorage';
 
 const STORAGE_KEY = 'sacred-breath-active-program';
 
@@ -25,7 +26,7 @@ const parseProgress = (raw: unknown): ActiveProgramProgress | null => {
 
 const readStoredProgress = (): ActiveProgramProgress | null => {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = safeGetItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     const progress = parseProgress(JSON.parse(raw) as unknown);
@@ -42,10 +43,10 @@ const readStoredProgress = (): ActiveProgramProgress | null => {
 const writeStoredProgress = (progress: ActiveProgramProgress | null): void => {
   if (typeof window === 'undefined') return;
   if (progress === null) {
-    localStorage.removeItem(STORAGE_KEY);
+    safeRemoveItem(STORAGE_KEY);
     return;
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  safeSetItem(STORAGE_KEY, JSON.stringify(progress));
 };
 
 export function useActiveProgram() {
