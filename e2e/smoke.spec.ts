@@ -302,7 +302,7 @@ test.describe('app loads and controls render', () => {
     expect(errors).toHaveLength(0);
   });
 
-  test('restores ledger stats and supports trends plus JSON portability', async ({ page }) => {
+  test('clears prior session ledger and does not restore practice history', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
       Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
@@ -310,7 +310,7 @@ test.describe('app loads and controls render', () => {
         value: () => null,
       });
       const date = new Date().toISOString().slice(0, 10);
-      if (!localStorage.getItem('sacred-breath-session-ledger')) localStorage.setItem('sacred-breath-session-ledger', JSON.stringify({
+      localStorage.setItem('sacred-breath-session-ledger', JSON.stringify({
         version: 1,
         legacyBaseline: { todayMinutes: 2, todayBreaths: 3, currentStreak: 4, lastPracticeDate: date },
         sessions: [{
@@ -328,13 +328,16 @@ test.describe('app loads and controls render', () => {
     const skipOnboarding = page.getByText('Skip onboarding');
     if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
 
+    // Persistence is disabled — seeded history must be wiped and stats stay at zero.
+    await expect.poll(async () =>
+      page.evaluate(() => localStorage.getItem('sacred-breath-session-ledger')),
+    ).toBeNull();
+
     const stats = page.getByRole('button', { name: 'Open practice trends' });
-    await expect(stats).toContainText('7');
-    await expect(stats).toContainText('15');
+    await expect(stats).toContainText('0');
     await stats.click();
     await expect(page.getByRole('dialog', { name: 'Practice trends' })).toBeVisible();
     await expect(page.locator('[data-date]')).toHaveCount(28);
-    await expect(page.getByText('Ujjayi', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Close practice trends' }).click();
 
     await page.getByRole('button', { name: 'Open settings' }).click();
@@ -342,29 +345,5 @@ test.describe('app loads and controls render', () => {
     await page.getByRole('button', { name: 'EXPORT JSON' }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^sacred-breath-history-\d{4}-\d{2}-\d{2}\.json$/);
-
-    const date = new Date().toISOString().slice(0, 10);
-    await page.getByLabel('Import practice history JSON').setInputFiles({
-      name: 'history.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({
-        version: 1,
-        sessions: [{
-          endedAt: `${date}T10:00:00.000Z`,
-          durationSec: 600,
-          breaths: 20,
-          modeId: 'classic-mandala',
-          techniqueId: 'classic-mandala',
-          settings: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
-        }],
-      })),
-    });
-    await expect(page.getByRole('status')).toContainText('1 imported');
-    await page.getByRole('button', { name: 'DONE' }).click();
-    await expect(stats).toContainText('17');
-    await expect(stats).toContainText('35');
-
-    await page.reload();
-    await expect(page.getByRole('button', { name: 'Open practice trends' })).toContainText('17');
   });
 });

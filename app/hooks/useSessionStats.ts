@@ -16,6 +16,13 @@ import {
   type SessionLogEntry,
 } from '../lib/sessionLedger';
 
+/**
+ * Practice-history persistence is disabled until the product is ready to retain
+ * sessions for users. Keep the in-memory API so UI can stay wired, but do not
+ * read or write the ledger — and clear any prior payload to free quota.
+ */
+export const SESSION_LEDGER_PERSISTENCE_ENABLED = false;
+
 const isQuotaExceededError = (error: unknown): boolean => {
   if (!(error instanceof DOMException)) return false;
   return (
@@ -24,6 +31,16 @@ const isQuotaExceededError = (error: unknown): boolean => {
     error.code === 22 ||
     error.code === 1014
   );
+};
+
+/** Drop any previously stored ledger/legacy stats so browsers stuck at quota can recover. */
+const clearStoredSessionHistory = (): void => {
+  try {
+    localStorage.removeItem(SESSION_LEDGER_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_STATS_STORAGE_KEY);
+  } catch {
+    // ignore — Storage may be unavailable in private mode
+  }
 };
 
 // Retries the write, aggressively dropping the oldest (tail) sessions on
@@ -81,6 +98,17 @@ export const useSessionStats = () => {
   const [hasLoadedStats, setHasLoadedStats] = useState(false);
 
   useEffect(() => {
+    // Always clear stale history keys first — oversized ledgers have crashed
+    // Edge/Chromium loads via QuotaExceededError on unrelated setItem calls.
+    clearStoredSessionHistory();
+
+    if (!SESSION_LEDGER_PERSISTENCE_ENABLED) {
+      ledgerRef.current = createEmptyLedger();
+      setLedger(createEmptyLedger());
+      setHasLoadedStats(true);
+      return;
+    }
+
     try {
       const loaded = readLedger();
       ledgerRef.current = loaded;
@@ -94,7 +122,7 @@ export const useSessionStats = () => {
   }, []);
 
   useEffect(() => {
-    if (!hasLoadedStats) return;
+    if (!SESSION_LEDGER_PERSISTENCE_ENABLED || !hasLoadedStats) return;
     const persisted = persistLedger(ledger);
     // Trimming happened to fit under quota; sync state so the UI matches
     // what is actually durable and future appends build on the right base.
@@ -105,6 +133,7 @@ export const useSessionStats = () => {
   }, [hasLoadedStats, ledger]);
 
   const recordSession = useCallback((entry: SessionLogEntry) => {
+    if (!SESSION_LEDGER_PERSISTENCE_ENABLED) return;
     const next = appendSession(ledgerRef.current, entry);
     ledgerRef.current = next;
     setLedger(next);
@@ -113,6 +142,16 @@ export const useSessionStats = () => {
   const importLedgerJson = useCallback((json: string): MergeResult => {
     // Parse and validate before setState so a bad file cannot mutate local data.
     const imported = parseLedgerJson(json);
+    if (!SESSION_LEDGER_PERSISTENCE_ENABLED) {
+      return {
+        envelope: ledgerRef.current,
+        imported: 0,
+        duplicates: 0,
+        conflicts: 0,
+        capDiscarded: 0,
+        baseline: 'none',
+      };
+    }
     const result = mergeLedgers(ledgerRef.current, imported);
     ledgerRef.current = result.envelope;
     setLedger(result.envelope);
@@ -120,6 +159,7 @@ export const useSessionStats = () => {
   }, []);
 
   const replaceLedgerForRestore = useCallback((value: unknown) => {
+    if (!SESSION_LEDGER_PERSISTENCE_ENABLED) return;
     const restored = validateLedger(value);
     ledgerRef.current = restored;
     setLedger(restored);
