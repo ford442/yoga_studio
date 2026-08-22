@@ -43,7 +43,7 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
     prevIdRef.current = environmentId;
 
     // Cross-fade state machine: fade out existing layers, fade in the new one.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setLayers((prev) => {
       const fading = prev.map((layer) => ({ ...layer, visible: false }));
       return [...fading, { id: environmentId, visible: false }];

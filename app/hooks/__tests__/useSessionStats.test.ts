@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStats } from '../useSessionStats';
 import { LEGACY_STATS_STORAGE_KEY, SESSION_LEDGER_STORAGE_KEY } from '../../lib/sessionLedger';
@@ -22,15 +22,15 @@ describe('useSessionStats', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('keeps an empty in-memory ledger and does not write session history', async () => {
+  it('keeps an empty in-memory ledger and does not write session history', () => {
     const { result } = renderHook(() => useSessionStats());
+    expect(result.current.hasLoadedStats).toBe(true);
     expect(result.current.stats.todayMinutes).toBe(0);
-    await waitFor(() => expect(result.current.hasLoadedStats).toBe(true));
     expect(localStorage.getItem(SESSION_LEDGER_STORAGE_KEY)).toBeNull();
     expect(result.current.ledger.sessions).toHaveLength(0);
   });
 
-  it('clears any prior session ledger blob on mount to free storage quota', async () => {
+  it('clears any prior session ledger blob on module load to free storage quota', async () => {
     localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify({
       version: 1,
       sessions: [record()],
@@ -42,26 +42,27 @@ describe('useSessionStats', () => {
       lastPracticeDate: '2026-07-29',
     }));
 
-    const { result } = renderHook(() => useSessionStats());
-    await waitFor(() => expect(result.current.hasLoadedStats).toBe(true));
+    // Re-import so the module-scope clear runs against the seeded keys.
+    vi.resetModules();
+    const { useSessionStats: useSessionStatsFresh } = await import('../useSessionStats');
+    const { result } = renderHook(() => useSessionStatsFresh());
+    expect(result.current.hasLoadedStats).toBe(true);
     expect(localStorage.getItem(SESSION_LEDGER_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_STATS_STORAGE_KEY)).toBeNull();
     expect(result.current.stats.todayMinutes).toBe(0);
     expect(result.current.ledger.sessions).toHaveLength(0);
   });
 
-  it('ignores recordSession while persistence is disabled', async () => {
+  it('ignores recordSession while persistence is disabled', () => {
     const { result } = renderHook(() => useSessionStats());
-    await waitFor(() => expect(result.current.hasLoadedStats).toBe(true));
     act(() => result.current.recordSession(record()));
     expect(result.current.stats.todayMinutes).toBe(0);
     expect(result.current.ledger.sessions).toHaveLength(0);
     expect(localStorage.getItem(SESSION_LEDGER_STORAGE_KEY)).toBeNull();
   });
 
-  it('validates imports without adopting history while persistence is disabled', async () => {
+  it('validates imports without adopting history while persistence is disabled', () => {
     const { result } = renderHook(() => useSessionStats());
-    await waitFor(() => expect(result.current.hasLoadedStats).toBe(true));
     const payload = JSON.stringify({ version: 1, sessions: [record()] });
     let feedback;
     act(() => { feedback = result.current.importLedgerJson(payload); });
@@ -70,9 +71,8 @@ describe('useSessionStats', () => {
     expect(localStorage.getItem(SESSION_LEDGER_STORAGE_KEY)).toBeNull();
   });
 
-  it('rejects malformed imports without mutating current history', async () => {
+  it('rejects malformed imports without mutating current history', () => {
     const { result } = renderHook(() => useSessionStats());
-    await waitFor(() => expect(result.current.hasLoadedStats).toBe(true));
     const before = result.current.exportLedgerJson();
     expect(() => result.current.importLedgerJson('{nope')).toThrow();
     expect(result.current.exportLedgerJson()).toBe(before);

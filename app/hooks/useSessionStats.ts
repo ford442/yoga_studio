@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   LEGACY_STATS_STORAGE_KEY,
   SESSION_LEDGER_STORAGE_KEY,
@@ -33,20 +33,12 @@ if (typeof window !== 'undefined') {
 }
 
 export const useSessionStats = () => {
-  const [ledger, setLedger] = useState<SessionLedgerEnvelope>(createEmptyLedger);
+  const [ledger] = useState<SessionLedgerEnvelope>(createEmptyLedger);
   const ledgerRef = useRef(ledger);
-  const [hasLoadedStats, setHasLoadedStats] = useState(false);
-
-  useEffect(() => {
-    clearPersistedSessionHistory();
-    const empty = createEmptyLedger();
-    ledgerRef.current = empty;
-    setLedger(empty);
-    setHasLoadedStats(true);
-  }, []);
 
   // Recording is disabled — keep the API but do not mutate history.
   const recordSession = useCallback((_entry: SessionLogEntry) => {
+    void _entry;
     // no-op: session recording is paused until storage UX is ready
   }, []);
 
@@ -63,9 +55,9 @@ export const useSessionStats = () => {
     };
   }, []);
 
-  const replaceLedgerForRestore = useCallback((_value: unknown) => {
+  const replaceLedgerForRestore = useCallback((value: unknown) => {
     // Keep empty while persistence is disabled; still validate to surface bad payloads.
-    validateLedger(_value);
+    validateLedger(value);
   }, []);
 
   const stats = useMemo(() => aggregateSessionStats(ledger), [ledger]);
@@ -77,7 +69,7 @@ export const useSessionStats = () => {
     ledger,
     trends,
     techniqueTotals,
-    hasLoadedStats,
+    hasLoadedStats: true,
     recordSession,
     exportLedgerJson: () => JSON.stringify(ledger, null, 2),
     importLedgerJson,
