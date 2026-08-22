@@ -78,7 +78,6 @@ const ParticleBurst: React.FC<ParticleBurstProps> = ({ phase, isRunning, color }
       color,
       particles: buildParticles(kind),
     };
-     
     setBursts((prev) => [...prev, burst]);
 
     const timeout = window.setTimeout(() => {

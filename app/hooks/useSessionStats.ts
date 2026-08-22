@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   LEGACY_STATS_STORAGE_KEY,
   SESSION_LEDGER_STORAGE_KEY,
@@ -7,62 +7,61 @@ import {
   getRollingDailyTrends,
   getTechniqueTotals,
   parseLedgerJson,
-  validateLedger,
   type MergeResult,
-  type SessionLedgerEnvelope,
   type SessionLogEntry,
 } from '../lib/sessionLedger';
 import { safeRemoveItem } from '../lib/safeStorage';
 
 /**
- * Session history persistence is intentionally disabled until the product is
- * ready to store practice data for users. We still keep an empty in-memory
- * ledger so trends/stats UI and import validation APIs stay wired, but we never
- * read or write the ledger to localStorage — and we clear any prior blob so
- * quota-exhausted browsers can load again.
+ * Practice-history persistence is disabled until the product is ready to retain
+ * sessions for users. Keep the in-memory API so UI can stay wired, but do not
+ * read or write the ledger — and clear any prior payload to free quota.
+ *
+ * Flip this to true and restore the previous localStorage read/write path in
+ * git history when session recording ships.
  */
-const clearPersistedSessionHistory = (): void => {
+export const SESSION_LEDGER_PERSISTENCE_ENABLED = false;
+
+/** Drop any previously stored ledger/legacy stats so browsers stuck at quota can recover. */
+const clearStoredSessionHistory = (): void => {
   safeRemoveItem(SESSION_LEDGER_STORAGE_KEY);
   safeRemoveItem(LEGACY_STATS_STORAGE_KEY);
 };
 
-// Clear any prior ledger as soon as this module loads in the browser so quota
-// is freed before other settings hooks attempt to persist.
-if (typeof window !== 'undefined') {
-  clearPersistedSessionHistory();
-}
+const EMPTY_IMPORT_RESULT = (envelope: ReturnType<typeof createEmptyLedger>): MergeResult => ({
+  envelope,
+  imported: 0,
+  duplicates: 0,
+  conflicts: 0,
+  capDiscarded: 0,
+  baseline: 'none',
+});
 
 export const useSessionStats = () => {
-  const [ledger] = useState<SessionLedgerEnvelope>(createEmptyLedger);
-  const ledgerRef = useRef(ledger);
-
-  // Recording is disabled — keep the API but do not mutate history.
-  const recordSession = useCallback((_entry: SessionLogEntry) => {
-    void _entry;
-    // no-op: session recording is paused until storage UX is ready
-  }, []);
-
-  const importLedgerJson = useCallback((json: string): MergeResult => {
-    // Validate only; do not adopt imported history while persistence is off.
-    parseLedgerJson(json);
-    return {
-      envelope: ledgerRef.current,
-      imported: 0,
-      duplicates: 0,
-      conflicts: 0,
-      capDiscarded: 0,
-      baseline: 'identical',
-    };
-  }, []);
-
-  const replaceLedgerForRestore = useCallback((value: unknown) => {
-    // Keep empty while persistence is disabled; still validate to surface bad payloads.
-    validateLedger(value);
-  }, []);
-
+  const ledger = useMemo(() => createEmptyLedger(), []);
   const stats = useMemo(() => aggregateSessionStats(ledger), [ledger]);
   const trends = useMemo(() => getRollingDailyTrends(ledger), [ledger]);
   const techniqueTotals = useMemo(() => getTechniqueTotals(ledger), [ledger]);
+
+  useEffect(() => {
+    // Oversized ledgers have crashed Edge/Chromium loads via QuotaExceededError
+    // on unrelated setItem calls — wipe them on every mount while persistence is off.
+    clearStoredSessionHistory();
+  }, []);
+
+  const recordSession = useCallback((entry: SessionLogEntry) => {
+    void entry;
+  }, []);
+
+  const importLedgerJson = useCallback((json: string): MergeResult => {
+    // Still validate so the settings UI can surface malformed files.
+    parseLedgerJson(json);
+    return EMPTY_IMPORT_RESULT(ledger);
+  }, [ledger]);
+
+  const replaceLedgerForRestore = useCallback((value: unknown) => {
+    void value;
+  }, []);
 
   return {
     stats,
@@ -76,3 +75,4 @@ export const useSessionStats = () => {
     replaceLedgerForRestore,
   };
 };
+
