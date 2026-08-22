@@ -3,76 +3,27 @@ import {
   LEGACY_STATS_STORAGE_KEY,
   SESSION_LEDGER_STORAGE_KEY,
   aggregateSessionStats,
-  appendSession,
   createEmptyLedger,
   getRollingDailyTrends,
   getTechniqueTotals,
-  mergeLedgers,
-  migrateLegacyStats,
   parseLedgerJson,
   validateLedger,
   type MergeResult,
   type SessionLedgerEnvelope,
   type SessionLogEntry,
 } from '../lib/sessionLedger';
+import { safeRemoveItem } from '../lib/safeStorage';
 
-const isQuotaExceededError = (error: unknown): boolean => {
-  if (!(error instanceof DOMException)) return false;
-  return (
-    error.name === 'QuotaExceededError' ||
-    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
-    error.code === 22 ||
-    error.code === 1014
-  );
-};
-
-// Retries the write, aggressively dropping the oldest (tail) sessions on
-// quota errors until it fits or nothing is left to trim.
-const persistLedger = (envelope: SessionLedgerEnvelope): SessionLedgerEnvelope | null => {
-  let candidate = envelope;
-  for (;;) {
-    try {
-      localStorage.setItem(SESSION_LEDGER_STORAGE_KEY, JSON.stringify(candidate));
-      return candidate;
-    } catch (error) {
-      if (!isQuotaExceededError(error) || candidate.sessions.length === 0) {
-        console.warn('Unable to persist sacred-breath session history to localStorage.', error);
-        return null;
-      }
-      const nextLength = Math.floor(candidate.sessions.length / 2);
-      candidate = { ...candidate, sessions: candidate.sessions.slice(0, nextLength) };
-    }
-  }
-};
-
-const readLedger = (): SessionLedgerEnvelope => {
-  const stored = localStorage.getItem(SESSION_LEDGER_STORAGE_KEY);
-  if (stored) {
-    try {
-      return parseLedgerJson(stored);
-    } catch {
-      console.warn('Invalid sacred-breath session history localStorage payload; clearing it.');
-      localStorage.removeItem(SESSION_LEDGER_STORAGE_KEY);
-      return createEmptyLedger();
-    }
-  }
-
-  const legacyRaw = localStorage.getItem(LEGACY_STATS_STORAGE_KEY);
-  if (!legacyRaw) return createEmptyLedger();
-
-  let migrated: SessionLedgerEnvelope | null = null;
-  try {
-    migrated = migrateLegacyStats(JSON.parse(legacyRaw) as unknown);
-  } catch {
-    // The legacy payload remains untouched when it cannot be migrated.
-  }
-  if (!migrated) return createEmptyLedger();
-
-  // Removal happens only after the durable replacement write succeeds.
-  const persisted = persistLedger(migrated);
-  if (!persisted) return migrated;
-  localStorage.removeItem(LEGACY_STATS_STORAGE_KEY);
-  return persisted;
+/**
+ * Session history persistence is intentionally disabled until the product is
+ * ready to store practice data for users. We still keep an empty in-memory
+ * ledger so trends/stats UI and import validation APIs stay wired, but we never
+ * read or write the ledger to localStorage — and we clear any prior blob so
+ * quota-exhausted browsers can load again.
+ */
+const clearPersistedSessionHistory = (): void => {
+  safeRemoveItem(SESSION_LEDGER_STORAGE_KEY);
+  safeRemoveItem(LEGACY_STATS_STORAGE_KEY);
 };
 
 export const useSessionStats = () => {
@@ -81,48 +32,34 @@ export const useSessionStats = () => {
   const [hasLoadedStats, setHasLoadedStats] = useState(false);
 
   useEffect(() => {
-    try {
-      const loaded = readLedger();
-      ledgerRef.current = loaded;
-      setLedger(loaded);
-    } catch {
-      console.warn('Invalid sacred-breath session history localStorage payload');
-      setLedger(createEmptyLedger());
-    } finally {
-      setHasLoadedStats(true);
-    }
+    clearPersistedSessionHistory();
+    const empty = createEmptyLedger();
+    ledgerRef.current = empty;
+    setLedger(empty);
+    setHasLoadedStats(true);
   }, []);
 
-  useEffect(() => {
-    if (!hasLoadedStats) return;
-    const persisted = persistLedger(ledger);
-    // Trimming happened to fit under quota; sync state so the UI matches
-    // what is actually durable and future appends build on the right base.
-    if (persisted && persisted !== ledger) {
-      ledgerRef.current = persisted;
-      setLedger(persisted);
-    }
-  }, [hasLoadedStats, ledger]);
-
-  const recordSession = useCallback((entry: SessionLogEntry) => {
-    const next = appendSession(ledgerRef.current, entry);
-    ledgerRef.current = next;
-    setLedger(next);
+  // Recording is disabled — keep the API but do not mutate history.
+  const recordSession = useCallback((_entry: SessionLogEntry) => {
+    // no-op: session recording is paused until storage UX is ready
   }, []);
 
   const importLedgerJson = useCallback((json: string): MergeResult => {
-    // Parse and validate before setState so a bad file cannot mutate local data.
-    const imported = parseLedgerJson(json);
-    const result = mergeLedgers(ledgerRef.current, imported);
-    ledgerRef.current = result.envelope;
-    setLedger(result.envelope);
-    return result;
+    // Validate only; do not adopt imported history while persistence is off.
+    parseLedgerJson(json);
+    return {
+      envelope: ledgerRef.current,
+      imported: 0,
+      duplicates: 0,
+      conflicts: 0,
+      capDiscarded: 0,
+      baseline: 'identical',
+    };
   }, []);
 
-  const replaceLedgerForRestore = useCallback((value: unknown) => {
-    const restored = validateLedger(value);
-    ledgerRef.current = restored;
-    setLedger(restored);
+  const replaceLedgerForRestore = useCallback((_value: unknown) => {
+    // Keep empty while persistence is disabled; still validate to surface bad payloads.
+    validateLedger(_value);
   }, []);
 
   const stats = useMemo(() => aggregateSessionStats(ledger), [ledger]);

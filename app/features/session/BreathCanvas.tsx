@@ -12,7 +12,6 @@ interface BreathCanvasProps {
   chakraPhase: number;
   phaseProgress: number;
   selectedMode: SessionMode;
-  hasEnvironment: boolean;
   effectivePerformanceMode: PerformanceMode;
   reducedMotion: boolean;
   pauseRendering?: boolean;
@@ -28,7 +27,6 @@ export default function BreathCanvas({
   chakraPhase,
   phaseProgress,
   selectedMode,
-  hasEnvironment,
   effectivePerformanceMode,
   reducedMotion,
   pauseRendering = false,
@@ -43,7 +41,7 @@ export default function BreathCanvas({
 
   return (
     <div
-      className={`absolute inset-0 z-[2] ${hasEnvironment ? 'mix-blend-screen' : ''}`}
+      className="absolute inset-0 z-[2]"
       onPointerMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;

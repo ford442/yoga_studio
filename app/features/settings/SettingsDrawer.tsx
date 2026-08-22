@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import type { BreathSettings } from '../../hooks/useBreathTimer';
 import type { EnvironmentOverride } from '../../types/environment';
 import type { InstructorVideoSettings } from '../../types/instructorVideo';
 import type { RendererSettings, PerformanceMode } from '../../types/renderer';
 import { ENVIRONMENTS } from '../../data/environments';
 import type { SessionMode } from '../../types/sessionMode';
-import type { MergeResult } from '../../lib/sessionLedger';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -24,8 +23,6 @@ interface SettingsDrawerProps {
   updateRendererSettings: (patch: Partial<RendererSettings>) => void;
   effectivePerformanceMode: PerformanceMode;
   isPerformanceForced: boolean;
-  exportLedgerJson: () => string;
-  importLedgerJson: (json: string) => MergeResult;
 }
 
 export default function SettingsDrawer({
@@ -43,42 +40,8 @@ export default function SettingsDrawer({
   updateRendererSettings,
   effectivePerformanceMode,
   isPerformanceForced,
-  exportLedgerJson,
-  importLedgerJson,
 }: SettingsDrawerProps) {
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const [importFeedback, setImportFeedback] = useState<string | null>(null);
-
   if (!open) return null;
-
-  const handleExport = () => {
-    const blob = new Blob([exportLedgerJson()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `sacred-breath-history-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      const result = importLedgerJson(await file.text());
-      const baseline = result.baseline === 'adopted'
-        ? ' Imported baseline adopted.'
-        : result.baseline === 'conflict'
-          ? ' Baseline conflict kept local history.'
-          : result.baseline === 'identical'
-            ? ' Identical baseline skipped.'
-            : '';
-      setImportFeedback(`${result.imported} imported, ${result.duplicates} duplicates, ${result.conflicts} timestamp conflicts, ${result.capDiscarded} discarded by the 500-session cap.${baseline}`);
-    } catch (error) {
-      setImportFeedback(error instanceof Error ? `Import rejected: ${error.message}` : 'Import rejected.');
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
@@ -256,13 +219,10 @@ export default function SettingsDrawer({
 
         <div className="mt-8 border-t border-white/10 pt-6">
           <p className="text-sm text-white/60 mb-3 tracking-wider">PRACTICE HISTORY</p>
-          <p className="mb-4 text-xs leading-relaxed text-white/45">Export or merge your complete versioned session ledger. Imports are validated before any history changes.</p>
-          <div className="flex gap-2">
-            <button type="button" onClick={handleExport} className="flex-1 rounded-xl border border-cyan-300/30 bg-cyan-500/10 px-3 py-3 text-xs tracking-wider text-cyan-100 hover:bg-cyan-500/20">EXPORT JSON</button>
-            <button type="button" onClick={() => importInputRef.current?.click()} className="flex-1 rounded-xl border border-purple-300/30 bg-purple-500/10 px-3 py-3 text-xs tracking-wider text-purple-100 hover:bg-purple-500/20">IMPORT JSON</button>
-            <input ref={importInputRef} type="file" accept="application/json,.json" onChange={handleImport} className="sr-only" aria-label="Import practice history JSON" />
-          </div>
-          {importFeedback && <p role="status" className="mt-3 rounded-xl bg-white/5 p-3 text-xs leading-relaxed text-white/65">{importFeedback}</p>}
+          <p className="mb-2 text-xs leading-relaxed text-white/45">
+            Session recording and history sync are paused while the practice companion is still in early preview.
+            Local session ledgers are not saved.
+          </p>
         </div>
         <button
           onClick={onClose}

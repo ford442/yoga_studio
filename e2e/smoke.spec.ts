@@ -302,25 +302,24 @@ test.describe('app loads and controls render', () => {
     expect(errors).toHaveLength(0);
   });
 
-  test('restores ledger stats and supports trends plus JSON portability', async ({ page }) => {
+  test('keeps practice history paused and voice guidance default off', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
       Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
         configurable: true,
         value: () => null,
       });
-      const date = new Date().toISOString().slice(0, 10);
-      if (!localStorage.getItem('sacred-breath-session-ledger')) localStorage.setItem('sacred-breath-session-ledger', JSON.stringify({
+      // Simulate a bloated prior ledger that used to crash Edge on quota.
+      localStorage.setItem('sacred-breath-session-ledger', JSON.stringify({
         version: 1,
-        legacyBaseline: { todayMinutes: 2, todayBreaths: 3, currentStreak: 4, lastPracticeDate: date },
-        sessions: [{
-          endedAt: `${date}T08:00:00.000Z`,
+        sessions: Array.from({ length: 20 }, (_, i) => ({
+          endedAt: `2026-07-${String((i % 28) + 1).padStart(2, '0')}T08:00:00.000Z`,
           durationSec: 300,
           breaths: 12,
           modeId: 'ujjayi',
           techniqueId: 'ujjayi',
           settings: { inhale: 4, hold1: 2, exhale: 6, hold2: 2 },
-        }],
+        })),
       }));
     });
     await page.goto('/');
@@ -328,43 +327,21 @@ test.describe('app loads and controls render', () => {
     const skipOnboarding = page.getByText('Skip onboarding');
     if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
 
+    await expect(page.getByRole('button', { name: 'Voice guidance off' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Voice guidance off' })).toHaveAttribute('aria-pressed', 'false');
+
     const stats = page.getByRole('button', { name: 'Open practice trends' });
-    await expect(stats).toContainText('7');
-    await expect(stats).toContainText('15');
+    await expect(stats).toContainText('0');
     await stats.click();
     await expect(page.getByRole('dialog', { name: 'Practice trends' })).toBeVisible();
-    await expect(page.locator('[data-date]')).toHaveCount(28);
-    await expect(page.getByText('Ujjayi', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Close practice trends' }).click();
 
     await page.getByRole('button', { name: 'Open settings' }).click();
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'EXPORT JSON' }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^sacred-breath-history-\d{4}-\d{2}-\d{2}\.json$/);
-
-    const date = new Date().toISOString().slice(0, 10);
-    await page.getByLabel('Import practice history JSON').setInputFiles({
-      name: 'history.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify({
-        version: 1,
-        sessions: [{
-          endedAt: `${date}T10:00:00.000Z`,
-          durationSec: 600,
-          breaths: 20,
-          modeId: 'classic-mandala',
-          techniqueId: 'classic-mandala',
-          settings: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
-        }],
-      })),
-    });
-    await expect(page.getByRole('status')).toContainText('1 imported');
+    await expect(page.getByText(/Session recording and history sync are paused/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'EXPORT JSON' })).toHaveCount(0);
     await page.getByRole('button', { name: 'DONE' }).click();
-    await expect(stats).toContainText('17');
-    await expect(stats).toContainText('35');
 
-    await page.reload();
-    await expect(page.getByRole('button', { name: 'Open practice trends' })).toContainText('17');
+    const cleared = await page.evaluate(() => localStorage.getItem('sacred-breath-session-ledger'));
+    expect(cleared).toBeNull();
   });
 });

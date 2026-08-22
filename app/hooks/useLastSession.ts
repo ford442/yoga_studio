@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 export type QuickStartDuration = 'free' | 5 | 10 | 15;
 export type LastSession = { modeId: string; duration: QuickStartDuration };
@@ -11,7 +12,7 @@ export function useLastSession() {
   const [lastSession, setLastSession] = useState<LastSession | null>(null);
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = safeGetItem(STORAGE_KEY);
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw);
@@ -31,7 +32,7 @@ export function useLastSession() {
   const persistLastSession = (modeId: string, duration: QuickStartDuration) => {
     const next: LastSession = { modeId, duration };
     setLastSession(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    safeSetItem(STORAGE_KEY, JSON.stringify(next));
   };
 
   return { lastSession, persistLastSession };

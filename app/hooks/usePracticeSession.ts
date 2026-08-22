@@ -8,6 +8,7 @@ import { SESSION_MODES, DEFAULT_MODE } from '../data/sessionModes';
 import { getProgramById, resolveProgramSessionTechnique } from '../data/programs';
 import { BEGINNER_SESSION_MINUTES, getBeginnerMode } from '../data/onboarding';
 import type { SessionMode } from '../types/sessionMode';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 interface UsePracticeSessionOptions {
   settings: BreathSettings;
@@ -16,7 +17,6 @@ interface UsePracticeSessionOptions {
   toggleFree: () => void;
   updateSettings: (next: Partial<BreathSettings>) => void;
   persistLastSession: (modeId: string, duration: QuickStartDuration) => void;
-  setVoiceEnabled: (enabled: boolean) => void;
   canUseInstructor: boolean;
   enableInstructor: () => void;
   dismissWelcome: (forever?: boolean) => void;
@@ -30,7 +30,6 @@ export function usePracticeSession({
   toggleFree,
   updateSettings,
   persistLastSession,
-  setVoiceEnabled,
   canUseInstructor,
   enableInstructor,
   dismissWelcome,
@@ -41,7 +40,7 @@ export function usePracticeSession({
   const [activeProgramSession, setActiveProgramSession] = useState<ActiveProgramSession | null>(null);
 
   useEffect(() => {
-    const rawFavorites = localStorage.getItem('sacred-breath-favorites');
+    const rawFavorites = safeGetItem('sacred-breath-favorites');
     if (!rawFavorites) return;
     try {
       const parsed = JSON.parse(rawFavorites);
@@ -119,7 +118,6 @@ export function usePracticeSession({
     setIsBeginnerSession(true);
     setSelectedMode(mode);
     updateSettings(mode.breath);
-    setVoiceEnabled(true);
     if (canUseInstructor) {
       enableInstructor();
     }
@@ -148,7 +146,7 @@ export function usePracticeSession({
       const next = prev.includes(modeId)
         ? prev.filter((id) => id !== modeId)
         : [...prev, modeId];
-      localStorage.setItem('sacred-breath-favorites', JSON.stringify(next));
+      safeSetItem('sacred-breath-favorites', JSON.stringify(next));
       return next;
     });
   };

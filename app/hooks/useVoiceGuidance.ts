@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BreathPhase } from './useBreathTimer';
+import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 interface VoiceSettings {
   enabled: boolean;
@@ -7,7 +8,7 @@ interface VoiceSettings {
 }
 
 const VOICE_SETTINGS_KEY = 'sacred-breath-voice';
-const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: true, useSanskrit: false };
+const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: false, useSanskrit: false };
 
 const PHASE_MESSAGES: Record<BreathPhase, { en: string; sanskrit: string }> = {
   inhale: {
@@ -29,8 +30,13 @@ const PHASE_MESSAGES: Record<BreathPhase, { en: string; sanskrit: string }> = {
 };
 
 const readStoredVoiceSettings = (): VoiceSettings => {
-  const saved = localStorage.getItem(VOICE_SETTINGS_KEY);
-  return saved ? JSON.parse(saved) : DEFAULT_VOICE_SETTINGS;
+  const saved = safeGetItem(VOICE_SETTINGS_KEY);
+  if (!saved) return DEFAULT_VOICE_SETTINGS;
+  const parsed = JSON.parse(saved) as Partial<VoiceSettings>;
+  return {
+    enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : DEFAULT_VOICE_SETTINGS.enabled,
+    useSanskrit: typeof parsed.useSanskrit === 'boolean' ? parsed.useSanskrit : DEFAULT_VOICE_SETTINGS.useSanskrit,
+  };
 };
 
 export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) => {
@@ -41,10 +47,10 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Save settings to localStorage
+  // Save settings to localStorage (best-effort; never crash the app on quota errors)
   useEffect(() => {
     if (!hasLoadedSettings) return;
-    localStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(settings));
+    safeSetItem(VOICE_SETTINGS_KEY, JSON.stringify(settings));
   }, [hasLoadedSettings, settings]);
 
   useEffect(() => {
