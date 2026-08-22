@@ -26,6 +26,12 @@ const clearPersistedSessionHistory = (): void => {
   safeRemoveItem(LEGACY_STATS_STORAGE_KEY);
 };
 
+// Clear any prior ledger as soon as this module loads in the browser so quota
+// is freed before other settings hooks attempt to persist.
+if (typeof window !== 'undefined') {
+  clearPersistedSessionHistory();
+}
+
 export const useSessionStats = () => {
   const [ledger, setLedger] = useState<SessionLedgerEnvelope>(createEmptyLedger);
   const ledgerRef = useRef(ledger);
