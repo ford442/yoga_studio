@@ -58,7 +58,6 @@ export function useSessionCompletion({
     if (completedSegment?.kind === 'timed' && completedSegment.id !== handledSegmentIdRef.current) {
       handledSegmentIdRef.current = completedSegment.id;
       const isFirstSession = onboardingHasLoaded && !hasCompletedFirstSession;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCompletedInfo({
         minutes: Math.max(1, Math.round(completedSegment.durationSec / 60)),
         breaths: completedSegment.breaths,
@@ -83,6 +82,7 @@ export function useSessionCompletion({
           const nextDay = getNextSessionDay(program, updatedProgress);
           if (nextDay) {
             const nextTechnique = resolveProgramSessionTechnique(nextDay, SESSION_MODES);
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- derive next program step from completion event
             setNextProgramSession({
               programLabel: program.label,
               dayIndex: nextDay.dayIndex,
