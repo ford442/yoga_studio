@@ -49,6 +49,7 @@ export const useVoiceGuidance = (currentPhase: BreathPhase, isRunning: boolean) 
 
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate voice settings from localStorage on mount
       setSettings(readStoredVoiceSettings());
     } catch {
       console.warn('Invalid sacred-breath-voice localStorage payload');

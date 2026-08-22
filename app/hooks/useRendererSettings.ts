@@ -116,7 +116,12 @@ export function useRendererSettings() {
   // Persist user-level settings whenever they change.
   useEffect(() => {
     if (!hasLoaded || typeof window === 'undefined') return;
-    localStorage.setItem(RENDERER_STORAGE_KEY, JSON.stringify(settings));
+    try {
+      localStorage.setItem(RENDERER_STORAGE_KEY, JSON.stringify(settings));
+    } catch (error) {
+      // QuotaExceeded (or private-mode Storage) must not crash the app load path.
+      console.warn('Unable to persist sacred-breath renderer settings to localStorage.', error);
+    }
   }, [hasLoaded, settings]);
 
   const updateSettings = useCallback((patch: Partial<RendererSettings>) => {
