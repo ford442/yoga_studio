@@ -38,15 +38,15 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.0.5",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@webgpu/types": "^0.1.71",
-    "eslint": "9.39.5",
-    "eslint-config-next": "16.3.1",
+    "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "@webgpu/types": "^0.1.72",
+    "eslint": "10.9.0",
+    "eslint-config-next": "16.3.2",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "^4.1.10"
   }
 }
