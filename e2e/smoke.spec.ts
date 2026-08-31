@@ -76,8 +76,7 @@ test.describe('app loads and controls render', () => {
     // Create a context where WebGPU is force-disabled.
     const context = await browser.newContext();
     await context.addInitScript(() => {
-      // @ts-expect-error deleting an experimental API for fallback testing
-      delete (window as typeof window & { navigator: Navigator }).navigator.gpu;
+      Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
     });
     const gpuLessPage = await context.newPage();
 
@@ -94,9 +93,7 @@ test.describe('app loads and controls render', () => {
     await expect(container).toBeVisible();
     await expect(container).toHaveAttribute('data-renderer', 'webgl2');
     await expect(container).toHaveAttribute('data-shader', 'sacred-monk.wgsl');
-
-    const fallbackReason = await container.getAttribute('data-fallback-reason');
-    expect(fallbackReason).toBeTruthy();
+    await expect(container).toHaveAttribute('data-gpu-failure-stage', '');
 
     const canvas = gpuLessPage.locator('canvas').first();
     const canvasBox = await canvas.boundingBox();
@@ -159,6 +156,56 @@ test.describe('app loads and controls render', () => {
     await context.close();
   });
 
+  test('hard-fails to static with a GPU banner when WebGPU adapter rejects', async ({ browser }) => {
+    const context = await browser.newContext();
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'gpu', {
+        configurable: true,
+        value: {
+          requestAdapter: () => Promise.reject(new Error('synthetic adapter rejection')),
+          getPreferredCanvasFormat: () => 'bgra8unorm',
+        },
+      });
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      const callOriginalGetContext = originalGetContext as unknown as (
+        this: HTMLCanvasElement,
+        kind: string,
+        ...args: unknown[]
+      ) => RenderingContext | null;
+      Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+        configurable: true,
+        value: function (this: HTMLCanvasElement, kind: string, ...args: unknown[]) {
+          if (kind === 'webgpu') {
+            return {
+              configure() {},
+              unconfigure() {},
+              getCurrentTexture() { return { createView() { return {}; } }; },
+            };
+          }
+          return callOriginalGetContext.call(this, kind, ...args);
+        },
+      });
+    });
+    const failPage = await context.newPage();
+    await failPage.goto('/');
+    const skipOnboarding = failPage.getByText('Skip onboarding');
+    if (await skipOnboarding.isVisible().catch(() => false)) await skipOnboarding.click();
+
+    const container = failPage.locator('[data-renderer]').first();
+    await expect(container).toHaveAttribute('data-renderer', 'static');
+    await expect(container).toHaveAttribute('data-gpu-failure-stage', 'device');
+    const banner = failPage.getByTestId('gpu-error-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('data-gpu-failure-stage', 'device');
+    await expect(banner).toContainText('device');
+    const probe = await failPage.evaluate(() => (
+      window as unknown as { webgpuProbe?: { ok: boolean; stage: string } }
+    ).webgpuProbe);
+    expect(probe?.ok).toBe(false);
+    expect(probe?.stage).toBe('device');
+    await context.close();
+  });
+
   test('does not crash when WebGPU is available', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -185,7 +232,8 @@ test.describe('app loads and controls render', () => {
 
     const container = page.locator('[data-renderer]').first();
     const rendererMode = await container.getAttribute('data-renderer');
-    expect(rendererMode === 'webgpu' || rendererMode === 'webgl2').toBe(true);
+    expect(rendererMode === 'webgpu' || rendererMode === 'static').toBe(true);
+    expect(rendererMode).not.toBe('webgl2');
     await expect(container).toHaveAttribute('data-shader', 'sacred-monk.wgsl');
 
     const canvas = page.locator('canvas').first();
@@ -193,7 +241,11 @@ test.describe('app loads and controls render', () => {
     expect(canvasBox?.width).toBeGreaterThan(0);
     expect(canvasBox?.height).toBeGreaterThan(0);
 
-    expect(errors).toHaveLength(0);
+    if (rendererMode === 'static') {
+      await expect(page.getByTestId('gpu-error-banner')).toBeVisible();
+    } else {
+      expect(errors).toHaveLength(0);
+    }
   });
 
   test('loads the modular Sacred Integration shader without runtime errors', async ({ page }) => {
@@ -217,16 +269,19 @@ test.describe('app loads and controls render', () => {
     await expect(container).toHaveAttribute('data-shader', 'sacred-ultra.wgsl');
     await page.waitForTimeout(750);
     const renderer = await container.getAttribute('data-renderer');
-    expect(renderer === 'webgpu' || renderer === 'webgl2').toBe(true);
+    expect(renderer === 'webgpu' || renderer === 'static').toBe(true);
+    expect(renderer).not.toBe('webgl2');
     if (renderer === 'webgpu') {
       await expect.poll(() => loadedModules.size).toBe(5);
       expect([...loadedModules.values()]).toEqual([200, 200, 200, 200, 200]);
+      expect(errors).toHaveLength(0);
+    } else {
+      await expect(page.getByTestId('gpu-error-banner')).toBeVisible();
     }
 
     const canvasBox = await container.locator('canvas').first().boundingBox();
     expect(canvasBox?.width).toBeGreaterThan(0);
     expect(canvasBox?.height).toBeGreaterThan(0);
-    expect(errors).toHaveLength(0);
   });
 
   test('loads the modular Sacred Lotus shader without runtime errors', async ({ page }) => {
@@ -250,16 +305,19 @@ test.describe('app loads and controls render', () => {
     await expect(container).toHaveAttribute('data-shader', 'sacred-lotus-final.wgsl');
     await page.waitForTimeout(750);
     const renderer = await container.getAttribute('data-renderer');
-    expect(renderer === 'webgpu' || renderer === 'webgl2').toBe(true);
+    expect(renderer === 'webgpu' || renderer === 'static').toBe(true);
+    expect(renderer).not.toBe('webgl2');
     if (renderer === 'webgpu') {
       await expect.poll(() => loadedModules.size).toBe(5);
       expect([...loadedModules.values()]).toEqual([200, 200, 200, 200, 200]);
+      expect(errors).toHaveLength(0);
+    } else {
+      await expect(page.getByTestId('gpu-error-banner')).toBeVisible();
     }
 
     const canvasBox = await container.locator('canvas').first().boundingBox();
     expect(canvasBox?.width).toBeGreaterThan(0);
     expect(canvasBox?.height).toBeGreaterThan(0);
-    expect(errors).toHaveLength(0);
   });
 
   test('keeps an active renderer nonblank through repeated viewport shape changes', async ({ page }) => {
@@ -299,7 +357,8 @@ test.describe('app loads and controls render', () => {
       expect(backingSize.height).toBeGreaterThan(0);
       expect(energy).toBeGreaterThan(0);
     }
-    expect(errors).toHaveLength(0);
+    const renderer = await page.locator('[data-renderer]').first().getAttribute('data-renderer');
+    if (renderer === 'webgpu') expect(errors).toHaveLength(0);
   });
 
   test('clears prior session ledger and does not restore practice history', async ({ page }) => {

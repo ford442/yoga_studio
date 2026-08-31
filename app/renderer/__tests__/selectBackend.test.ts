@@ -44,8 +44,8 @@ describe('pickInitialMode', () => {
 });
 
 describe('getNextMode', () => {
-  it('advances webgpu -> webgl2 -> static', () => {
-    expect(getNextMode('webgpu', fullCaps)).toBe('webgl2');
+  it('hard-fails webgpu to static so WebGL cannot hide a compile miss', () => {
+    expect(getNextMode('webgpu', fullCaps)).toBe('static');
     expect(getNextMode('webgl2', fullCaps)).toBe('static');
   });
 
@@ -145,7 +145,7 @@ describe('mountRenderer', () => {
     const onFallback = vi.fn();
     const unmount = mountRenderer({ mode: 'webgpu', caps: fullCaps, onFallback, ...baseCtx() });
 
-    expect(onFallback).toHaveBeenCalledWith('webgl2', 'WebGPU device was lost.');
+    expect(onFallback).toHaveBeenCalledWith('static', 'WebGPU device was lost.');
     unmount();
   });
 

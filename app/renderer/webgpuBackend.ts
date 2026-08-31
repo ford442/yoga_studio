@@ -5,6 +5,7 @@ import type {
   GpuFailureStage,
   RendererAdapterInfo,
   RendererCompilationMessage,
+  WebGpuProbeResult,
 } from '../types/renderer';
 import { getWebGPUAdapterOptions } from './adapterOptions';
 import { resizeCanvasForDpr } from './canvasUtils';
@@ -43,20 +44,47 @@ export function logCompilationInfo(messages: RendererCompilationMessage[]): void
   }
 }
 
-/** Create a GPU object inside a validation error scope so async Chrome validation surfaces as JS. */
+function publishWebGpuProbe(probe: WebGpuProbeResult): void {
+  if (typeof window !== 'undefined') {
+    (window as Window & { webgpuProbe?: WebGpuProbeResult }).webgpuProbe = probe;
+  }
+}
+
+function currentUserAgent(): string {
+  return typeof navigator !== 'undefined' ? navigator.userAgent : '';
+}
+
+/**
+ * Run `create` inside a validation error scope. The scope stays open until
+ * `create` settles (including `getCompilationInfo()` / `createRenderPipelineAsync`),
+ * so Chrome/Edge async WGSL and pipeline validation surface as JS instead of
+ * a silent uncaptured GPU error.
+ */
 export async function createWithValidationScope<T>(
   device: GPUDevice,
   stage: 'module' | 'pipeline',
-  create: () => T,
+  create: () => T | Promise<T>,
 ): Promise<T> {
   device.pushErrorScope('validation');
-  const result = create();
-  const error = await device.popErrorScope();
-  if (error) {
-    console.error(`[WebGPU] ${stage} validation:`, error.message);
-    throw new GpuStageError(stage, error.message);
+  let result: T | undefined;
+  let createError: unknown;
+  try {
+    result = await create();
+  } catch (error) {
+    createError = error;
   }
-  return result;
+  const scopeError = await device.popErrorScope();
+  if (scopeError) {
+    console.error(`[WebGPU] ${stage} validation:`, scopeError.message);
+    throw new GpuStageError(stage, scopeError.message);
+  }
+  if (createError) {
+    if (createError instanceof GpuStageError) throw createError;
+    const message = createError instanceof Error ? createError.message : String(createError);
+    console.error(`[WebGPU] ${stage} validation:`, message);
+    throw new GpuStageError(stage, message);
+  }
+  return result as T;
 }
 
 export function readAdapterInfo(adapter: GPUAdapter): RendererAdapterInfo | undefined {
@@ -105,10 +133,15 @@ export class WebGPUBackend implements RendererBackend {
     bindGroup: GPUBindGroup;
   } | null = null;
   private ctx: RendererBackendContext | null = null;
+  private probeAdapterInfo: RendererAdapterInfo | undefined;
+  private probeMessages: RendererCompilationMessage[] = [];
+  private uncapturedListener: ((event: GPUUncapturedErrorEvent) => void) | null = null;
+  private fatal = false;
 
   async start(ctx: RendererBackendContext): Promise<void> {
     this.ctx = ctx;
     this.cancelled = false;
+    this.fatal = false;
     this.recoveryAttempted = false;
     this.startTime = Date.now();
     this.canvasContext = ctx.canvas.getContext('webgpu');
@@ -147,9 +180,57 @@ export class WebGPUBackend implements RendererBackend {
     }
   }
 
+  private reportProbe(stage: GpuFailureStage | 'ok', error?: string): WebGpuProbeResult {
+    const probe: WebGpuProbeResult = {
+      ok: stage === 'ok',
+      stage,
+      userAgent: currentUserAgent(),
+      adapterInfo: this.probeAdapterInfo,
+      compilationMessages: this.probeMessages,
+      error,
+      timestamp: Date.now(),
+    };
+    publishWebGpuProbe(probe);
+    this.ctx?.onBackendDiagnostics?.({ webgpuProbe: probe });
+    return probe;
+  }
+
+  private attachUncapturedError(device: GPUDevice): void {
+    this.detachUncapturedError();
+    const listener = (event: GPUUncapturedErrorEvent) => {
+      event.preventDefault?.();
+      const message = event.error?.message ?? 'Uncaptured WebGPU error';
+      console.error('[WebGPU] uncapturederror:', message);
+      const stage: GpuFailureStage = /shader|wgsl|module/i.test(message)
+        ? 'module'
+        : /pipeline/i.test(message)
+          ? 'pipeline'
+          : 'device';
+      this.fail(stage, fatalReasonForGpuError(new GpuStageError(stage, message)), event.error);
+    };
+    this.uncapturedListener = listener;
+    device.addEventListener('uncapturederror', listener);
+  }
+
+  private detachUncapturedError(device?: GPUDevice | null): void {
+    const target = device ?? this.device;
+    if (target && this.uncapturedListener) {
+      target.removeEventListener('uncapturederror', this.uncapturedListener);
+    }
+    this.uncapturedListener = null;
+  }
+
+  private discardDevice(device: GPUDevice): void {
+    this.detachUncapturedError(device);
+    try { device.destroy(); } catch { /* already lost */ }
+  }
+
   private fail(stage: GpuFailureStage, reason: string, error?: unknown): void {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || this.fatal || this.cancelled) return;
+    this.fatal = true;
+    const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
+    this.reportProbe(stage, detail ?? reason);
     ctx.onBackendDiagnostics?.({ gpuFailureStage: stage, gpuFailureReason: reason });
     ctx.onFatalError(reason, error);
   }
@@ -161,10 +242,13 @@ export class WebGPUBackend implements RendererBackend {
       throw new Error('WebGPU is unavailable.');
     }
     const generation = ++this.generation;
+    this.probeAdapterInfo = undefined;
+    this.probeMessages = [];
     const adapter = await gpu.requestAdapter(getWebGPUAdapterOptions(ctx.performanceMode));
     if (!adapter) throw new Error('No WebGPU adapter was returned.');
     if (!this.isCurrent(generation)) return;
-    ctx.onBackendDiagnostics?.({ adapterInfo: readAdapterInfo(adapter) });
+    this.probeAdapterInfo = readAdapterInfo(adapter);
+    ctx.onBackendDiagnostics?.({ adapterInfo: this.probeAdapterInfo });
 
     const device = await adapter.requestDevice({
       label: DEVICE_LABEL,
@@ -172,63 +256,62 @@ export class WebGPUBackend implements RendererBackend {
       requiredLimits: {},
     });
     if (!this.isCurrent(generation)) {
-      device.destroy();
+      this.discardDevice(device);
       return;
     }
+    this.attachUncapturedError(device);
 
     let shaderSource: string;
     try {
       shaderSource = await loadWgslSource(resolveAssetUrl(ctx.shaderPath));
     } catch (error) {
-      device.destroy();
+      this.discardDevice(device);
       throw error;
     }
     let shaderModule: ShaderModuleWithOptionalInfo;
     try {
-      shaderModule = await createWithValidationScope(device, 'module', () =>
-        device.createShaderModule({
+      shaderModule = await createWithValidationScope(device, 'module', async () => {
+        const created = device.createShaderModule({
           label: `Sacred Breath shader: ${ctx.shaderPath}`,
           code: shaderSource,
-        }) as ShaderModuleWithOptionalInfo,
-      );
+        }) as ShaderModuleWithOptionalInfo;
+        let messages: RendererCompilationMessage[] = [];
+        if (typeof created.getCompilationInfo === 'function') {
+          messages = normalizeCompilationMessages(await created.getCompilationInfo());
+          logCompilationInfo(messages);
+        }
+        this.probeMessages = messages;
+        ctx.onBackendDiagnostics?.({ compilationMessages: messages });
+        if (messages.some((message) => message.type === 'error')) {
+          throw new GpuStageError('module', 'The WGSL compiler reported one or more errors.');
+        }
+        return created;
+      });
     } catch (error) {
-      device.destroy();
+      this.discardDevice(device);
       throw error;
     }
     if (!this.isCurrent(generation)) {
-      device.destroy();
+      this.discardDevice(device);
       return;
     }
 
-    if (typeof shaderModule.getCompilationInfo === 'function') {
-      const messages = normalizeCompilationMessages(await shaderModule.getCompilationInfo());
-      if (!this.isCurrent(generation)) {
-        device.destroy();
-        return;
-      }
-      logCompilationInfo(messages);
-      ctx.onBackendDiagnostics?.({ compilationMessages: messages });
-      if (messages.some((message) => message.type === 'error')) {
-        device.destroy();
-        throw new GpuStageError('module', 'The WGSL compiler reported one or more errors.');
-      }
-    } else {
-      ctx.onBackendDiagnostics?.({ compilationMessages: [] });
-    }
-
+    const pipelineDescriptor: GPURenderPipelineDescriptor = {
+      label: 'Sacred Breath WebGPU Pipeline',
+      layout: 'auto',
+      vertex: { module: shaderModule, entryPoint: ctx.vertexEntry },
+      fragment: { module: shaderModule, entryPoint: ctx.fragmentEntry, targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list' },
+    };
     let pipeline: GPURenderPipeline;
     try {
       pipeline = await createWithValidationScope(device, 'pipeline', () =>
-        device.createRenderPipeline({
-          label: 'Sacred Breath WebGPU Pipeline',
-          layout: 'auto',
-          vertex: { module: shaderModule, entryPoint: ctx.vertexEntry },
-          fragment: { module: shaderModule, entryPoint: ctx.fragmentEntry, targets: [{ format: this.format }] },
-          primitive: { topology: 'triangle-list' },
-        }),
+        typeof device.createRenderPipelineAsync === 'function'
+          ? device.createRenderPipelineAsync(pipelineDescriptor)
+          : device.createRenderPipeline(pipelineDescriptor),
       );
     } catch (error) {
-      device.destroy();
+      this.discardDevice(device);
       throw error;
     }
     const uniformBuffer = device.createBuffer({
@@ -242,7 +325,7 @@ export class WebGPUBackend implements RendererBackend {
       entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
     });
     if (!this.isCurrent(generation)) {
-      device.destroy();
+      this.discardDevice(device);
       return;
     }
 
@@ -271,6 +354,7 @@ export class WebGPUBackend implements RendererBackend {
       gpuFailureStage: undefined,
       gpuFailureReason: undefined,
     });
+    this.reportProbe('ok');
     this.scheduleFrame();
   }
 
@@ -414,6 +498,7 @@ export class WebGPUBackend implements RendererBackend {
     this.ro = null;
     this.resizeFn = null;
     this.loopArgs = null;
+    this.detachUncapturedError();
     try { this.canvasContext?.unconfigure(); } catch { /* optional cleanup */ }
     try { this.device?.destroy(); } catch { /* ignore */ }
     this.device = null;

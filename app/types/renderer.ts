@@ -19,12 +19,30 @@ export type RendererRecoveryStatus = 'idle' | 'recovering' | 'recovered' | 'fail
 
 export type GpuFailureStage = 'module' | 'pipeline' | 'device';
 
+export const GPU_FAILURE_STAGE_LABEL: Record<GpuFailureStage, string> = {
+  module: 'shader module',
+  pipeline: 'render pipeline',
+  device: 'device',
+};
+
+/** Result of the one-shot WebGPU boot probe (adapter + device + first pipeline). */
+export interface WebGpuProbeResult {
+  ok: boolean;
+  stage: GpuFailureStage | 'ok';
+  userAgent: string;
+  adapterInfo?: RendererAdapterInfo;
+  compilationMessages: RendererCompilationMessage[];
+  error?: string;
+  timestamp: number;
+}
+
 export interface RendererBackendDiagnostics {
   adapterInfo?: RendererAdapterInfo;
   compilationMessages?: RendererCompilationMessage[];
   recoveryStatus?: RendererRecoveryStatus;
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;
+  webgpuProbe?: WebGpuProbeResult;
 }
 
 /** Last stable adaptive-quality tier persisted across sessions. */
@@ -56,6 +74,7 @@ export interface RendererDiagnosticsState {
   recoveryStatus: RendererRecoveryStatus;
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;
+  webgpuProbe?: WebGpuProbeResult;
 }
 
 export interface RendererSettings {

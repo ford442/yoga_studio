@@ -228,6 +228,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         recoveryStatus: backendDiagnosticsRef.current.recoveryStatus ?? 'idle',
         gpuFailureStage: backendDiagnosticsRef.current.gpuFailureStage,
         gpuFailureReason: backendDiagnosticsRef.current.gpuFailureReason,
+        webgpuProbe: backendDiagnosticsRef.current.webgpuProbe,
       });
     };
 
@@ -281,10 +282,10 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     const governor = governorRef.current;
     if (!canvas || !container || !governor) return;
 
-    // Overlay canvas is created when the base setting allows it; the governor
-    // may skip drawing it without tearing down the GL context.
+    // Overlay canvas is created when the base setting allows it; skip it on the
+    // static hard-fail path so a failed WebGPU probe does not open a WebGL context.
     let overlay: GeometryOverlay | null = null;
-    if (effectiveOverlayEnabled && overlayCanvasRef.current) {
+    if (rendererMode !== 'static' && effectiveOverlayEnabled && overlayCanvasRef.current) {
       overlay = new GeometryOverlay(overlayCanvasRef.current);
       if (!overlay.init()) overlay = null;
     }
@@ -329,7 +330,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
           ...next,
         };
         if ('gpuFailureStage' in next) setGpuFailureStage(next.gpuFailureStage);
-        if (next.gpuFailureStage) publishDiagnosticsRef.current();
+        if (next.gpuFailureStage || next.webgpuProbe) publishDiagnosticsRef.current();
       },
       onFallback: (nextMode, reason) => {
         setFallbackReason(reason);
@@ -363,7 +364,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         className="absolute inset-0 w-full h-full"
         style={{ display: 'block' }}
       />
-      {effectiveOverlayEnabled && (
+      {effectiveOverlayEnabled && rendererMode !== 'static' && (
         <canvas
           ref={overlayCanvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none"

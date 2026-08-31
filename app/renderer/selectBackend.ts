@@ -36,8 +36,11 @@ export const fallbackOrder = (caps: RendererCapabilities): RendererMode[] => {
 /** The mode to try first, given capabilities. */
 export const pickInitialMode = (caps: RendererCapabilities): RendererMode => fallbackOrder(caps)[0];
 
-/** The next mode to try after `mode` fails. Terminal at 'static'. */
+/** The next mode to try after `mode` fails. Terminal at 'static'.
+ *  If WebGPU was attempted (Chrome/Edge), skip WebGL so compile/pipeline misses
+ *  are not hidden behind a silent GL fallback. Recovery retries WebGPU only. */
 export const getNextMode = (mode: RendererMode, caps: RendererCapabilities): RendererMode => {
+  if (mode === 'webgpu') return 'static';
   const order = fallbackOrder(caps);
   const index = order.indexOf(mode);
   if (index === -1 || index === order.length - 1) return 'static';
@@ -76,7 +79,7 @@ export const mountRenderer = (options: MountRendererOptions): (() => void) => {
     ...ctxBase,
     onFatalError: (reason, error) => {
       if (stopped) return;
-      console.warn(`[renderer] ${mode} backend failed: ${reason}`, error);
+      console.error(`[renderer] ${mode} backend failed: ${reason}`, error);
       onFallback(getNextMode(mode, caps), reason);
     },
   };

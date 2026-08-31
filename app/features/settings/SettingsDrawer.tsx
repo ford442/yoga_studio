@@ -193,6 +193,9 @@ export default function SettingsDrawer({
             />
             Show renderer diagnostics
           </label>
+          <p className="text-[11px] text-white/45 leading-relaxed mb-2">
+            WebGPU is required in Chrome and Edge. A failed boot probe hard-fails; WebGL fallback is deferred.
+          </p>
           <p className="text-[11px] text-white/45 leading-relaxed">
             {effectivePerformanceMode === 'auto'
               ? 'Following technique defaults.'

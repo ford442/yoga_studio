@@ -33,6 +33,9 @@ function makeDevice(
     }),
     createShaderModule: vi.fn(() => shaderModule),
     createRenderPipeline: vi.fn(() => ({ getBindGroupLayout: vi.fn(() => ({})) })),
+    createRenderPipelineAsync: vi.fn(async () => ({ getBindGroupLayout: vi.fn(() => ({})) })),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
     createBuffer: vi.fn(() => ({})),
     createBindGroup: vi.fn(() => ({})),
     createCommandEncoder: vi.fn(),
@@ -146,13 +149,19 @@ describe('WebGPUBackend', () => {
     expect(requestAdapter).toHaveBeenCalledWith({ powerPreference: 'high-performance', forceFallbackAdapter: false });
     expect(requestDevice).toHaveBeenCalledWith({ label: 'Sacred Breath WebGPU Device', requiredFeatures: [], requiredLimits: {} });
     expect(first.device.createShaderModule).toHaveBeenCalledWith(expect.objectContaining({ label: expect.stringContaining('sacred-monk.wgsl') }));
-    expect(first.device.createRenderPipeline).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath WebGPU Pipeline' }));
+    expect(first.device.createRenderPipelineAsync).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath WebGPU Pipeline' }));
     expect(first.device.createBuffer).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath Uniform Buffer' }));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ adapterInfo: { vendor: 'Example GPU', architecture: 'mock' } });
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ compilationMessages: [{ type: 'warning', text: 'portable warning', line: 4, column: 2 }] });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('GPUCompilationInfo warning 4:2 portable warning'));
     expect(first.device.pushErrorScope).toHaveBeenCalledWith('validation');
     expect(first.device.popErrorScope).toHaveBeenCalled();
+    const compilationOrder = first.shaderModule.getCompilationInfo.mock.invocationCallOrder[0];
+    const firstPopOrder = (first.device.popErrorScope as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    expect(compilationOrder).toBeLessThan(firstPopOrder);
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({
+      webgpuProbe: expect.objectContaining({ ok: true, stage: 'ok' }),
+    }));
     backend.stop();
   });
 
@@ -198,7 +207,7 @@ describe('WebGPUBackend', () => {
 
     await new WebGPUBackend().start(ctx);
 
-    expect(first.device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(first.device.createRenderPipelineAsync).not.toHaveBeenCalled();
     expect(ctx.onFatalError).toHaveBeenCalledWith('WebGPU shader module failed.', expect.any(Error));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({ gpuFailureStage: 'module' }));
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('GPUCompilationInfo error 9:1 bad wgsl'));
@@ -214,7 +223,7 @@ describe('WebGPUBackend', () => {
 
     await new WebGPUBackend().start(ctx);
 
-    expect(first.device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(first.device.createRenderPipelineAsync).not.toHaveBeenCalled();
     expect(ctx.onFatalError).toHaveBeenCalledWith('WebGPU shader module failed.', expect.any(Error));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({
       gpuFailureStage: 'module',
@@ -233,13 +242,16 @@ describe('WebGPUBackend', () => {
 
     await new WebGPUBackend().start(ctx);
 
-    expect(first.device.createRenderPipeline).toHaveBeenCalled();
+    expect(first.device.createRenderPipelineAsync).toHaveBeenCalled();
     expect(ctx.onFatalError).toHaveBeenCalledWith('WebGPU render pipeline failed.', expect.any(Error));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({
       gpuFailureStage: 'pipeline',
       gpuFailureReason: 'WebGPU render pipeline failed.',
     }));
     expect(console.error).toHaveBeenCalledWith('[WebGPU] pipeline validation:', 'bad pipeline');
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({
+      webgpuProbe: expect.objectContaining({ ok: false, stage: 'pipeline' }),
+    }));
   });
 
   it('reacquires adapter/device once after loss and preserves the governor object', async () => {
@@ -285,6 +297,28 @@ describe('WebGPUBackend', () => {
 
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({ recoveryStatus: 'failed' }));
     expect(ctx.onFatalError).toHaveBeenCalledWith('WebGPU device recovery failed.', expect.any(Error));
+    backend.stop();
+  });
+
+  it('treats uncaptured GPU errors as a staged fatal failure', async () => {
+    const first = makeDevice();
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    const listener = (first.device.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === 'uncapturederror',
+    )?.[1] as ((event: { preventDefault: () => void; error: { message: string } }) => void) | undefined;
+    expect(listener).toBeTypeOf('function');
+    listener?.({ preventDefault: vi.fn(), error: { message: 'WGSL parse failed at line 2' } });
+
+    expect(ctx.onFatalError).toHaveBeenCalledWith('WebGPU shader module failed.', expect.objectContaining({
+      message: 'WGSL parse failed at line 2',
+    }));
     backend.stop();
   });
 

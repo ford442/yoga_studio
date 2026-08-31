@@ -1,7 +1,10 @@
 'use client';
 
 import React from 'react';
-import { type RendererDiagnosticsState } from '../types/renderer';
+import {
+  GPU_FAILURE_STAGE_LABEL,
+  type RendererDiagnosticsState,
+} from '../types/renderer';
 
 interface RendererDiagnosticsProps {
   state: RendererDiagnosticsState | null;
@@ -19,7 +22,7 @@ export function GpuErrorBanner({ state }: RendererDiagnosticsProps) {
       data-testid="gpu-error-banner"
       data-gpu-failure-stage={state.gpuFailureStage}
     >
-      <div>GPU error ({state.gpuFailureStage}): {reason}</div>
+      <div>GPU error ({GPU_FAILURE_STAGE_LABEL[state.gpuFailureStage]}): {reason}</div>
       {firstError && (
         <div className="mt-1 text-red-200/90">
           {firstError.line}:{firstError.column} {firstError.text}
@@ -91,6 +94,12 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
         {hiddenMessageCount > 0 && <div>+{hiddenMessageCount} more compiler messages</div>}
         {state.reducedMotion && <div className="text-amber-300">Reduced motion active</div>}
         {fallback && <div className="text-amber-300/90 max-w-[260px] leading-tight">{fallback}</div>}
+        {state.webgpuProbe && (
+          <div className="text-white/55 max-w-[320px] leading-tight break-all" data-testid="webgpu-probe">
+            Probe: {state.webgpuProbe.ok ? 'ok' : state.webgpuProbe.stage}
+            {state.webgpuProbe.error ? ` · ${state.webgpuProbe.error}` : ''}
+          </div>
+        )}
       </div>
     </div>
   );
