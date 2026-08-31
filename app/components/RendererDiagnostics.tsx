@@ -7,6 +7,28 @@ interface RendererDiagnosticsProps {
   state: RendererDiagnosticsState | null;
 }
 
+/** Always-on GPU failure banner (not gated on the diagnostics toggle). */
+export function GpuErrorBanner({ state }: RendererDiagnosticsProps) {
+  if (!state?.gpuFailureStage) return null;
+  const firstError = state.compilationMessages.find((message) => message.type === 'error');
+  const reason = state.gpuFailureReason ?? state.fallbackReason ?? 'WebGPU initialization failed.';
+
+  return (
+    <div
+      className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-red-400/40 bg-red-950/80 px-4 py-2 text-red-100 text-xs font-mono pointer-events-none max-w-[min(92vw,420px)] leading-tight"
+      data-testid="gpu-error-banner"
+      data-gpu-failure-stage={state.gpuFailureStage}
+    >
+      <div>GPU error ({state.gpuFailureStage}): {reason}</div>
+      {firstError && (
+        <div className="mt-1 text-red-200/90">
+          {firstError.line}:{firstError.column} {firstError.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const qualityLabel = (preset: number): string =>
   preset >= 0.5 ? 'high' : 'mobile';
 

@@ -6,7 +6,7 @@ import CompletionScreen from '../../components/CompletionScreen';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import ParticleBurst from '../../components/ParticleBurst';
 import ProgramSelector from '../../components/ProgramSelector';
-import RendererDiagnostics from '../../components/RendererDiagnostics';
+import RendererDiagnostics, { GpuErrorBanner } from '../../components/RendererDiagnostics';
 import EnvironmentBackground from '../../components/EnvironmentBackground';
 import InstructorVideoGuide from '../../components/InstructorVideoGuide';
 import TrendsSheet from '../../components/TrendsSheet';
@@ -213,6 +213,7 @@ export default function PracticeScreen() {
         isPerformanceForced={renderer.isPerformanceForced}
       />
 
+      <GpuErrorBanner state={renderer.diagnostics} />
       {renderer.settings.showDiagnostics && <RendererDiagnostics state={renderer.diagnostics} />}
 
       <InstallPrompt />

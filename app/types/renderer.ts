@@ -17,10 +17,14 @@ export interface RendererCompilationMessage {
 
 export type RendererRecoveryStatus = 'idle' | 'recovering' | 'recovered' | 'failed';
 
+export type GpuFailureStage = 'module' | 'pipeline' | 'device';
+
 export interface RendererBackendDiagnostics {
   adapterInfo?: RendererAdapterInfo;
   compilationMessages?: RendererCompilationMessage[];
   recoveryStatus?: RendererRecoveryStatus;
+  gpuFailureStage?: GpuFailureStage;
+  gpuFailureReason?: string;
 }
 
 /** Last stable adaptive-quality tier persisted across sessions. */
@@ -50,6 +54,8 @@ export interface RendererDiagnosticsState {
   adapterInfo?: RendererAdapterInfo;
   compilationMessages: RendererCompilationMessage[];
   recoveryStatus: RendererRecoveryStatus;
+  gpuFailureStage?: GpuFailureStage;
+  gpuFailureReason?: string;
 }
 
 export interface RendererSettings {

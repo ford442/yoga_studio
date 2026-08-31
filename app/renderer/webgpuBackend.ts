@@ -2,6 +2,7 @@ import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 import { buildUniformBuffer, UNIFORM_BUFFER_SIZE } from '../lib/shaderContract';
 import { loadWgslSource } from '../lib/wgslModules';
 import type {
+  GpuFailureStage,
   RendererAdapterInfo,
   RendererCompilationMessage,
 } from '../types/renderer';
@@ -12,11 +13,51 @@ import type { RendererBackend, RendererBackendContext } from './types';
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
 
-class ShaderCompilationError extends Error {}
+export class GpuStageError extends Error {
+  readonly stage: GpuFailureStage;
+
+  constructor(stage: GpuFailureStage, message: string) {
+    super(message);
+    this.name = 'GpuStageError';
+    this.stage = stage;
+  }
+}
 
 type ShaderModuleWithOptionalInfo = GPUShaderModule & {
   getCompilationInfo?: () => Promise<GPUCompilationInfo>;
 };
+
+export function fatalReasonForGpuError(error: unknown): string {
+  if (error instanceof GpuStageError) {
+    if (error.stage === 'module') return 'WebGPU shader module failed.';
+    if (error.stage === 'pipeline') return 'WebGPU render pipeline failed.';
+  }
+  return 'WebGPU device failed.';
+}
+
+export function logCompilationInfo(messages: RendererCompilationMessage[]): void {
+  for (const message of messages) {
+    const line = `[WebGPU] GPUCompilationInfo ${message.type} ${message.line}:${message.column} ${message.text}`;
+    if (message.type === 'error') console.error(line);
+    else if (message.type === 'warning') console.warn(line);
+  }
+}
+
+/** Create a GPU object inside a validation error scope so async Chrome validation surfaces as JS. */
+export async function createWithValidationScope<T>(
+  device: GPUDevice,
+  stage: 'module' | 'pipeline',
+  create: () => T,
+): Promise<T> {
+  device.pushErrorScope('validation');
+  const result = create();
+  const error = await device.popErrorScope();
+  if (error) {
+    console.error(`[WebGPU] ${stage} validation:`, error.message);
+    throw new GpuStageError(stage, error.message);
+  }
+  return result;
+}
 
 export function readAdapterInfo(adapter: GPUAdapter): RendererAdapterInfo | undefined {
   const info = adapter.info;
@@ -72,12 +113,12 @@ export class WebGPUBackend implements RendererBackend {
     this.startTime = Date.now();
     this.canvasContext = ctx.canvas.getContext('webgpu');
     if (!this.canvasContext) {
-      ctx.onFatalError('Unable to create a WebGPU canvas context.');
+      this.fail('device', 'Unable to create a WebGPU canvas context.');
       return;
     }
     this.format = navigator.gpu?.getPreferredCanvasFormat() ?? null;
     if (!this.format) {
-      ctx.onFatalError('WebGPU is unavailable.');
+      this.fail('device', 'WebGPU is unavailable.');
       return;
     }
 
@@ -90,7 +131,7 @@ export class WebGPUBackend implements RendererBackend {
         );
         if (resized) ctx.overlay?.resize(ctx.getMaxDevicePixelRatio());
       } catch (error) {
-        ctx.onFatalError('Failed to configure the WebGPU context after resize.', error);
+        this.fail('device', 'Failed to configure the WebGPU context after resize.', error);
       }
     };
     this.resizeFn();
@@ -101,11 +142,16 @@ export class WebGPUBackend implements RendererBackend {
       await this.initializeGeneration(false);
     } catch (error) {
       if (this.cancelled) return;
-      const reason = error instanceof ShaderCompilationError
-        ? 'WebGPU shader compilation failed.'
-        : 'WebGPU initialization failed.';
-      ctx.onFatalError(reason, error);
+      const stage: GpuFailureStage = error instanceof GpuStageError ? error.stage : 'device';
+      this.fail(stage, fatalReasonForGpuError(error), error);
     }
+  }
+
+  private fail(stage: GpuFailureStage, reason: string, error?: unknown): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.onBackendDiagnostics?.({ gpuFailureStage: stage, gpuFailureReason: reason });
+    ctx.onFatalError(reason, error);
   }
 
   private async initializeGeneration(recovery: boolean): Promise<void> {
@@ -137,10 +183,18 @@ export class WebGPUBackend implements RendererBackend {
       device.destroy();
       throw error;
     }
-    const shaderModule = device.createShaderModule({
-      label: `Sacred Breath shader: ${ctx.shaderPath}`,
-      code: shaderSource,
-    }) as ShaderModuleWithOptionalInfo;
+    let shaderModule: ShaderModuleWithOptionalInfo;
+    try {
+      shaderModule = await createWithValidationScope(device, 'module', () =>
+        device.createShaderModule({
+          label: `Sacred Breath shader: ${ctx.shaderPath}`,
+          code: shaderSource,
+        }) as ShaderModuleWithOptionalInfo,
+      );
+    } catch (error) {
+      device.destroy();
+      throw error;
+    }
     if (!this.isCurrent(generation)) {
       device.destroy();
       return;
@@ -152,22 +206,31 @@ export class WebGPUBackend implements RendererBackend {
         device.destroy();
         return;
       }
+      logCompilationInfo(messages);
       ctx.onBackendDiagnostics?.({ compilationMessages: messages });
       if (messages.some((message) => message.type === 'error')) {
         device.destroy();
-        throw new ShaderCompilationError('The WGSL compiler reported one or more errors.');
+        throw new GpuStageError('module', 'The WGSL compiler reported one or more errors.');
       }
     } else {
       ctx.onBackendDiagnostics?.({ compilationMessages: [] });
     }
 
-    const pipeline = device.createRenderPipeline({
-      label: 'Sacred Breath WebGPU Pipeline',
-      layout: 'auto',
-      vertex: { module: shaderModule, entryPoint: ctx.vertexEntry },
-      fragment: { module: shaderModule, entryPoint: ctx.fragmentEntry, targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list' },
-    });
+    let pipeline: GPURenderPipeline;
+    try {
+      pipeline = await createWithValidationScope(device, 'pipeline', () =>
+        device.createRenderPipeline({
+          label: 'Sacred Breath WebGPU Pipeline',
+          layout: 'auto',
+          vertex: { module: shaderModule, entryPoint: ctx.vertexEntry },
+          fragment: { module: shaderModule, entryPoint: ctx.fragmentEntry, targets: [{ format: this.format }] },
+          primitive: { topology: 'triangle-list' },
+        }),
+      );
+    } catch (error) {
+      device.destroy();
+      throw error;
+    }
     const uniformBuffer = device.createBuffer({
       label: 'Sacred Breath Uniform Buffer',
       size: UNIFORM_BUFFER_SIZE,
@@ -203,8 +266,11 @@ export class WebGPUBackend implements RendererBackend {
         () => this.scheduleFrame(),
       );
     }
-    if (recovery) ctx.onBackendDiagnostics?.({ recoveryStatus: 'recovered' });
-    else ctx.onBackendDiagnostics?.({ recoveryStatus: 'idle' });
+    ctx.onBackendDiagnostics?.({
+      recoveryStatus: recovery ? 'recovered' : 'idle',
+      gpuFailureStage: undefined,
+      gpuFailureReason: undefined,
+    });
     this.scheduleFrame();
   }
 
@@ -219,7 +285,7 @@ export class WebGPUBackend implements RendererBackend {
     this.loopArgs = null;
     if (this.recoveryAttempted) {
       ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
-      ctx.onFatalError(`WebGPU device was lost again (${info.reason}).`, info.message);
+      this.fail('device', `WebGPU device was lost again (${info.reason}).`, info.message);
       return;
     }
     this.recoveryAttempted = true;
@@ -229,8 +295,13 @@ export class WebGPUBackend implements RendererBackend {
     } catch (error) {
       if (this.cancelled) return;
       ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
-      const detail = error instanceof ShaderCompilationError ? ' Shader compilation failed.' : '';
-      ctx.onFatalError(`WebGPU device recovery failed.${detail}`, error);
+      const stage: GpuFailureStage = error instanceof GpuStageError ? error.stage : 'device';
+      const detail = error instanceof GpuStageError && error.stage === 'module'
+        ? ' Shader module failed.'
+        : error instanceof GpuStageError && error.stage === 'pipeline'
+          ? ' Render pipeline failed.'
+          : '';
+      this.fail(stage, `WebGPU device recovery failed.${detail}`, error);
     }
   }
 
@@ -298,11 +369,11 @@ export class WebGPUBackend implements RendererBackend {
           this.scheduleFrame();
           return;
         } catch (configureError) {
-          ctx.onFatalError('WebGPU canvas reconfiguration failed.', configureError);
+          this.fail('device', 'WebGPU canvas reconfiguration failed.', configureError);
           return;
         }
       }
-      ctx.onFatalError('WebGPU could not acquire the current canvas texture after reconfiguration.', error);
+      this.fail('device', 'WebGPU could not acquire the current canvas texture after reconfiguration.', error);
       return;
     }
 
@@ -327,7 +398,7 @@ export class WebGPUBackend implements RendererBackend {
       device.queue.submit([encoder.finish()]);
       if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
     } catch (error) {
-      ctx.onFatalError('WebGPU render loop failed.', error);
+      this.fail('device', 'WebGPU render loop failed.', error);
       return;
     }
     this.scheduleFrame();

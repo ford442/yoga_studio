@@ -13,6 +13,7 @@ import {
 } from '../renderer/frameGovernor';
 import type { AnimatedUniformValues } from '../renderer/types';
 import {
+  type GpuFailureStage,
   type RendererMode,
   type RendererDiagnosticsState,
   type GovernorPersistedTier,
@@ -119,6 +120,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const [rendererMode, setRendererMode] = useState<RendererMode>(() => pickInitialMode(capabilities));
   const [fallbackReason, setFallbackReason] = useState<string | undefined>(undefined);
+  const [gpuFailureStage, setGpuFailureStage] = useState<GpuFailureStage | undefined>(undefined);
   const [governorSnap, setGovernorSnap] = useState<GovernorSnapshot>(() => ({
     resolutionScale: 1,
     qualityPreset: 1,
@@ -154,6 +156,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     pauseRendering,
   });
   const governorRef = useRef<FrameGovernor | null>(null);
+  const publishDiagnosticsRef = useRef<() => void>(() => {});
   if (governorRef.current == null) {
     governorRef.current = createFrameGovernor({
       base: toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled),
@@ -223,10 +226,13 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         adapterInfo: backendDiagnosticsRef.current.adapterInfo,
         compilationMessages: backendDiagnosticsRef.current.compilationMessages ?? [],
         recoveryStatus: backendDiagnosticsRef.current.recoveryStatus ?? 'idle',
+        gpuFailureStage: backendDiagnosticsRef.current.gpuFailureStage,
+        gpuFailureReason: backendDiagnosticsRef.current.gpuFailureReason,
       });
     };
 
     const id = window.setInterval(publish, 500);
+    publishDiagnosticsRef.current = publish;
     return () => window.clearInterval(id);
   }, []);
 
@@ -322,6 +328,8 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
           ...backendDiagnosticsRef.current,
           ...next,
         };
+        if ('gpuFailureStage' in next) setGpuFailureStage(next.gpuFailureStage);
+        if (next.gpuFailureStage) publishDiagnosticsRef.current();
       },
       onFallback: (nextMode, reason) => {
         setFallbackReason(reason);
@@ -342,6 +350,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       data-renderer={rendererMode}
       data-shader={shaderPath}
       data-fallback-reason={fallbackReason ?? ''}
+      data-gpu-failure-stage={gpuFailureStage ?? ''}
       data-quality={Math.min(effectiveQualityPreset, governorSnap.qualityPreset)}
       data-dpr-cap={resolvedMaxDpr}
       data-resolution-scale={governorSnap.resolutionScale}
