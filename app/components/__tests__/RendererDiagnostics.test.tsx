@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { GpuErrorBanner } from '../RendererDiagnostics';
+import RendererDiagnostics, { GpuErrorBanner } from '../RendererDiagnostics';
 import type { RendererDiagnosticsState } from '../../types/renderer';
 
 const base = (patch: Partial<RendererDiagnosticsState>): RendererDiagnosticsState => ({
@@ -34,5 +34,27 @@ describe('GpuErrorBanner', () => {
       <GpuErrorBanner state={base({ gpuFailureStage: 'device', gpuFailureReason: 'WebGPU device failed.' })} />,
     );
     expect(screen.getByTestId('gpu-error-banner').textContent).toContain('GPU error (device)');
+  });
+});
+
+describe('RendererDiagnostics', () => {
+  it('shows the gpu-chores backend and why it was picked', () => {
+    render(
+      <RendererDiagnostics
+        state={base({ chores: { backend: 'webgpu', reason: 'adopted renderer GPUDevice', jobCount: 2 } })}
+      />,
+    );
+
+    const row = screen.getByTestId('chores-backend');
+    expect(row.dataset.choresBackend).toBe('webgpu');
+    expect(row.textContent).toContain('adopted renderer GPUDevice');
+  });
+
+  it('reads as idle before any chore has run', () => {
+    render(<RendererDiagnostics state={base({})} />);
+
+    const row = screen.getByTestId('chores-backend');
+    expect(row.dataset.choresBackend).toBe('idle');
+    expect(row.textContent).toContain('no chores run yet');
   });
 });

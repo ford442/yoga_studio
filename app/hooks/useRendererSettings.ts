@@ -35,6 +35,7 @@ const parseSettings = (raw: unknown): RendererSettings => {
       : DEFAULT_RENDERER_SETTINGS.performanceMode,
     reducedMotion: Boolean(data.reducedMotion),
     showDiagnostics: Boolean(data.showDiagnostics),
+    gpuComputeEnabled: data.gpuComputeEnabled !== false,
     ...(governorTier ? { governorTier } : {}),
   };
 };

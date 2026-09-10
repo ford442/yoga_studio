@@ -60,7 +60,12 @@ export default function PracticeScreen() {
     <main className="min-h-dvh bg-[#05010a] text-white relative overflow-hidden">
       <OfflineIndicator />
 
-      <EnvironmentBackground environmentId={environment.activeId} theme={practice.selectedMode.theme} chakraPhase={chakraPhase} />
+      <EnvironmentBackground
+        environmentId={environment.activeId}
+        theme={practice.selectedMode.theme}
+        chakraPhase={chakraPhase}
+        gpuComputeEnabled={renderer.settings.gpuComputeEnabled}
+      />
 
       {instructor.canUse && (
         <InstructorVideoGuide

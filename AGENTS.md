@@ -195,6 +195,14 @@ The canvas dimensions are driven by `clientWidth/clientHeight × devicePixelRati
 
 ---
 
+## gpu-chores (UI & media helpers)
+
+`app/lib/gpuChores/` + `app/renderer/gpuChores/` hold the shared histogram /
+downsample / LUT helpers. They borrow the renderer's `GPUDevice` through
+`lendChoreDevice()` and never request an adapter of their own; below the
+512x512 break-even, or with `?no_gpu_compute` set, they run on Canvas2D / JS.
+Studio FX shaders stay app-owned in `public/`. See `docs/gpu-chores.md`.
+
 ## Breath Timing System
 
 ### Active Hook: `useBreathTimer.ts`

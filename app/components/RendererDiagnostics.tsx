@@ -80,6 +80,9 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
           Frame p75: {p75} · Step-downs: {state.governorStepDowns}
         </div>
         {adapter && <div className="max-w-[320px] leading-tight">Adapter: {adapter}</div>}
+        <div data-testid="chores-backend" data-chores-backend={state.chores?.backend ?? 'idle'}>
+          Chores: {state.chores?.backend ?? 'idle'} · {state.chores?.reason ?? 'no chores run yet'}
+        </div>
         {state.recoveryStatus !== 'idle' && (
           <div className="text-amber-300">Recovery: {state.recoveryStatus}</div>
         )}

@@ -1,3 +1,5 @@
+import type { ChoresStatus } from '../lib/gpuChores/breadcrumbs';
+
 export type PerformanceMode = 'auto' | 'performance' | 'quality';
 export type RendererMode = 'webgpu' | 'webgl2' | 'static';
 
@@ -75,12 +77,16 @@ export interface RendererDiagnosticsState {
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;
   webgpuProbe?: WebGpuProbeResult;
+  /** Backend the shared gpu-chores kit (histogram / thumbs / LUT) last ran on. */
+  chores?: ChoresStatus;
 }
 
 export interface RendererSettings {
   performanceMode: PerformanceMode;
   reducedMotion: boolean;
   showDiagnostics: boolean;
+  /** Settings-equivalent of `?no_gpu_compute`: off pins gpu-chores to Canvas2D / JS. */
+  gpuComputeEnabled: boolean;
   /** Last stable governor tier — next session starts here instead of rediscovering. */
   governorTier?: GovernorPersistedTier;
 }
@@ -89,6 +95,7 @@ export const DEFAULT_RENDERER_SETTINGS: RendererSettings = {
   performanceMode: 'auto',
   reducedMotion: false,
   showDiagnostics: false,
+  gpuComputeEnabled: true,
 };
 
 export const RENDERER_STORAGE_KEY = 'sacred-breath-renderer';

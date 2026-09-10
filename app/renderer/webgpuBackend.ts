@@ -10,6 +10,7 @@ import type {
 import { getWebGPUAdapterOptions } from './adapterOptions';
 import { resizeCanvasForDpr } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
+import { lendChoreDevice } from './gpuChores/choreDevice';
 import type { RendererBackend, RendererBackendContext } from './types';
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
@@ -229,6 +230,7 @@ export class WebGPUBackend implements RendererBackend {
     const ctx = this.ctx;
     if (!ctx || this.fatal || this.cancelled) return;
     this.fatal = true;
+    lendChoreDevice(null, `renderer WebGPU failed (${stage})`);
     const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
     this.reportProbe(stage, detail ?? reason);
     ctx.onBackendDiagnostics?.({ gpuFailureStage: stage, gpuFailureReason: reason });
@@ -349,6 +351,8 @@ export class WebGPUBackend implements RendererBackend {
         () => this.scheduleFrame(),
       );
     }
+    // gpu-chores borrow this device rather than requesting a second adapter.
+    lendChoreDevice(device, 'adopted renderer GPUDevice');
     ctx.onBackendDiagnostics?.({
       recoveryStatus: recovery ? 'recovered' : 'idle',
       gpuFailureStage: undefined,
@@ -367,6 +371,7 @@ export class WebGPUBackend implements RendererBackend {
     if (!ctx || this.cancelled) return;
     this.cancelFrame();
     this.loopArgs = null;
+    lendChoreDevice(null, 'renderer device lost');
     if (this.recoveryAttempted) {
       ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
       this.fail('device', `WebGPU device was lost again (${info.reason}).`, info.message);
@@ -490,6 +495,7 @@ export class WebGPUBackend implements RendererBackend {
 
   stop(): void {
     this.cancelled = true;
+    lendChoreDevice(null, 'renderer stopped');
     this.generation += 1;
     this.cancelFrame();
     this.detachVisibility?.();

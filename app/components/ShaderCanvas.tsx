@@ -11,6 +11,7 @@ import {
   type GovernorSnapshot,
   type GovernorTier,
 } from '../renderer/frameGovernor';
+import { getChoresStatus } from '../lib/gpuChores';
 import type { AnimatedUniformValues } from '../renderer/types';
 import {
   type GpuFailureStage,
@@ -229,6 +230,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         gpuFailureStage: backendDiagnosticsRef.current.gpuFailureStage,
         gpuFailureReason: backendDiagnosticsRef.current.gpuFailureReason,
         webgpuProbe: backendDiagnosticsRef.current.webgpuProbe,
+        chores: getChoresStatus(),
       });
     };
 

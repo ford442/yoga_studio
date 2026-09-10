@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { ENVIRONMENT_BY_ID } from '../data/environments';
+import { useEnvironmentLevels } from '../hooks/useEnvironmentLevels';
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 import type { EnvironmentId } from '../types/environment';
 
@@ -9,6 +10,8 @@ interface EnvironmentBackgroundProps {
   environmentId: EnvironmentId;
   theme: number;
   chakraPhase: number;
+  /** Settings kill switch for the gpu-chores levels pass. */
+  gpuComputeEnabled?: boolean;
 }
 
 const THEME_TINTS: Record<number, string> = {
@@ -34,6 +37,7 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
   environmentId,
   theme,
   chakraPhase,
+  gpuComputeEnabled = true,
 }) => {
   const [layers, setLayers] = useState<LayerState[]>([{ id: environmentId, visible: true }]);
   const prevIdRef = useRef(environmentId);
@@ -68,6 +72,9 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
   }, [environmentId]);
 
   const env = ENVIRONMENT_BY_ID[environmentId];
+  // Measured through gpu-chores (thumb + BT.709 histogram); falls back to the
+  // plate's baked `averageLuminance` until — or unless — that lands.
+  const levels = useEnvironmentLevels(env?.imageSrc, env?.averageLuminance, gpuComputeEnabled);
   const themeTint = THEME_TINTS[theme] ?? THEME_TINTS[0];
   const chakraTint = CHAKRA_TINTS[chakraPhase] ?? CHAKRA_TINTS[0];
 
@@ -141,8 +148,7 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                background:
-                  'radial-gradient(ellipse at center, transparent 30%, rgba(5,1,10,0.55) 100%)',
+                background: `radial-gradient(ellipse at center, transparent 30%, rgba(5,1,10,${levels.scrimOpacity.toFixed(3)}) 100%)`,
               }}
             />
           </div>
