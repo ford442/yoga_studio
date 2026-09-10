@@ -1,46 +1,27 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { openPractice, pageNow, readPhase, setPhaseLengths } from './helpers/practice';
 
 test.setTimeout(90_000);
 
-async function dismissOnboarding(page: Page) {
-  const skipOnboarding = page.getByRole('button', { name: /Skip onboarding/ });
-  if (await skipOnboarding.isVisible().catch(() => false)) {
-    await skipOnboarding.click({ force: true });
-    await page.clock.fastForward(16);
-  }
-}
-
-async function setShortPhases(page: Page) {
-  await page.getByRole('button', { name: 'Open settings' }).click({ force: true });
-  await expect(page.getByRole('heading', { name: 'Customize Breath' })).toBeVisible();
-
-  const sliders = page.getByRole('slider');
-  const count = await sliders.count();
-  expect(count).toBeGreaterThanOrEqual(4);
-
-  for (let i = 0; i < 4; i++) {
-    await sliders.nth(i).fill('1');
-  }
-
-  await page.getByRole('button', { name: 'DONE' }).click({ force: true });
-}
-
 test.describe('session journey', () => {
   test('begin → phase transitions → instructor video → completion', async ({ page }) => {
-    // Install before navigation so the app captures fake Date / rAF.
-    // Keep the clock paused; advance via fastForward so each jump fires at most
-    // one due rAF tick (runFor is too slow against a continuous breath rAF loop).
-    await page.clock.install({ time: new Date('2026-07-22T12:00:00.000Z') });
-    await page.goto('/');
+    // Advance via fastForward so each jump fires at most one due rAF tick
+    // (runFor is too slow against a continuous breath rAF loop). The clock is
+    // left ticking here so the instructor <video> below can actually load.
+    await openPractice(page, '2026-07-22T12:00:00.000Z');
+    await setPhaseLengths(page, 1);
 
-    await dismissOnboarding(page);
-    await expect(page.getByRole('heading', { name: 'SACRED BREATH', exact: true })).toBeVisible();
-
-    await setShortPhases(page);
-
-    // Timed session required for the completion overlay.
-    // Use the footer quick-start; the technique-card button reapplies mode defaults.
-    await page.getByRole('button', { name: '5 MIN' }).last().click({ force: true });
+    // Timed session required for the completion overlay. Match the footer
+    // quick-start exactly: the technique card and the beginner card both carry
+    // a "… 5 MIN" label and reapply their mode's breath defaults on click.
+    const quickStart = page.getByRole('button', { name: '5 MIN', exact: true }).last();
+    await expect(quickStart).toBeVisible();
+    // Unforced: let Playwright wait out the drawer's exit animation rather than
+    // dispatching the click into the overlay that is still on top.
+    await quickStart.click();
+    // The clock only advances on fastForward, so reading it before the first
+    // tick gives the session's monotonic anchor exactly.
+    const sessionAnchorMs = await pageNow(page);
     // Fire the first rAF so the timer loop captures startTime and paints inhale.
     await page.clock.fastForward(16);
     await expect(page.getByRole('button', { name: 'PAUSE', exact: true })).toBeVisible();
@@ -49,12 +30,13 @@ test.describe('session journey', () => {
     await expect(phase).toBeVisible();
 
     const phasesSeen = new Set<string>();
-    phasesSeen.add(((await phase.textContent()) ?? '').trim().toLowerCase());
+    expect(await readPhase(page)).toBe('inhale');
+    phasesSeen.add(await readPhase(page));
 
     // 1s phases: each ~1.1s jump should land in the next phase.
     for (let i = 0; i < 6 && phasesSeen.size < 3; i++) {
       await page.clock.fastForward(1100);
-      phasesSeen.add(((await phase.textContent()) ?? '').trim().toLowerCase());
+      phasesSeen.add(await readPhase(page));
     }
     expect(
       phasesSeen.size,
@@ -80,21 +62,23 @@ test.describe('session journey', () => {
       )
       .toBe(true);
 
-    // Fine-grained ticks so the wrap detector (prev>0.95 → progress<0.05) can fire.
-    // Coarse jumps skip the boundary and leave totalBreaths at 0 (no completion overlay).
-    for (let i = 0; i < 45; i++) {
-      await page.clock.fastForward(100);
-    }
-
-    // Move wall-clock time past the scheduled boundary, then nudge one frame.
-    // setSystemTime is explicit here: fastForward executes queued rAF callbacks
-    // at their due timestamps and can leave Date.now() short of a coarse jump.
-    await page.clock.setSystemTime(new Date('2026-07-22T12:05:01.000Z'));
+    // The engine counts cycles from its monotonic schedule, so one coarse jump
+    // past the 5-minute deadline is enough — no fine ticking to catch a wrap.
+    // Land 20ms past the deadline so the auto-end frame sees the analytical
+    // elapsed time rather than an arbitrary overshoot.
+    const elapsedMs = (await pageNow(page)) - sessionAnchorMs;
+    await page.clock.fastForward(Math.round(5 * 60_000 - elapsedMs) + 20);
     for (let i = 0; i < 10 && !(await page.getByRole('dialog').isVisible().catch(() => false)); i++) {
       await page.clock.fastForward(50);
     }
 
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Session Complete/)).toBeVisible();
+
+    // Analytical breath count: 300s of 1s phases = 75 complete 4s cycles.
+    await expect(page.getByText('CONSCIOUS BREATHS')).toBeVisible();
+    await expect(
+      page.getByText('CONSCIOUS BREATHS').locator('xpath=preceding-sibling::div[1]'),
+    ).toHaveText('75');
   });
 });

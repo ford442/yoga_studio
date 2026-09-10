@@ -111,7 +111,10 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
     settings,
     completedSegment,
     activeSegmentId,
-    phaseProgress,
+    getPhaseSnapshot,
+    nextPhaseAtMs,
+    nextPhase,
+    phaseOrdinal,
     startSession,
     toggleFree,
     updateSettings,
@@ -169,8 +172,10 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
   const [diagnostics, setDiagnostics] = useState<RendererDiagnosticsState | null>(null);
 
   useBreathAudio({
-    currentPhase,
-    phaseProgress,
+    getPhaseSnapshot,
+    nextPhaseAtMs,
+    nextPhase,
+    phaseOrdinal,
     isRunning,
     themeIndex: practiceSession.selectedMode.theme,
   });

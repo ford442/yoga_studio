@@ -36,7 +36,7 @@ export default function PracticeScreen() {
     totalBreaths,
     phaseProgress,
     remaining,
-    phaseDuration,
+    getPhaseSnapshot,
     intensity,
     reset,
     updateSettings,
@@ -79,8 +79,7 @@ export default function PracticeScreen() {
           figurePose={practice.selectedMode.figurePose}
           isRunning={isRunning}
           currentPhase={currentPhase}
-          phaseProgress={phaseProgress}
-          phaseDurationSec={phaseDuration}
+          getPhaseSnapshot={getPhaseSnapshot}
           intensity={intensity}
           onDragOffset={(pipDragOffset) => instructor.updateSettings({ pipDragOffset })}
         />
