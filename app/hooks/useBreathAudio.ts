@@ -1,12 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BreathPhase } from './useBreathTimer';
+import { monotonicNow, type BreathPhase, type PhaseSnapshot } from './useBreathTimer';
 import { getAudioBreathExpand, getThemeBaseFrequency } from '../utils/audioEasing';
 
 interface UseBreathAudioProps {
-  currentPhase: BreathPhase;
-  phaseProgress: number;
+  /** Reads the shared breath timeline at the calling instant. */
+  getPhaseSnapshot: () => PhaseSnapshot;
+  /** Monotonic timestamp of the upcoming phase boundary. */
+  nextPhaseAtMs: number;
+  /** Phase that begins at `nextPhaseAtMs`. */
+  nextPhase: BreathPhase;
+  /** Strictly increasing ordinal of the current phase; dedupes boundary scheduling. */
+  phaseOrdinal: number;
   isRunning: boolean;
   themeIndex?: number;
 }
@@ -27,8 +33,10 @@ const BINAURAL_OFFSET_DEFAULT = 4.5;
 const BINAURAL_OFFSET_HOLD = 2;
 
 export const useBreathAudio = ({
-  currentPhase,
-  phaseProgress,
+  getPhaseSnapshot,
+  nextPhaseAtMs,
+  nextPhase,
+  phaseOrdinal,
   isRunning,
   themeIndex = 0,
 }: UseBreathAudioProps) => {
@@ -39,22 +47,19 @@ export const useBreathAudio = ({
   const oscRRef = useRef<OscillatorNode | null>(null);
   const sessionStartRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const lastPhaseRef = useRef<BreathPhase>(currentPhase);
   const muteRef = useRef(false);
   const isRunningRef = useRef(isRunning);
   const [isMuted, setIsMuted] = useState(false);
 
-  const currentPhaseRef = useRef(currentPhase);
-  const phaseProgressRef = useRef(phaseProgress);
+  /** Ordinal of the boundary chime already committed to the audio clock. */
+  const scheduledOrdinalRef = useRef(-1);
+  const scheduledChimesRef = useRef<OscillatorNode[]>([]);
+  const snapshotRef = useRef(getPhaseSnapshot);
   const themeIndexRef = useRef(themeIndex);
 
   useEffect(() => {
-    currentPhaseRef.current = currentPhase;
-  }, [currentPhase]);
-
-  useEffect(() => {
-    phaseProgressRef.current = phaseProgress;
-  }, [phaseProgress]);
+    snapshotRef.current = getPhaseSnapshot;
+  }, [getPhaseSnapshot]);
 
   useEffect(() => {
     themeIndexRef.current = themeIndex;
@@ -74,29 +79,59 @@ export const useBreathAudio = ({
     return audioCtxRef.current;
   }, []);
 
-  const playChime = useCallback(
-    (frequency: number, duration: number, type: OscillatorType) => {
+  /** Drops any chime committed to the audio clock but not yet heard. */
+  const cancelScheduledChimes = useCallback(() => {
+    for (const osc of scheduledChimesRef.current) {
+      try {
+        osc.stop();
+      } catch {
+        // already stopped or never started
+      }
+      osc.disconnect();
+    }
+    scheduledChimesRef.current = [];
+    scheduledOrdinalRef.current = -1;
+  }, []);
+
+  /**
+   * Books a chime on the AudioContext clock for the monotonic instant `atMs`.
+   * Scheduling ahead of time removes the React-effect latency that made short
+   * phases (1s test sliders) feel like the sound trailed the countdown.
+   */
+  const scheduleChime = useCallback(
+    (phase: BreathPhase, atMs: number) => {
       if (muteRef.current || !isRunningRef.current) return;
       const ctx = getAudioContext();
+      const { freq, duration, type } = CHIME_FREQUENCIES[phase];
+      // Re-derive the offset each call so performance/audio clock skew cannot
+      // accumulate across a long session.
+      const startAt = ctx.currentTime + Math.max(0, (atMs - monotonicNow()) / 1000);
+      const endAt = startAt + duration / 1000;
+
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
-
       oscillator.connect(gain);
       gain.connect(ctx.destination);
 
-      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+      oscillator.frequency.setValueAtTime(freq, startAt);
       oscillator.type = type;
 
-      gain.gain.setValueAtTime(0.6, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration / 1000);
+      gain.gain.setValueAtTime(0.6, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.001, endAt);
 
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + duration / 1000);
+      oscillator.start(startAt);
+      oscillator.stop(endAt);
+
+      scheduledChimesRef.current.push(oscillator);
+      oscillator.onended = () => {
+        scheduledChimesRef.current = scheduledChimesRef.current.filter((o) => o !== oscillator);
+      };
     },
     [getAudioContext],
   );
 
   const teardownSoundscape = useCallback(() => {
+    cancelScheduledChimes();
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -121,7 +156,7 @@ export const useBreathAudio = ({
       audioCtxRef.current = null;
     }
     sessionStartRef.current = null;
-  }, []);
+  }, [cancelScheduledChimes]);
 
   const initSoundscape = useCallback(
     (ctx: AudioContext, theme: number) => {
@@ -157,7 +192,7 @@ export const useBreathAudio = ({
       oscR.start();
       oscLRef.current = oscL;
       oscRRef.current = oscR;
-      sessionStartRef.current = performance.now();
+      sessionStartRef.current = monotonicNow();
     },
     [],
   );
@@ -165,6 +200,7 @@ export const useBreathAudio = ({
   // Initialize or tear down the continuous soundscape when running state changes.
   useEffect(() => {
     if (!isRunning) {
+      cancelScheduledChimes();
       if (mainGainRef.current && audioCtxRef.current) {
         mainGainRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.1);
       }
@@ -190,7 +226,7 @@ export const useBreathAudio = ({
         animationFrameRef.current = null;
       }
     };
-  }, [isRunning, getAudioContext, initSoundscape]);
+  }, [isRunning, getAudioContext, initSoundscape, cancelScheduledChimes]);
 
   // Retune fundamentals when the session theme changes mid-practice.
   useEffect(() => {
@@ -201,20 +237,21 @@ export const useBreathAudio = ({
 
     const baseFreq = getThemeBaseFrequency(themeIndex);
     const offset =
-      currentPhaseRef.current === 'hold1' ? BINAURAL_OFFSET_HOLD : BINAURAL_OFFSET_DEFAULT;
+      snapshotRef.current().phase === 'hold1' ? BINAURAL_OFFSET_HOLD : BINAURAL_OFFSET_DEFAULT;
     const now = ctx.currentTime;
     oscL.frequency.setTargetAtTime(baseFreq, now, 0.2);
     oscR.frequency.setTargetAtTime(baseFreq + offset, now, 0.2);
   }, [themeIndex, isRunning]);
 
-  // Phase transition chimes (discrete markers layered on the continuous drone).
+  // Phase transition chimes, booked one boundary ahead on the audio clock so
+  // they land on the scheduled instant rather than whenever React re-renders.
   useEffect(() => {
-    if (!isRunning || currentPhase === lastPhaseRef.current) return;
-
-    const chime = CHIME_FREQUENCIES[currentPhase];
-    playChime(chime.freq, chime.duration, chime.type);
-    lastPhaseRef.current = currentPhase;
-  }, [currentPhase, isRunning, playChime]);
+    if (!isRunning) return;
+    const boundaryOrdinal = phaseOrdinal + 1;
+    if (scheduledOrdinalRef.current >= boundaryOrdinal) return;
+    scheduledOrdinalRef.current = boundaryOrdinal;
+    scheduleChime(nextPhase, nextPhaseAtMs);
+  }, [isRunning, phaseOrdinal, nextPhase, nextPhaseAtMs, scheduleChime]);
 
   // Frame loop: modulate filter, gain, and binaural offset from breath expansion curves.
   useEffect(() => {
@@ -232,10 +269,9 @@ export const useBreathAudio = ({
       }
 
       const sessionTime = sessionStartRef.current
-        ? (performance.now() - sessionStartRef.current) / 1000
+        ? (monotonicNow() - sessionStartRef.current) / 1000
         : 0;
-      const phase = currentPhaseRef.current;
-      const progress = phaseProgressRef.current;
+      const { phase, phaseProgress: progress } = snapshotRef.current();
       const theme = themeIndexRef.current;
       const expand = getAudioBreathExpand(phase, progress, sessionTime);
       const now = ctx.currentTime;
@@ -280,12 +316,14 @@ export const useBreathAudio = ({
     muteRef.current = next;
     setIsMuted(next);
 
+    if (next) cancelScheduledChimes();
+
     const ctx = audioCtxRef.current;
     const mainGain = mainGainRef.current;
     if (ctx && mainGain) {
       mainGain.gain.setTargetAtTime(next ? 0 : BASE_GAIN, ctx.currentTime, 0.05);
     }
-  }, []);
+  }, [cancelScheduledChimes]);
 
   return { toggleMute, isMuted };
 };

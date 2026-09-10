@@ -1,5 +1,11 @@
 # 🤖 Kimi Code Agent Swarm - Merge Summary
 
+> **Note:** this is the agent swarm's own generated report, kept as a historical record.
+> The `src/shaders/` layout it describes below was never the repo's actual structure — this
+> project keeps shaders in `public/` (active) and `archive/shaders/` (legacy/experiments/generated).
+> Don't use paths in this file as current or historical fact about the repo; treat it as the
+> swarm's raw output only.
+
 ## Overview
 Successfully orchestrated 5 parallel agents to enhance a WGSL breathing meditation shader.
 

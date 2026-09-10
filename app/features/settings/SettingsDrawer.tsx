@@ -193,6 +193,18 @@ export default function SettingsDrawer({
             />
             Show renderer diagnostics
           </label>
+          <label className="flex items-center gap-3 text-sm text-white/70 mb-2">
+            <input
+              type="checkbox"
+              checked={rendererSettings.gpuComputeEnabled}
+              onChange={(e) => updateRendererSettings({ gpuComputeEnabled: e.target.checked })}
+              className="accent-emerald-400"
+            />
+            GPU compute helpers (levels & thumbnails)
+          </label>
+          <p className="text-[11px] text-white/45 leading-relaxed mb-2">
+            Helpers borrow the renderer&apos;s device. Off — or <code>?no_gpu_compute</code> — pins them to Canvas2D.
+          </p>
           <p className="text-[11px] text-white/45 leading-relaxed mb-2">
             WebGPU is required in Chrome and Edge. A failed boot probe hard-fails; WebGL fallback is deferred.
           </p>

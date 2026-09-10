@@ -6,6 +6,7 @@ import {
   RATE_MIN,
   computePlaybackRate,
   computeTargetTime,
+  computeTargetTimeFromElapsed,
 } from '../instructorSync';
 
 describe('computeTargetTime', () => {
@@ -42,7 +43,7 @@ describe('computePlaybackRate', () => {
     const target = computeTargetTime(phaseProgress, phaseDurationSec, clipDuration);
 
     const result = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target,
@@ -63,7 +64,7 @@ describe('computePlaybackRate', () => {
     const idealRate = clipDuration / phaseDurationSec;
 
     const result = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target - 0.2,
@@ -83,7 +84,7 @@ describe('computePlaybackRate', () => {
     const idealRate = clipDuration / phaseDurationSec;
 
     const result = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target + 0.2,
@@ -102,13 +103,13 @@ describe('computePlaybackRate', () => {
     const target = computeTargetTime(phaseProgress, phaseDurationSec, clipDuration);
 
     const high = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target - 0.4, // large positive drift, under hard-snap
     });
     const low = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target + 0.4,
@@ -133,13 +134,13 @@ describe('computePlaybackRate', () => {
     const target = computeTargetTime(phaseProgress, phaseDurationSec, clipDuration);
 
     const behind = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target - (HARD_SNAP_SEC + 0.1),
     });
     const ahead = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target + (HARD_SNAP_SEC + 0.1),
@@ -157,12 +158,95 @@ describe('computePlaybackRate', () => {
 
     // Threshold is strict > HARD_SNAP_SEC, so equal drift stays on rate path.
     const result = computePlaybackRate({
-      phaseProgress,
+      phaseElapsedSec: phaseProgress * phaseDurationSec,
       phaseDurationSec,
       clipDuration,
       currentTime: target - HARD_SNAP_SEC,
     });
 
     expect('rate' in result).toBe(true);
+  });
+});
+
+describe('lockstep convergence over a phase', () => {
+  /**
+   * Replays the guide's rAF control loop against a simulated video element to
+   * check the accuracy the phase-accurate instructor sync promises: the clip's
+   * currentTime tracks computeTargetTimeFromElapsed within 100ms.
+   */
+  const runPhase = (opts: {
+    phaseDurationSec: number;
+    clipDuration: number;
+    startCurrentTime: number;
+    frameSec?: number;
+  }) => {
+    const { phaseDurationSec, clipDuration, startCurrentTime, frameSec = 1 / 60 } = opts;
+    let currentTime = startCurrentTime;
+    let rate = 1;
+    const drifts: { elapsed: number; drift: number }[] = [];
+
+    for (let elapsed = 0; elapsed <= phaseDurationSec; elapsed += frameSec) {
+      const target = computeTargetTimeFromElapsed(elapsed, phaseDurationSec, clipDuration);
+      drifts.push({ elapsed, drift: Math.abs(target - currentTime) });
+
+      const action = computePlaybackRate({
+        phaseElapsedSec: elapsed,
+        phaseDurationSec,
+        clipDuration,
+        currentTime,
+      });
+      if ('seekTo' in action) {
+        currentTime = action.seekTo;
+      } else {
+        rate = action.rate;
+      }
+      currentTime += rate * frameSec;
+    }
+    return drifts;
+  };
+
+  /**
+   * Frames where lockstep is meaningful. The last ANTICIPATION_LEAD_SEC of a
+   * phase is deliberately clamped to the clip's final frame, so the target
+   * stops advancing there by design.
+   */
+  const settledFrames = (drifts: { elapsed: number; drift: number }[], phaseDurationSec: number) =>
+    drifts.filter((d) => d.elapsed > 0.25 && d.elapsed <= phaseDurationSec - ANTICIPATION_LEAD_SEC);
+
+  it('holds a 4s phase within 100ms of the target after settling', () => {
+    const drifts = runPhase({ phaseDurationSec: 4, clipDuration: 3, startCurrentTime: 0 });
+    // Allow a few frames to settle, then require the 100ms accuracy bound.
+    const settled = settledFrames(drifts, 4);
+
+    expect(settled.length).toBeGreaterThan(100);
+    for (const { elapsed, drift } of settled) {
+      expect(drift, `drift ${drift.toFixed(4)}s at t=${elapsed.toFixed(3)}s`).toBeLessThanOrEqual(0.1);
+    }
+  });
+
+  it('recovers to within 100ms after a stall throws the clip far off', () => {
+    // Backgrounded tab: the clip is a full second behind when the loop resumes.
+    const drifts = runPhase({
+      phaseDurationSec: 4,
+      clipDuration: 3,
+      startCurrentTime: -1,
+    });
+
+    expect(drifts[0].drift).toBeGreaterThan(0.5);
+    // The hard snap fires on the first frame, so recovery is immediate.
+    expect(drifts[1].drift).toBeLessThanOrEqual(0.1);
+    for (const { drift } of settledFrames(drifts, 4)) {
+      expect(drift).toBeLessThanOrEqual(0.1);
+    }
+  });
+
+  it('keeps a 1s test-slider phase inside the same bound', () => {
+    const drifts = runPhase({ phaseDurationSec: 1, clipDuration: 3, startCurrentTime: 0 });
+    const settled = settledFrames(drifts, 1);
+
+    expect(settled.length).toBeGreaterThan(20);
+    for (const { drift } of settled) {
+      expect(drift).toBeLessThanOrEqual(0.1);
+    }
   });
 });

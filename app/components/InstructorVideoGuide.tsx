@@ -11,9 +11,9 @@ import {
   SYNC_MIN_PHASE_SEC,
   clamp,
   computePlaybackRate,
-  computeTargetTime,
+  computeTargetTimeFromElapsed,
 } from '../lib/instructorSync';
-import type { BreathPhase } from '../hooks/useBreathTimer';
+import type { BreathPhase, PhaseSnapshot } from '../hooks/useBreathTimer';
 import type {
   InstructorLayout,
   InstructorPipCorner,
@@ -33,10 +33,12 @@ interface InstructorVideoGuideProps {
   isRunning: boolean;
   /** Current breath phase from useBreathTimer */
   currentPhase: BreathPhase;
-  /** 0→1 progress through the current phase (from page.tsx) */
-  phaseProgress: number;
-  /** Live duration of the current phase in seconds (0 when phase is skipped) */
-  phaseDurationSec: number;
+  /**
+   * Reads the breath schedule at the calling instant. The sync loop calls this
+   * inside its own frame so the clip locks to the monotonic timeline rather
+   * than to values React rendered one frame ago.
+   */
+  getPhaseSnapshot: () => PhaseSnapshot;
   /** 0→1 breath energy; gently brightens the figure */
   intensity: number;
   onDragOffset: (offset: { x: number; y: number }) => void;
@@ -70,7 +72,8 @@ interface Slot {
 
 interface SyncState {
   isRunning: boolean;
-  phaseProgress: number;
+  /** Seconds into the current phase, sampled fresh from the breath schedule. */
+  phaseElapsedSec: number;
   phaseDurationSec: number;
 }
 
@@ -85,8 +88,7 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
   figurePose,
   isRunning,
   currentPhase,
-  phaseProgress,
-  phaseDurationSec,
+  getPhaseSnapshot,
   intensity,
   onDragOffset,
 }) => {
@@ -107,14 +109,29 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
   // Imperative handles for the rAF sync loop (front video remounts each phase).
   const frontElRef = useRef<HTMLVideoElement | null>(null);
   const frontClipRef = useRef<InstructorPhaseClip>(front.clip);
-  const syncRef = useRef<SyncState>({ isRunning, phaseProgress, phaseDurationSec });
+  const snapshotRef = useRef(getPhaseSnapshot);
+  const isRunningRef = useRef(isRunning);
   const mutedRef = useRef(effectiveMuted);
   const lastPhaseKeyRef = useRef(`${styleId}:${currentPhase}`);
   const fadeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    syncRef.current = { isRunning, phaseProgress, phaseDurationSec };
-  }, [isRunning, phaseProgress, phaseDurationSec]);
+    snapshotRef.current = getPhaseSnapshot;
+  }, [getPhaseSnapshot]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  /** Samples the shared breath timeline at this exact instant. */
+  const readSyncState = useCallback((): SyncState => {
+    const snap = snapshotRef.current();
+    return {
+      isRunning: isRunningRef.current,
+      phaseElapsedSec: snap.phaseElapsedSec,
+      phaseDurationSec: snap.phaseDurationSec,
+    };
+  }, []);
 
   useEffect(() => {
     mutedRef.current = effectiveMuted;
@@ -154,14 +171,14 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
     const tick = () => {
       const v = frontElRef.current;
       const clip = frontClipRef.current;
-      const st = syncRef.current;
+      const st = readSyncState();
       if (v && clip && v.readyState >= 1) {
         const synced = st.isRunning && st.phaseDurationSec > SYNC_MIN_PHASE_SEC;
         if (synced) {
           v.loop = false;
           if (v.readyState >= 2) {
             const action = computePlaybackRate({
-              phaseProgress: st.phaseProgress,
+              phaseElapsedSec: st.phaseElapsedSec,
               phaseDurationSec: st.phaseDurationSec,
               clipDuration: clip.duration,
               currentTime: v.currentTime,
@@ -184,7 +201,7 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [enabled]);
+  }, [enabled, readSyncState]);
 
   useEffect(
     () => () => {
@@ -200,11 +217,11 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
       if (!mutedRef.current) el.volume = 0.55;
       // Seek straight to the live position so a fresh phase clip never flashes
       // its first frame before the rAF catches up.
-      const st = syncRef.current;
+      const st = readSyncState();
       if (st.isRunning && st.phaseDurationSec > SYNC_MIN_PHASE_SEC) {
         try {
-          el.currentTime = computeTargetTime(
-            st.phaseProgress,
+          el.currentTime = computeTargetTimeFromElapsed(
+            st.phaseElapsedSec,
             st.phaseDurationSec,
             frontClipRef.current.duration,
           );
@@ -212,7 +229,7 @@ const InstructorVideoGuide: React.FC<InstructorVideoGuideProps> = ({
       }
       el.play().catch(() => {});
     }
-  }, []);
+  }, [readSyncState]);
 
   const handleError = useCallback(() => setLoadError(true), []);
 

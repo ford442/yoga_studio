@@ -1,8 +1,15 @@
 'use client';
 
 import React, { createContext, useContext, useMemo } from 'react';
-import { useBreathTimer, type BreathPhase, type BreathSettings, type CompletedTimerSegment, type SessionDuration } from '../../hooks/useBreathTimer';
-import { computeIntensity, computePhaseTiming } from './deriveSessionPhase';
+import {
+  useBreathTimer,
+  type BreathPhase,
+  type BreathSettings,
+  type CompletedTimerSegment,
+  type PhaseSnapshot,
+  type SessionDuration,
+} from '../../hooks/useBreathTimer';
+import { computeIntensity } from './deriveSessionPhase';
 
 interface SessionContextValue {
   breathPhase: number;
@@ -15,8 +22,15 @@ interface SessionContextValue {
   activeSegmentId: number;
   totalCycle: number;
   phaseProgress: number;
+  phaseElapsedSec: number;
   remaining: number;
   phaseDuration: number;
+  phaseOrdinal: number;
+  /** Monotonic timestamp of the upcoming phase boundary (for audio scheduling). */
+  nextPhaseAtMs: number;
+  nextPhase: BreathPhase;
+  /** Reads the shared timeline at the calling instant, bypassing React latency. */
+  getPhaseSnapshot: () => PhaseSnapshot;
   intensity: number;
   startSession: (minutes: SessionDuration) => void;
   toggleFree: () => void;
@@ -36,16 +50,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     totalBreaths,
     completedSegment,
     activeSegmentId,
+    totalCycle,
+    phaseProgress,
+    phaseElapsedSec,
+    phaseDuration,
+    remaining,
+    phaseOrdinal,
+    nextPhaseAtMs,
+    nextPhase,
+    getPhaseSnapshot,
     startSession,
     toggleFree,
     reset,
     updateSettings,
   } = useBreathTimer();
-
-  const { totalCycle, phaseProgress, remaining, phaseDuration } = useMemo(
-    () => computePhaseTiming(breathPhase, currentPhase, settings),
-    [breathPhase, currentPhase, settings],
-  );
 
   const intensity = useMemo(
     () => computeIntensity(currentPhase, phaseProgress),
@@ -64,8 +82,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       activeSegmentId,
       totalCycle,
       phaseProgress,
+      phaseElapsedSec,
       remaining,
       phaseDuration,
+      phaseOrdinal,
+      nextPhaseAtMs,
+      nextPhase,
+      getPhaseSnapshot,
       intensity,
       startSession,
       toggleFree,
@@ -83,8 +106,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       activeSegmentId,
       totalCycle,
       phaseProgress,
+      phaseElapsedSec,
       remaining,
       phaseDuration,
+      phaseOrdinal,
+      nextPhaseAtMs,
+      nextPhase,
+      getPhaseSnapshot,
       intensity,
       startSession,
       toggleFree,

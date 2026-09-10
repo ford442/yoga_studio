@@ -3,8 +3,10 @@
 
 repository:
   project: yoga_studio (Next.js + WebGPU)
-  target_file: public/shaders/breath-swarm-merged.wgsl
-  output_dir: /workspaces/codepit/projects/yoga_studio/swarm-outputs
+  # NOTE: paths below are historical — this swarm ran before the shader tree was
+  # reorganized into public/ (active) + archive/shaders/ (legacy/experiments/generated).
+  target_file: archive/shaders/experiments/breath-swarm-merged.wgsl
+  output_dir: agents/swarm-outputs
 
 uniforms:
   struct: BreathUniforms

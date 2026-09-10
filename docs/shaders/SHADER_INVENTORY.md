@@ -34,7 +34,7 @@ These files live in `public/` and are fetched at runtime by the WebGPU backend m
 | `public/sacred-monk.wgsl` | `vs` / `main` | Box Breathing (`classic-mandala`), Grounding (`grounding`) | Mandala + sacred monk silhouette + neon glow |
 | `public/sacred-lotus-final.wgsl` + `public/sacred-lotus-final/*.wgsl` | `vs` / `main` | Nadi Shodhana, Ujjayi, Lotus Heart, Prana Flow, Deep Release | Runtime-composed modules for shared helpers, atmosphere, lotus/symbol, ribbons, and post-processing/figure/composition |
 | `public/sacred-ultra.wgsl` + `public/sacred-ultra/*.wgsl` | `vs` / `main` | Sacred Integration (`sacred-ultra`) | Runtime-composed modules for shared helpers, background/geometry, figure/energy, lotus/ribbons, and post-processing/composition |
-| `public/yoga-regular.wgsl` | `vs_main` / `fs_main` | Coherent Breath (`nervous-system-reg`) | Simpler geometry and figure for clinical-calm pacing |
+| `public/yoga-regular.wgsl` + `public/yoga-regular/*.wgsl` | `vs_main` / `fs_main` | Coherent Breath (`nervous-system-reg`) | Runtime-composed modules for core/figure/background/HUD/text/render; simpler geometry and figure for clinical-calm pacing |
 
 Validate any contract changes with:
 
@@ -42,10 +42,10 @@ Validate any contract changes with:
 npm run validate:shaders
 ```
 
-`sacred-lotus-final.wgsl` and `sacred-ultra.wgsl` are thin entry files whose
-`// @include "..."` directives are resolved by the WebGPU loader. Keep each file
-in their matching module directories under 700 lines; `validate:shaders`
-enforces this limit and validates each composed source.
+`sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`, and `yoga-regular.wgsl` are thin
+entry files whose `// @include "..."` directives are resolved by the WebGPU
+loader. Keep each file in their matching module directories under 700 lines;
+`validate:shaders` enforces this limit and validates each composed source.
 
 ## Legacy reference shaders (`archive/shaders/legacy/`)
 
