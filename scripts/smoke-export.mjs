@@ -28,6 +28,12 @@ const requiredFiles = [
   'sacred-ultra/lotus-ribbons.wgsl',
   'sacred-ultra/post-composition.wgsl',
   'yoga-regular.wgsl',
+  'yoga-regular/core.wgsl',
+  'yoga-regular/figure.wgsl',
+  'yoga-regular/background.wgsl',
+  'yoga-regular/hud.wgsl',
+  'yoga-regular/text.wgsl',
+  'yoga-regular/render.wgsl',
 ];
 
 const requiredDirs = ['backgrounds', 'instructor'];

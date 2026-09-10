@@ -3,10 +3,12 @@
 
 repository:
   project: yoga_studio (Next.js + WebGPU)
-  base_shader: public/yoga.glsl              # Original complex GLSL reference
-  current_wgsl: public/yoga-regular.wgsl     # Current working WGSL
-  target_file: public/shaders/breath-swarm-next.wgsl
-  output_dir: /workspaces/codepit/projects/yoga_studio/swarm-outputs
+  # NOTE: paths below are historical — this swarm ran before the shader tree was
+  # reorganized into public/ (active) + archive/shaders/ (legacy/experiments/generated).
+  base_shader: archive/shaders/legacy/yoga.glsl   # Original complex GLSL reference
+  current_wgsl: public/yoga-regular.wgsl          # Current working WGSL
+  target_file: archive/shaders/experiments/breath-swarm-next.wgsl
+  output_dir: agents/swarm-outputs
 
 uniforms:
   struct: BreathUniforms
@@ -171,9 +173,9 @@ mission: |
   Focus on the kaleidoscope tunnel (kalei) and star pattern background.
 
 input_spec:
-  glsl_source: "yoga.glsl lines 275-293, 216-269"
-  current_wgsl: "yoga-regular.wgsl"
-  target_location: "public/shaders/improvements/geometry.wgsl"
+  glsl_source: "archive/shaders/legacy/yoga.glsl lines 275-293, 216-269"
+  current_wgsl: "public/yoga-regular.wgsl"
+  target_location: "agents/swarm-outputs/improvements/geometry.wgsl"
 
 tasks:
   primary:
@@ -247,9 +249,9 @@ mission: |
   fields and bit-packed glyph data.
 
 input_spec:
-  glsl_source: "yoga.glsl lines 72-144, 487-731, 801-849"
-  current_wgsl: "yoga-regular.wgsl"
-  target_location: "public/shaders/improvements/text.wgsl"
+  glsl_source: "archive/shaders/legacy/yoga.glsl lines 72-144, 487-731, 801-849"
+  current_wgsl: "public/yoga-regular.wgsl"
+  target_location: "agents/swarm-outputs/improvements/text.wgsl"
 
 tasks:
   primary:
@@ -326,9 +328,9 @@ mission: |
   and time remaining display. These overlay the 3D scene.
 
 input_spec:
-  glsl_source: "yoga.glsl lines 851-866, 940-989"
-  current_wgsl: "yoga-regular.wgsl"
-  target_location: "public/shaders/improvements/ui.wgsl"
+  glsl_source: "archive/shaders/legacy/yoga.glsl lines 851-866, 940-989"
+  current_wgsl: "public/yoga-regular.wgsl"
+  target_location: "agents/swarm-outputs/improvements/ui.wgsl"
 
 tasks:
   primary:
@@ -434,7 +436,7 @@ conflict_resolution:
   - "Uniform buffer: ensure all agents used consistent layout"
 
 output:
-  file: "public/shaders/breath-swarm-next.wgsl"
+  file: "archive/shaders/experiments/breath-swarm-next.wgsl"
   validation:
     - "Compiles without Tint warnings"
     - "Consistent code style with base shader"

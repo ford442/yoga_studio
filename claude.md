@@ -7,10 +7,10 @@ This document provides context for Claude Code sessions working on this project.
 **Yoga Studio** is a full-screen pranayama practice companion. It features:
 
 - Session-based 4-phase breath timer (`inhale` → `hold1` → `exhale` → `hold2`)
-- WebGPU-powered sacred visualization (monk silhouette, mandala, particles, energy ribbons, lotus)
-- 6 visualization presets (Sacred Ultra, Lotus Heart, Prana Flow, Sacred Geometry, Deep Release, Grounding) driven by `SessionModeSwitcher`
+- WebGPU-powered sacred visualization (monk silhouette, mandala, particles, energy ribbons, lotus) with a WebGL2 fallback and adaptive quality governor
+- 9 technique presets (Box Breathing, Nadi Shodhana, Ujjayi, Lotus Heart, Grounding, Prana Flow, Deep Release, Coherent Breath, Sacred Ultra) defined in `app/data/techniques.ts` and driven by `SessionModeSwitcher`
 - Voice guidance (English + Sanskrit), phase chimes, ambient drone, and interactive ripple audio
-- Practice stats with daily minutes, breath count, and streak tracking (localStorage)
+- Practice stats with daily minutes, breath count, and streak tracking (localStorage), plus session history/trends and multi-day programs
 - PWA install prompt and stats PNG export
 
 **Tech Stack:** Next.js 16 (static export) + React 19 + TypeScript + Tailwind CSS v4 + WebGPU / WGSL
@@ -21,22 +21,42 @@ This document provides context for Claude Code sessions working on this project.
 
 ```
 app/
-├── page.tsx                      # Main orchestrator: timer, modes, WebGPU, stats, settings
+├── page.tsx                      # Composition root: <SessionProvider><PracticeProvider><PracticeScreen /></...>
 ├── layout.tsx
 ├── globals.css
+├── features/                     # Page-level feature slices (own context/state + UI)
+│   ├── session/
+│   │   ├── SessionProvider.tsx   # Context: wraps useBreathTimer, derives intensity via deriveSessionPhase.ts
+│   │   ├── BreathCanvas.tsx      # Pointer-driven ripple/mouse uniforms + ShaderCanvas
+│   │   ├── PhaseDisplay.tsx      # Phase label + countdown + progress ring + avatar
+│   │   ├── SessionControls.tsx   # Bottom bar: resume/program/mode-switcher/quick-start/begin-pause
+│   │   └── StatsHeader.tsx       # Top bar: title + today's minutes/breaths/streak + export
+│   ├── practice/
+│   │   ├── PracticeProvider.tsx  # Context: wires up all the other feature hooks (stats, voice, programs, ...)
+│   │   ├── PracticeScreen.tsx    # The actual page UI, composes every feature component
+│   │   └── PracticeShell.tsx     # Welcome panel + guided intro tour composition
+│   └── settings/
+│       └── SettingsDrawer.tsx    # ⚙️ drawer: environment, instructor guide, renderer, phase sliders
 ├── components/
-│   ├── WebGPUShader.tsx          # Single-pass WebGPU renderer (fetches .wgsl at runtime)
-│   ├── SessionModeSwitcher.tsx   # 6 visualization preset buttons
+│   ├── ShaderCanvas.tsx          # Renderer shell: picks WebGPU/WebGL2/static backend, quality governor
+│   ├── SessionModeSwitcher.tsx   # Technique preset buttons
 │   ├── CompletionScreen.tsx      # End-of-session overlay + confetti
 │   ├── ExportStats.tsx           # 1080×1080 PNG stats export
 │   └── InstallPrompt.tsx         # PWA beforeinstallprompt handler
+├── renderer/                     # Renderer backends + shared rendering infra
+│   ├── selectBackend.ts          # probeCapabilities / mountRenderer / pickInitialMode
+│   ├── webgpuBackend.ts / webgl2Backend.ts / staticBackend.ts
+│   ├── frameGovernor.ts          # Adaptive quality/resolution tiering
+│   ├── quality.ts, overlay.ts, gpuChores/
 ├── hooks/
-│   ├── useBreathTimer.ts         # Core timer + presets + session auto-end (ACTIVE)
+│   ├── useBreathTimer.ts         # Core timer + schedule + session auto-end (ACTIVE)
 │   ├── useBreathAudio.ts         # Phase chimes + ambient drone
 │   ├── useVoiceGuidance.ts       # SpeechSynthesis (EN / Sanskrit)
 │   ├── useSessionStats.ts        # localStorage stats + streak logic
+│   ├── usePracticeSession.ts     # Technique selection, favorites, start/pause/program handlers
 │   └── useRippleAudio.ts         # Canvas pointer ripple sounds
-├── data/sessionModes.ts          # 6 visualization presets with shaderPath + theme + strengthLevel
+├── data/techniques.ts             # Source of truth for technique presets (shaderPath + theme + strengthLevel)
+├── data/sessionModes.ts           # @deprecated re-export of techniques.ts — do not add new entries here
 └── types/sessionMode.ts
 
 public/                           # Runtime assets only
@@ -59,7 +79,7 @@ docs/shaders/SHADER_INVENTORY.md  # Active vs legacy vs experimental manifest
 ## Key Technologies
 
 - Next.js App Router, static export (`output: 'export'`)
-- WebGPU single-pass rendering with 64-byte uniform buffer (16 × f32)
+- WebGPU rendering (WebGL2/static fallback) with a 72-byte uniform buffer defined in `app/lib/shaderContract.ts`
 - Tailwind v4 via `@import "tailwindcss"`
 - All audio via Web Audio API + SpeechSynthesis (no media files)
 
@@ -76,46 +96,55 @@ npm run lint
 
 ### Breath Phases (useBreathTimer.ts)
 - `inhale` | `hold1` | `exhale` | `hold2`
-- Phase durations are controlled by presets in `SESSION_MODES` or the custom settings drawer
-- `phaseProgress` (0–1 within current phase) is computed in page.tsx and passed to the shader for bloom/ribbon timing
+- Phase durations build a `BreathSchedule` (`app/lib/breathSchedule.ts`) from presets in `TECHNIQUES` (`app/data/techniques.ts`) or the custom settings drawer
+- `phaseProgress` and `remaining` come straight off the hook's schedule lookup (`resolvePhaseAt`), not computed downstream — see "Breath Timing System" in AGENTS.md
+- `intensity` (used for bloom/ribbon timing) is derived from `phaseProgress` by `computeIntensity()` in `app/features/session/deriveSessionPhase.ts`, inside `SessionProvider`
 
-### Session Modes (visualization presets)
-- Each mode selects a different `.wgsl` shader + theme + mandalaStyle + optional `strengthLevel`
-- Modes do **not** change breath timing by default (timing is independent)
+### Techniques (visualization + breathing presets)
+- Each technique in `app/data/techniques.ts` selects a `.wgsl` shader + theme + mandalaStyle + `strengthLevel` + its own default breath ratio and science/guidance copy
+- Selecting a technique also updates breath timing (unlike the old "session modes" which were visuals-only)
 - Default mode: "Sacred Ultra" (`sacred-ultra.wgsl`)
 
-### strengthLevel (added 2026)
+### strengthLevel
 - Visualization intensity uniform: `0.0 = light`, `1.0 = regular (default)`, `2.0 = strong`
-- Passed through `WebGPUShader` props → 64-byte uniform buffer → `u.strengthLevel` in WGSL
-- Currently all modes default to `1.0`. Can be used inside shaders to scale particle count, glow intensity, ribbon density, etc.
-- **Critical:** Always update the struct in *all three* active WGSL files + the TS buffer write + buffer size (64) together.
+- Passed through `ShaderCanvas` props → 72-byte uniform buffer → `u.strengthLevel` in WGSL
+- Set per-technique in `app/data/techniques.ts`. Can be used inside shaders to scale particle count, glow intensity, ribbon density, etc.
+- **Critical:** Always update `app/lib/shaderContract.ts` + every active WGSL file's `struct Uniforms` together, then run `npm run validate:shaders`.
 
-### Uniform Buffer Layout (64 bytes / 16 floats)
-See AGENTS.md "WebGPU Shader Architecture" section for the exact field order and padding. The layout is deliberately mirrored in:
-- `WebGPUShader.tsx` (Float32Array + `device.createBuffer({ size: 64 })`)
+### Uniform Buffer Layout (72 bytes / 16 fields)
+`app/lib/shaderContract.ts` is the single source of truth for field order, types, defaults, and byte offsets — see AGENTS.md "WebGPU Shader Architecture" for the full table. The layout is mirrored in:
+- `ShaderCanvas.tsx` / `app/renderer/webgpuBackend.ts` (buffer built via `buildUniformBuffer()`)
 - `sacred-monk.wgsl`, `sacred-lotus-final.wgsl`, `sacred-ultra.wgsl`, `yoga-regular.wgsl`
 
-Mismatch = instant WebGPU validation error (blank canvas).
+Mismatch = instant WebGPU validation error (blank canvas). Run `npm run validate:shaders` after any layout change.
 
 ## File-by-File Guide (Active Only)
 
 ### `app/hooks/useBreathTimer.ts` (the one you should edit)
-- Returns: `breathPhase`, `currentPhase`, `isRunning`, `settings`, `sessionDuration`, `totalBreaths`, `startSession(minutes)`, `toggleFree()`, `reset()`, `updateSettings()`, `endSession()`
-- Presets live in `SESSION_MODES`; custom durations come from the drawer in page.tsx
+- Returns: `breathPhase`, `currentPhase`, `phaseProgress`, `remaining`, `isRunning`, `settings`, `sessionDuration`, `totalBreaths`, `getPhaseSnapshot()`, `startSession(minutes)`, `toggleFree()`, `reset()`, `updateSettings()`, `endSession()`
+- Presets live in `TECHNIQUES`; custom durations come from the drawer in `SettingsDrawer.tsx`
 
-### `app/components/WebGPUShader.tsx`
-- Props include all uniforms: `breathPhase`, `intensity`, `phaseProgress`, `theme`, `mandalaStyle`, `strengthLevel`, `mouse`, `mouseStrength`, plus `shaderPath` / entry points
-- Fetches the chosen `.wgsl` at runtime, creates one render pipeline, writes the 64-byte uniform buffer every frame
-- No `updateUniforms` ref method — data flows via props + internal `propsRef`
+### `app/features/session/SessionProvider.tsx`
+- Wraps `useBreathTimer` in a context (`useSession()`) and derives `intensity` via `deriveSessionPhase.ts`
+- Read timer/phase state via `useSession()` rather than re-deriving it or threading new props through `page.tsx`
 
-### `app/page.tsx`
-- Computes `intensity` and `phaseProgress` from current phase + settings
-- Wires mouse/touch ripples to shader + audio
-- Owns the SessionModeSwitcher, stats display, custom settings drawer, and completion screen trigger
+### `app/features/practice/PracticeProvider.tsx`
+- Wires up every other feature hook (stats, voice, programs, onboarding, renderer settings, instructor video) behind `usePractice()`
+- `usePracticeSession()` owns technique selection, favorites, and start/pause/program handlers
 
-### `app/data/sessionModes.ts` + `app/types/sessionMode.ts`
-- Source of truth for the 6 visualization presets
-- Each entry declares `shaderPath`, `theme`, `mandalaStyle`, and optional `strengthLevel`
+### `app/components/ShaderCanvas.tsx`
+- Props include all uniforms: `breathPhase`, `intensity`, `phaseProgress`, `theme`, `mandalaStyle`, `strengthLevel`, `mouse`, `mouseStrength`, `chakraFocus`, `geometryDensity`, `interference`, `figurePose`, `qualityPreset`, plus `shaderPath` / entry points
+- Delegates to `app/renderer/selectBackend.ts` to pick a WebGPU/WebGL2/static backend, and to `frameGovernor.ts` for adaptive quality; does not fetch/render shaders itself
+- Writes the 72-byte uniform buffer every frame via `app/lib/shaderContract.ts`
+
+### `app/features/practice/PracticeScreen.tsx`
+- The actual page UI: composes `BreathCanvas`, `PhaseDisplay`, `SessionControls`, `StatsHeader`, `SettingsDrawer`, `CompletionScreen`, etc. from `useSession()` + `usePractice()`
+- `app/page.tsx` itself is just `<SessionProvider><PracticeProvider><PracticeScreen /></PracticeProvider></SessionProvider>`
+
+### `app/data/techniques.ts` + `app/types/sessionMode.ts`
+- Source of truth for the technique presets (9 as of this writing)
+- Each entry declares `shaderPath`, `theme`, `mandalaStyle`, `strengthLevel`, default `breath` ratio, and technique/science copy
+- `app/data/sessionModes.ts` is a `@deprecated` re-export (`SESSION_MODES`/`DEFAULT_MODE`) kept for backward compatibility — don't add new entries there
 
 ### Audio / Voice / Stats hooks
 - `useBreathAudio.ts` — 432/528/396/639 Hz chimes + low drone
@@ -125,27 +154,27 @@ Mismatch = instant WebGPU validation error (blank canvas).
 
 ## Common Tasks
 
-### Adding or Modifying a Visualization Preset
-1. Edit `app/data/sessionModes.ts` (add new entry or tweak `shaderPath` / `theme` / `strengthLevel`)
+### Adding or Modifying a Technique
+1. Edit `app/data/techniques.ts` (add new entry or tweak `shaderPath` / `theme` / `strengthLevel` / `breath`)
 2. If using a new shader file, ensure it declares the exact 16-field `Uniforms` struct (see AGENTS.md)
 3. Test in browser; verify no WebGPU errors in DevTools console
 
 ### Changing the Uniform Layout (strengthLevel, new fields, etc.)
 You **must** update in lockstep:
-- `app/components/WebGPUShader.tsx` — buffer size (64), Float32Array order, propsRef, interface
-- All three active WGSL files — `struct Uniforms` + padding fields
-- `app/data/sessionModes.ts` / `app/types/sessionMode.ts` if the new value should be per-mode
-- Update the layout table in AGENTS.md
+- `app/lib/shaderContract.ts` — field list, byte offsets, buffer size
+- All active WGSL files — `struct Uniforms` + padding fields
+- `app/data/techniques.ts` / `app/types/sessionMode.ts` if the new value should be per-technique
+- Run `npm run validate:shaders`
 
 ### Adding a New Active Shader
 - Place it in `public/`
-- Reference it from a new or existing entry in `SESSION_MODES`
+- Reference it from a new or existing entry in `TECHNIQUES`
 - Declare the identical `Uniforms` struct at the top (copy from `sacred-monk.wgsl`)
 - Add it to the "must update together" list in AGENTS.md
 
 ### Adjusting Breath Timing Presets
-- Edit the `breath` object inside entries in `SESSION_MODES`
-- Or let users tweak live via the custom settings drawer (calls `updateSettings` on `useBreathTimer`)
+- Edit the `breath` object inside entries in `TECHNIQUES`
+- Or let users tweak live via the custom settings drawer (calls `updateSettings` on `useBreathTimer` through `useSession()`)
 
 ## Testing Checklist (Manual)
 
@@ -180,11 +209,12 @@ Static export means no API routes or `getServerSideProps`.
 
 **WebGPU canvas is black / rendering aborts**
 - Open DevTools → Console for shader compilation or buffer size errors
-- Most common cause: uniform struct in WGSL does not exactly match the 64-byte TS layout
-- Verify you updated *all three* active `.wgsl` files when changing uniforms
+- Most common cause: uniform struct in WGSL does not exactly match the 72-byte TS layout (`app/lib/shaderContract.ts`)
+- Verify you updated *all* active `.wgsl` files when changing uniforms, then ran `npm run validate:shaders`
+- `ShaderCanvas` also falls back to WebGL2 or a static image if WebGPU init fails — check `RendererDiagnostics`/`GpuErrorBanner` for the reported stage
 
 **Timer not advancing or phases stuck**
-- Check `isRunning` and that `useBreathTimer` is the hook imported in page.tsx
+- Check `isRunning` and that `useSession()` (backed by `useBreathTimer`) is being read, not a stale local copy
 
 **New shader looks wrong or crashes**
 - Confirm it declares the exact `struct Uniforms` (16 fields + padding) that the other active shaders use
@@ -196,4 +226,4 @@ Static export means no API routes or `getServerSideProps`.
 - README.md — User-facing overview
 - Next.js, Tailwind v4, and WebGPU specs as usual
 
-When in doubt, read the active source files (`useBreathTimer.ts`, `WebGPUShader.tsx`, the three `.wgsl` files in `public/`, and `sessionModes.ts`) rather than legacy experiments.
+When in doubt, read the active source files (`useBreathTimer.ts`, `ShaderCanvas.tsx` + `app/renderer/`, the active `.wgsl` files in `public/`, and `techniques.ts`) rather than legacy experiments.

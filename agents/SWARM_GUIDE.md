@@ -1,10 +1,18 @@
 # Yoga Studio Shader Improvement Swarm
 
-This guide explains how to run the agent swarm to enhance the yoga shader with features from the original GLSL.
+> **Historical:** this guide documents a completed swarm run. The shader tree has since been
+> reorganized — the original GLSL now lives at `archive/shaders/legacy/yoga.glsl`, its port
+> landed at `archive/shaders/experiments/breath-swarm-next.wgsl` (not `public/shaders/`), and
+> the active renderer today loads `sacred-monk.wgsl` / `sacred-lotus-final.wgsl` / `sacred-ultra.wgsl`
+> from `public/` (see AGENTS.md). `public/yoga-regular.wgsl` is still present but is a
+> simplified alternate shader, not the swarm's target. Paths below are left as originally
+> written for historical accuracy; don't expect `run-shader-swarm*.sh` to work unmodified.
+
+This guide explains how the agent swarm was run to enhance the yoga shader with features from the original GLSL.
 
 ## Overview
 
-**Current State:**
+**State at the time this swarm ran:**
 - `public/yoga.glsl` - 990-line original with full raymarching, text rendering, star patterns
 - `public/yoga-regular.wgsl` - 400-line simplified WGSL version
 
@@ -158,7 +166,7 @@ After the shader is generated:
    ./dev.sh start yoga_studio
    ```
 
-2. **Update WebGPUShader.tsx:**
+2. **Update the shader entry point** (originally `WebGPUShader.tsx`, now `app/components/ShaderCanvas.tsx` / `app/renderer/webgpuBackend.ts` — see AGENTS.md):
    ```typescript
    const response = await fetch('./shaders/breath-swarm-next.wgsl');
    ```
