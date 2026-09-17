@@ -13,6 +13,12 @@ const base = (patch: Partial<RendererDiagnosticsState>): RendererDiagnosticsStat
   batterySaver: false,
   resolutionScale: 1,
   frameTimeP75Ms: null,
+  gpuPassP75Ms: null,
+  choreLastMs: null,
+  gpuTimestamps: 'unsupported',
+  governorBound: null,
+  choresPaused: false,
+  instructorVideoEnabled: true,
   governorStepDowns: 0,
   governorPaused: false,
   compilationMessages: [],
@@ -38,10 +44,51 @@ describe('GpuErrorBanner', () => {
 });
 
 describe('RendererDiagnostics', () => {
+  it('splits cpu p75, gpu p75, chore time and timestamp state', () => {
+    render(
+      <RendererDiagnostics
+        state={base({
+          frameTimeP75Ms: 21.4,
+          gpuPassP75Ms: 14.2,
+          choreLastMs: 3.5,
+          gpuTimestamps: 'on',
+          governorBound: 'gpu',
+        })}
+      />,
+    );
+
+    const row = screen.getByTestId('governor-timing');
+    expect(row.textContent).toContain('cpu p75: 21.4ms');
+    expect(row.textContent).toContain('gpu p75: 14.2ms');
+    expect(row.textContent).toContain('chores: 3.5ms');
+    expect(row.textContent).toContain('timestamps: on');
+    expect(row.dataset.governorBound).toBe('gpu');
+  });
+
+  it('marks GPU timing unsupported and shows CPU-bound relief', () => {
+    render(
+      <RendererDiagnostics
+        state={base({
+          frameTimeP75Ms: 30,
+          gpuTimestamps: 'unsupported',
+          governorBound: 'cpu',
+          choresPaused: true,
+          instructorVideoEnabled: false,
+        })}
+      />,
+    );
+
+    const row = screen.getByTestId('governor-timing');
+    expect(row.textContent).toContain('gpu p75: —');
+    expect(row.textContent).toContain('timestamps: unsupported');
+    expect(screen.getByTestId('renderer-diagnostics').textContent).toContain('chores paused');
+    expect(screen.getByTestId('renderer-diagnostics').textContent).toContain('video off');
+  });
+
   it('shows the gpu-chores backend and why it was picked', () => {
     render(
       <RendererDiagnostics
-        state={base({ chores: { backend: 'webgpu', reason: 'adopted renderer GPUDevice', jobCount: 2 } })}
+        state={base({ chores: { backend: 'webgpu', reason: 'adopted renderer GPUDevice', jobCount: 2, lastDurationMs: 3.5 } })}
       />,
     );
 

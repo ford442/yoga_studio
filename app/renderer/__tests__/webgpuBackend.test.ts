@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererBackendContext } from '../types';
+import { READBACK_INTERVAL_FRAMES } from '../gpuTimestamps';
 import { normalizeCompilationMessages, WebGPUBackend } from '../webgpuBackend';
 
 const deferred = <T,>() => {
@@ -46,6 +47,42 @@ function makeDevice(
   return { device: device as unknown as GPUDevice, lost, shaderModule };
 }
 
+/** `makeDevice` plus a working `timestamp-query` path (query set + mappable staging buffer). */
+function makeTimestampDevice() {
+  const made = makeDevice([], {}, ['timestamp-query']);
+  const device = made.device as unknown as {
+    createQuerySet: unknown;
+    createBuffer: ReturnType<typeof vi.fn>;
+    createCommandEncoder: ReturnType<typeof vi.fn>;
+  };
+  const querySet = { destroy: vi.fn() };
+  const samples = new ArrayBuffer(32);
+  new BigUint64Array(samples)[0] = 2_000_000n;
+  new BigUint64Array(samples)[1] = 11_000_000n;
+  const staging = {
+    mapAsync: vi.fn(async () => undefined),
+    getMappedRange: vi.fn(() => samples),
+    unmap: vi.fn(),
+    destroy: vi.fn(),
+  };
+  device.createQuerySet = vi.fn(() => querySet);
+  let bufferCount = 0;
+  device.createBuffer = vi.fn(() => {
+    bufferCount += 1;
+    // 1: timestamp resolve, 2: MAP_READ staging, 3: the uniform buffer.
+    return bufferCount === 2 ? staging : { destroy: vi.fn() };
+  });
+  const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() };
+  const encoder = {
+    beginRenderPass: vi.fn((_descriptor: GPURenderPassDescriptor) => pass),
+    resolveQuerySet: vi.fn(),
+    copyBufferToBuffer: vi.fn(),
+    finish: vi.fn(() => ({})),
+  };
+  device.createCommandEncoder = vi.fn(() => encoder);
+  return { ...made, querySet, staging, encoder, pass };
+}
+
 function makeContext(canvas: HTMLCanvasElement): RendererBackendContext {
   return {
     canvas,
@@ -63,9 +100,9 @@ function makeContext(canvas: HTMLCanvasElement): RendererBackendContext {
     }),
     getTimeScale: () => 1,
     governor: {
-      setBase: vi.fn(), setPaused: vi.fn(),
-      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, stepDownCount: 0, paused: false, changed: false })),
-      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, stepDownCount: 0, paused: false })),
+      setBase: vi.fn(), setPaused: vi.fn(), noteGpuPass: vi.fn(), noteChore: vi.fn(),
+      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false, changed: false })),
+      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false })),
     },
     shouldRender: () => true,
     onFatalError: vi.fn(),
@@ -89,7 +126,8 @@ describe('WebGPUBackend', () => {
       return rafCallbacks.length;
     }));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2 });
+    vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2, QUERY_RESOLVE: 4, COPY_SRC: 8, MAP_READ: 16 });
+    vi.stubGlobal('GPUMapMode', { READ: 1 });
     vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 0x10 });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -162,7 +200,12 @@ describe('WebGPUBackend', () => {
     expect(first.device.createRenderPipelineAsync).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath WebGPU Pipeline' }));
     expect(first.device.createBuffer).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath Uniform Buffer' }));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ adapterInfo: { vendor: 'Example GPU', architecture: 'mock' } });
-    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ enabledFeatures: ['timestamp-query'] });
+    // The mock device has the feature but no `createQuerySet`, so the timer
+    // declines to build and the governor keeps CPU timing.
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({
+      enabledFeatures: ['timestamp-query'],
+      gpuTimestamps: 'off',
+    });
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({
       canvasConfig: { format: 'bgra8unorm', alphaMode: 'premultiplied', colorSpace: 'srgb', usage: 0x10 },
     });
@@ -384,6 +427,92 @@ describe('WebGPUBackend', () => {
       'WebGPU could not acquire the current canvas texture after reconfiguration.',
       expect.any(Error),
     );
+    backend.stop();
+  });
+
+
+  it('times the scene pass with a timestamp query set and feeds the governor', async () => {
+    const first = makeTimestampDevice();
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({
+        info: {},
+        features: new Set(['timestamp-query']),
+        limits: {},
+        requestDevice: vi.fn(async () => first.device),
+      })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ gpuTimestamps: 'on' }),
+    );
+    expect((first.device as unknown as { createQuerySet: ReturnType<typeof vi.fn> }).createQuerySet)
+      .toHaveBeenCalledWith(expect.objectContaining({ type: 'timestamp', count: 4 }));
+
+    // Drive frames until the sampled one lands; unsampled frames stay plain.
+    for (let i = 0; i < READBACK_INTERVAL_FRAMES; i += 1) rafCallbacks.shift()?.(i * 16);
+    const sampledPasses = first.encoder.beginRenderPass.mock.calls
+      .map(([descriptor]) => descriptor.timestampWrites)
+      .filter(Boolean);
+    // Exactly one frame in the interval carries timestampWrites.
+    expect(sampledPasses).toHaveLength(1);
+    expect(sampledPasses[0]).toEqual(
+      expect.objectContaining({ beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }),
+    );
+    expect(first.encoder.resolveQuerySet).toHaveBeenCalledTimes(1);
+
+    // mapAsync resolves off the rAF path; the next frame reports the measurement.
+    await flush();
+    rafCallbacks.shift()?.(1000);
+    expect(ctx.governor.noteGpuPass).toHaveBeenCalledWith(expect.any(Number), 9);
+    backend.stop();
+    expect(first.querySet.destroy).toHaveBeenCalled();
+  });
+
+  it('boots and keeps CPU timing on adapters without timestamp-query', async () => {
+    const first = makeDevice();
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    expect(ctx.onFatalError).not.toHaveBeenCalled();
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ gpuTimestamps: 'unsupported' }),
+    );
+    expect(ctx.governor.noteGpuPass).not.toHaveBeenCalled();
+    backend.stop();
+  });
+
+  it('destroys the query set when the device is lost so recovery starts clean', async () => {
+    const first = makeTimestampDevice();
+    const second = makeTimestampDevice();
+    const requestDevice = vi.fn()
+      .mockResolvedValueOnce(first.device)
+      .mockResolvedValueOnce(second.device);
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({
+        info: {}, features: new Set(['timestamp-query']), limits: {}, requestDevice,
+      })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    first.lost.resolve({ reason: 'destroyed', message: 'gpu reset' } as GPUDeviceLostInfo);
+    await flush();
+    await flush();
+
+    expect(first.querySet.destroy).toHaveBeenCalled();
+    expect((second.device as unknown as { createQuerySet: ReturnType<typeof vi.fn> }).createQuerySet)
+      .toHaveBeenCalled();
     backend.stop();
   });
 

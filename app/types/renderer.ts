@@ -29,6 +29,13 @@ export interface RendererCanvasConfig {
 
 export type GpuFailureStage = 'module' | 'pipeline' | 'device';
 
+/**
+ * Whether the renderer is measuring real GPU pass time.
+ * `unsupported` = the adapter has no `timestamp-query` (Safari/Firefox today);
+ * `off` = the feature exists but the query set failed or was torn down.
+ */
+export type GpuTimestampStatus = 'on' | 'unsupported' | 'off';
+
 export const GPU_FAILURE_STAGE_LABEL: Record<GpuFailureStage, string> = {
   module: 'shader module',
   pipeline: 'render pipeline',
@@ -57,6 +64,7 @@ export interface RendererBackendDiagnostics {
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;
   webgpuProbe?: WebGpuProbeResult;
+  gpuTimestamps?: GpuTimestampStatus;
 }
 
 /** Last stable adaptive-quality tier persisted across sessions. */
@@ -77,8 +85,20 @@ export interface RendererDiagnosticsState {
   batterySaver: boolean;
   /** Internal render-target scale (1 = full DPR cap). */
   resolutionScale: number;
-  /** Rolling p75 frame time in ms; null until enough samples. */
+  /** Rolling p75 CPU frame time in ms; null until enough samples. */
   frameTimeP75Ms: number | null;
+  /** Rolling p75 GPU pass time in ms; null without `timestamp-query`. */
+  gpuPassP75Ms: number | null;
+  /** Duration of the most recent gpu-chore in ms. */
+  choreLastMs: number | null;
+  /** Whether GPU pass timing is actually running. */
+  gpuTimestamps: GpuTimestampStatus;
+  /** Which signal the governor last acted on. */
+  governorBound: 'gpu' | 'cpu' | null;
+  /** Governor asked gpu-chores to stand down (CPU-bound relief). */
+  choresPaused: boolean;
+  /** Governor's verdict on the instructor video layer (consumed by the layer graph). */
+  instructorVideoEnabled: boolean;
   /** How many times the governor has stepped down this session. */
   governorStepDowns: number;
   /** True when the render loop is skipping GPU work. */

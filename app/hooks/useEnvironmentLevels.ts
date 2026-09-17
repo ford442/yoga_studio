@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   SCRIM_REFERENCE_LUMA,
+  areChoresPaused,
   deriveEnvironmentLevels,
   isGpuComputeDisabled,
   runDownsample2d,
@@ -16,6 +17,9 @@ import { createWebGpuChoreExecutor } from '../renderer/gpuChores/webgpuJobs';
 /** Thumb size the levels pass works on — small bitmaps only, per the chores kit. */
 export const LEVELS_THUMB_WIDTH = 128;
 export const LEVELS_THUMB_HEIGHT = 72;
+
+/** How long to wait before re-checking a governor-imposed chore pause. */
+export const CHORES_PAUSED_RETRY_MS = 1000;
 
 const executor = createWebGpuChoreExecutor();
 
@@ -61,8 +65,16 @@ export function useEnvironmentLevels(
     if (!imageSrc || typeof window === 'undefined' || typeof createImageBitmap !== 'function') return;
 
     let cancelled = false;
+    let retry: number | null = null;
     const disabled = isGpuComputeDisabled(gpuComputeEnabled);
     const run = () => {
+      if (cancelled) return;
+      // The governor pauses chores when the frame is CPU-bound; wait it out
+      // rather than adding main-thread work to a frame that is already late.
+      if (areChoresPaused()) {
+        retry = window.setTimeout(run, CHORES_PAUSED_RETRY_MS);
+        return;
+      }
       void measure(resolveAssetUrl(imageSrc), disabled)
         .then((levels) => {
           if (!cancelled) setMeasured({ src: imageSrc, levels });
@@ -78,6 +90,7 @@ export function useEnvironmentLevels(
 
     return () => {
       cancelled = true;
+      if (retry != null) window.clearTimeout(retry);
       if (idle) window.cancelIdleCallback(handle);
       else window.clearTimeout(handle);
     };

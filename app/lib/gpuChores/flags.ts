@@ -17,3 +17,18 @@ export function isGpuComputeDisabled(settingEnabled = true, search?: string): bo
   const query = search ?? (typeof window !== 'undefined' ? window.location.search : '');
   return hasNoGpuComputeParam(query);
 }
+
+/**
+ * Frame-governor relief valve. When the governor finds the frame CPU-bound it
+ * pauses chores rather than dropping resolution — a histogram pass on the main
+ * thread costs frames that fewer pixels would never buy back.
+ */
+let choresPaused = false;
+
+export function setChoresPaused(paused: boolean): void {
+  choresPaused = paused;
+}
+
+export function areChoresPaused(): boolean {
+  return choresPaused;
+}
