@@ -19,9 +19,18 @@ export interface ChoresStatus {
   backend: ChoresBackend | null;
   reason: string;
   jobCount: number;
+  /** Wall time of the most recent job, so the frame governor can attribute CPU cost. */
+  lastDurationMs: number | null;
 }
 
-let status: ChoresStatus = { backend: null, reason: 'no chores run yet', jobCount: 0 };
+const IDLE_STATUS: ChoresStatus = {
+  backend: null,
+  reason: 'no chores run yet',
+  jobCount: 0,
+  lastDurationMs: null,
+};
+
+let status: ChoresStatus = { ...IDLE_STATUS };
 
 export function recordChoreBreadcrumb(crumb: ChoreBreadcrumb): void {
   breadcrumbs.push(crumb);
@@ -30,6 +39,7 @@ export function recordChoreBreadcrumb(crumb: ChoreBreadcrumb): void {
     backend: crumb.backend,
     reason: crumb.gpuError ? `${crumb.reason} → fell back (${crumb.gpuError})` : crumb.reason,
     jobCount: status.jobCount + 1,
+    lastDurationMs: crumb.durationMs,
   };
   if (typeof window !== 'undefined') {
     (window as Window & { gpuChores?: { status: ChoresStatus; breadcrumbs: ChoreBreadcrumb[] } }).gpuChores = {
@@ -50,5 +60,5 @@ export function getChoreBreadcrumbs(): readonly ChoreBreadcrumb[] {
 /** Test seam: forget everything recorded so far. */
 export function resetChoreBreadcrumbs(): void {
   breadcrumbs.length = 0;
-  status = { backend: null, reason: 'no chores run yet', jobCount: 0 };
+  status = { ...IDLE_STATUS };
 }

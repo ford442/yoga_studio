@@ -13,6 +13,7 @@ import { resizeCanvasForDpr } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
 import { lendChoreDevice } from './gpuChores/choreDevice';
 import { buildGpuCanvasConfiguration, buildGpuDeviceDescriptor, getWebGPUAdapterOptions } from './gpuDeviceContract';
+import { createGpuFrameTimer, supportsTimestampQuery, type GpuFrameTimer } from './gpuTimestamps';
 import type { RendererBackend, RendererBackendContext } from './types';
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
@@ -136,6 +137,7 @@ export class WebGPUBackend implements RendererBackend {
     bindGroup: GPUBindGroup;
   } | null = null;
   private ctx: RendererBackendContext | null = null;
+  private frameTimer: GpuFrameTimer | null = null;
   private probeAdapterInfo: RendererAdapterInfo | undefined;
   private probeMessages: RendererCompilationMessage[] = [];
   private probeEnabledFeatures: string[] | undefined;
@@ -227,6 +229,12 @@ export class WebGPUBackend implements RendererBackend {
     this.uncapturedListener = null;
   }
 
+  /** Query sets belong to a device; a lost/replaced device must not keep one alive. */
+  private destroyFrameTimer(): void {
+    try { this.frameTimer?.destroy(); } catch { /* device already gone */ }
+    this.frameTimer = null;
+  }
+
   private discardDevice(device: GPUDevice): void {
     this.detachUncapturedError(device);
     try { device.destroy(); } catch { /* already lost */ }
@@ -236,6 +244,7 @@ export class WebGPUBackend implements RendererBackend {
     const ctx = this.ctx;
     if (!ctx || this.fatal || this.cancelled) return;
     this.fatal = true;
+    this.destroyFrameTimer();
     lendChoreDevice(null, `renderer WebGPU failed (${stage})`);
     const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
     this.reportProbe(stage, detail ?? reason);
@@ -269,7 +278,18 @@ export class WebGPUBackend implements RendererBackend {
     }
     this.attachUncapturedError(device);
     this.probeEnabledFeatures = Array.from(device.features);
-    ctx.onBackendDiagnostics?.({ enabledFeatures: this.probeEnabledFeatures });
+    // GPU pass timing is optional: without `timestamp-query` the governor keeps
+    // steering off the CPU delta alone (Safari/Firefox today).
+    this.destroyFrameTimer();
+    this.frameTimer = createGpuFrameTimer(device);
+    ctx.onBackendDiagnostics?.({
+      enabledFeatures: this.probeEnabledFeatures,
+      gpuTimestamps: supportsTimestampQuery(device)
+        ? this.frameTimer
+          ? 'on'
+          : 'off'
+        : 'unsupported',
+    });
 
     let shaderSource: string;
     try {
@@ -379,6 +399,7 @@ export class WebGPUBackend implements RendererBackend {
     if (!ctx || this.cancelled) return;
     this.cancelFrame();
     this.loopArgs = null;
+    this.destroyFrameTimer();
     lendChoreDevice(null, 'renderer device lost');
     if (this.recoveryAttempted) {
       ctx.onBackendDiagnostics?.({ recoveryStatus: 'failed' });
@@ -492,15 +513,24 @@ export class WebGPUBackend implements RendererBackend {
 
     try {
       device.queue.writeBuffer(args.uniformBuffer, 0, uniforms as GPUAllowSharedBufferSource);
+      const timer = this.frameTimer;
+      const sampling = timer?.beginFrame() ?? false;
       const encoder = device.createCommandEncoder();
+      const timestampWrites = sampling ? timer?.sceneWrites() : undefined;
       const pass = encoder.beginRenderPass({
         colorAttachments: [{ view, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }],
+        ...(timestampWrites ? { timestampWrites } : {}),
       });
       pass.setPipeline(args.pipeline);
       pass.setBindGroup(0, args.bindGroup);
       pass.draw(6);
       pass.end();
+      if (sampling) timer?.resolve(encoder);
       device.queue.submit([encoder.finish()]);
+      // Fire-and-forget: the map resolves on a later task, never inside this rAF.
+      if (sampling) timer?.readback();
+      const gpuPassMs = timer?.lastGpuPassMs() ?? null;
+      if (gpuPassMs != null) ctx.governor.noteGpuPass(gate.now, gpuPassMs);
       if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
     } catch (error) {
       this.fail('device', 'WebGPU render loop failed.', error);
@@ -520,6 +550,7 @@ export class WebGPUBackend implements RendererBackend {
     this.ro = null;
     this.resizeFn = null;
     this.loopArgs = null;
+    this.destroyFrameTimer();
     this.detachUncapturedError();
     try { this.canvasContext?.unconfigure(); } catch { /* optional cleanup */ }
     try { this.device?.destroy(); } catch { /* ignore */ }

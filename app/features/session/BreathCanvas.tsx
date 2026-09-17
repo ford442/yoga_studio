@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import ShaderCanvas from '../../components/ShaderCanvas';
+import { monotonicNow } from '../../lib/monotonicClock';
 import { useRippleAudio } from '../../hooks/useRippleAudio';
 import type { PerformanceMode, RendererDiagnosticsState, GovernorPersistedTier } from '../../types/renderer';
 import type { SessionMode } from '../../types/sessionMode';
@@ -51,7 +52,7 @@ export default function BreathCanvas({
         const py = (e.clientY - rect.top) * dpr;
         setMouse({ x: (px - canvasW / 2) / canvasH, y: (py - canvasH / 2) / canvasH });
         setMouseStrength(0.7);
-        const now = Date.now();
+        const now = monotonicNow();
         if (now - lastRippleRef.current > 100) {
           lastRippleRef.current = now;
           playRipple(0.6);

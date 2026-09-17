@@ -41,8 +41,11 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
   const modeText =
     state.mode === 'webgpu' ? 'WebGPU' : state.mode === 'webgl2' ? 'WebGL2 fallback' : 'Static fallback';
   const fallback = state.fallbackReason ? `Fallback: ${state.fallbackReason}` : undefined;
-  const p75 =
-    state.frameTimeP75Ms == null ? '—' : `${state.frameTimeP75Ms.toFixed(1)}ms`;
+  const ms = (value: number | null) => (value == null ? '—' : `${value.toFixed(1)}ms`);
+  const cpuP75 = ms(state.frameTimeP75Ms);
+  const gpuP75 = ms(state.gpuPassP75Ms);
+  const choreMs = ms(state.choreLastMs);
+  const timestamps = state.gpuTimestamps === 'on' ? 'on' : state.gpuTimestamps;
   const adapter = state.adapterInfo
     ? [state.adapterInfo.vendor, state.adapterInfo.architecture, state.adapterInfo.device, state.adapterInfo.description]
       .filter(Boolean)
@@ -76,8 +79,14 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
           Quality: {qualityLabel(state.qualityPreset)} · Scale: {state.resolutionScale.toFixed(2)} · DPR:{' '}
           {state.maxDevicePixelRatio.toFixed(2)} · Overlay: {state.overlayEnabled ? 'on' : 'off'}
         </div>
+        <div data-testid="governor-timing" data-governor-bound={state.governorBound ?? 'none'}>
+          cpu p75: {cpuP75} · gpu p75: {gpuP75} · chores: {choreMs} · timestamps: {timestamps}
+        </div>
         <div>
-          Frame p75: {p75} · Step-downs: {state.governorStepDowns}
+          Step-downs: {state.governorStepDowns}
+          {state.governorBound ? ` · ${state.governorBound}-bound` : ''}
+          {state.choresPaused ? ' · chores paused' : ''}
+          {state.instructorVideoEnabled ? '' : ' · video off'}
         </div>
         {adapter && <div className="max-w-[320px] leading-tight">Adapter: {adapter}</div>}
         {state.canvasConfig && (

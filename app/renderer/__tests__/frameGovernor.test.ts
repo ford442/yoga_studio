@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   COOLDOWN_MS,
   DOWN_P75_MS,
+  GPU_DOWN_P75_MS,
   SAMPLE_WINDOW_MS,
   UP_HOLD_MS,
   UP_P75_MS,
@@ -48,19 +49,78 @@ describe('createFrameGovernor', () => {
     expect(g.getSnapshot().overlayEnabled).toBe(false);
   });
 
-  it('steps resolution down when p75 stays above DOWN_P75_MS', () => {
+  it('sheds page work, not pixels, when only the CPU delta is over budget', () => {
     const g = createFrameGovernor({ base: highBase });
     let now = 1000;
-    // Fill a window with slow frames (30ms)
+    // Slow JS frames with no GPU signal: video decode / GC / chores, not the shader.
     for (let i = 0; i < 40; i++) {
       now += 30;
       g.noteFrame(now, 30);
     }
-    // After cooldown from any prior change — first step should fire once samples are enough
     const snap = g.getSnapshot();
     expect(snap.p75FrameMs).toBeGreaterThan(DOWN_P75_MS);
-    expect(snap.resolutionScale).toBeLessThan(1);
+    expect(snap.bound).toBe('cpu');
+    expect(snap.choresPaused).toBe(true);
+    // Dropping resolution would not buy back a single decode hitch.
+    expect(snap.resolutionScale).toBe(1);
     expect(snap.stepDownCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('steps resolution down when the GPU pass is over budget', () => {
+    const g = createFrameGovernor({ base: highBase });
+    let now = 1000;
+    for (let i = 0; i < 40; i++) {
+      now += 16;
+      g.noteGpuPass(now, GPU_DOWN_P75_MS + 6);
+      g.noteFrame(now, 16);
+    }
+    const snap = g.getSnapshot();
+    expect(snap.bound).toBe('gpu');
+    expect(snap.p75GpuMs).toBeGreaterThan(GPU_DOWN_P75_MS);
+    expect(snap.resolutionScale).toBeLessThan(1);
+    expect(snap.choresPaused).toBe(false);
+  });
+
+  it('drops the overlay for GPU time without collapsing resolution to 0.6 first', () => {
+    const g = createFrameGovernor({ base: highBase });
+    let now = 1000;
+    const scales: number[] = [];
+    // A long GPU-bound stretch: enough steps to exhaust the early ladder.
+    for (let i = 0; i < 2000; i += 1) {
+      now += 16;
+      g.noteGpuPass(now, GPU_DOWN_P75_MS + 6);
+      const r = g.noteFrame(now, 16);
+      if (r.changed) scales.push(r.resolutionScale);
+      if (!g.getSnapshot().overlayEnabled) break;
+    }
+    const snap = g.getSnapshot();
+    expect(snap.overlayEnabled).toBe(false);
+    expect(snap.qualityPreset).toBe(0);
+    // Overlay went before the last resolution rung.
+    expect(snap.resolutionScale).toBe(0.7);
+    expect(scales).not.toContain(0.6);
+  });
+
+  it('records the last chore duration for diagnostics', () => {
+    const g = createFrameGovernor({ base: highBase });
+    expect(g.getSnapshot().lastChoreMs).toBeNull();
+    g.noteChore(4.25);
+    expect(g.getSnapshot().lastChoreMs).toBe(4.25);
+    g.noteChore(Number.NaN);
+    expect(g.getSnapshot().lastChoreMs).toBe(4.25);
+  });
+
+  it('will not step up while the GPU pass is still hot', () => {
+    const g = createFrameGovernor({ base: highBase, initial: { resolutionScale: 0.85 } });
+    let now = 0;
+    const target = UP_HOLD_MS + SAMPLE_WINDOW_MS + 1000;
+    while (now < target) {
+      now += 8;
+      // rAF looks perfect, but the GPU is still deep in the shader.
+      g.noteGpuPass(now, GPU_DOWN_P75_MS - 2);
+      g.noteFrame(now, 8);
+    }
+    expect(g.getSnapshot().resolutionScale).toBe(0.85);
   });
 
   it('does not oscillate: requires UP_HOLD_MS of fast frames before stepping up', () => {
@@ -105,15 +165,16 @@ describe('createFrameGovernor', () => {
     expect(g.getSnapshot().resolutionScale).toBeLessThanOrEqual(0.85);
   });
 
-  it('drops quality then overlay after the scale ladder is exhausted', () => {
+  it('drops quality then overlay once the GPU scale ladder is exhausted', () => {
     const g = createFrameGovernor({
       base: highBase,
-      initial: { resolutionScale: 0.6 },
+      initial: { resolutionScale: 0.7 },
     });
 
     let now = COOLDOWN_MS + 100;
     for (let i = 0; i < 40; i++) {
       now += 30;
+      g.noteGpuPass(now, GPU_DOWN_P75_MS + 6);
       g.noteFrame(now, 30);
     }
     expect(g.getSnapshot().qualityPreset).toBe(0);
@@ -121,9 +182,24 @@ describe('createFrameGovernor', () => {
     now += COOLDOWN_MS + SAMPLE_WINDOW_MS;
     for (let i = 0; i < 40; i++) {
       now += 30;
+      g.noteGpuPass(now, GPU_DOWN_P75_MS + 6);
       g.noteFrame(now, 30);
     }
     expect(g.getSnapshot().overlayEnabled).toBe(false);
+  });
+
+  it('exhausts the CPU ladder before touching pixels', () => {
+    const g = createFrameGovernor({ base: highBase });
+    let now = 0;
+    for (let i = 0; i < 600; i += 1) {
+      now += 40;
+      g.noteFrame(now, 40);
+    }
+    const snap = g.getSnapshot();
+    expect(snap.choresPaused).toBe(true);
+    expect(snap.overlayEnabled).toBe(false);
+    // The signal #77's layer graph reads to stop decoding the instructor video.
+    expect(snap.instructorVideoEnabled).toBe(false);
   });
 
   it('ignores frame samples while paused', () => {

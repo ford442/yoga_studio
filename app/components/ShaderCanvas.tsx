@@ -11,7 +11,7 @@ import {
   type GovernorSnapshot,
   type GovernorTier,
 } from '../renderer/frameGovernor';
-import { getChoresStatus } from '../lib/gpuChores';
+import { getChoresStatus, setChoresPaused } from '../lib/gpuChores';
 import type { AnimatedUniformValues } from '../renderer/types';
 import {
   type GpuFailureStage,
@@ -127,6 +127,11 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     qualityPreset: 1,
     overlayEnabled: true,
     p75FrameMs: null,
+    p75GpuMs: null,
+    lastChoreMs: null,
+    bound: null,
+    choresPaused: false,
+    instructorVideoEnabled: true,
     stepDownCount: 0,
     paused: false,
   }));
@@ -207,8 +212,14 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   // Publish diagnostics + data-attribute snapshot on an interval (external timer callback).
   useEffect(() => {
     const publish = () => {
-      const snap = governorRef.current?.getSnapshot();
+      const governor = governorRef.current;
+      const chores = getChoresStatus();
+      // gpu-chores already time themselves; the governor never read those
+      // breadcrumbs before, so CPU-bound frames looked like shader cost.
+      if (chores.lastDurationMs != null) governor?.noteChore(chores.lastDurationMs);
+      const snap = governor?.getSnapshot();
       if (!snap) return;
+      setChoresPaused(snap.choresPaused);
       setGovernorSnap(snap);
       const meta = diagMetaRef.current;
       onDiagnosticsRef.current?.({
@@ -222,6 +233,12 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         batterySaver: false,
         resolutionScale: snap.resolutionScale,
         frameTimeP75Ms: snap.p75FrameMs,
+        gpuPassP75Ms: snap.p75GpuMs,
+        choreLastMs: snap.lastChoreMs,
+        gpuTimestamps: backendDiagnosticsRef.current.gpuTimestamps ?? 'unsupported',
+        governorBound: snap.bound,
+        choresPaused: snap.choresPaused,
+        instructorVideoEnabled: snap.instructorVideoEnabled,
         governorStepDowns: snap.stepDownCount,
         governorPaused: snap.paused || meta.pauseRendering,
         adapterInfo: backendDiagnosticsRef.current.adapterInfo,
@@ -232,7 +249,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         gpuFailureStage: backendDiagnosticsRef.current.gpuFailureStage,
         gpuFailureReason: backendDiagnosticsRef.current.gpuFailureReason,
         webgpuProbe: backendDiagnosticsRef.current.webgpuProbe,
-        chores: getChoresStatus(),
+        chores,
       });
     };
 

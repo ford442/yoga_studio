@@ -498,7 +498,8 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `app/features/practice/PracticeScreen.tsx` | Actual page UI composition | **Active** |
 | `app/components/ShaderCanvas.tsx` | Renderer shell (WebGPU/WebGL2/static backends) | **Active** |
 | `app/renderer/selectBackend.ts` + `webgpuBackend.ts` / `webgl2Backend.ts` / `staticBackend.ts` | Rendering backends | **Active** |
-| `app/renderer/frameGovernor.ts` | Adaptive quality/resolution governor | **Active** |
+| `app/renderer/frameGovernor.ts` | Two-signal (CPU delta + GPU pass) adaptive quality governor | **Active** |
+| `app/renderer/gpuTimestamps.ts` | Optional `timestamp-query` GPU pass timer feeding the governor | **Active** |
 | `app/lib/shaderContract.ts` | Single source of truth for the 72-byte uniform layout | **Active** |
 | `app/components/InstallPrompt.tsx` | PWA install prompt | **Active** |
 | `app/components/ExportStats.tsx` | Stats PNG export | **Active** |
