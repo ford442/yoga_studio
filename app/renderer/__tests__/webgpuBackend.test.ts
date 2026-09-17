@@ -17,6 +17,7 @@ const flush = async () => {
 function makeDevice(
   messages: Array<Partial<GPUCompilationMessage>> = [],
   scopeErrors: { module?: GPUError; pipeline?: GPUError } = {},
+  features: string[] = [],
 ) {
   const lost = deferred<GPUDeviceLostInfo>();
   const shaderModule = {
@@ -25,6 +26,7 @@ function makeDevice(
   let scopeCount = 0;
   const device = {
     lost: lost.promise,
+    features: new Set<string>(features),
     destroy: vi.fn(),
     pushErrorScope: vi.fn(() => { scopeCount += 1; }),
     popErrorScope: vi.fn(async () => {
@@ -88,6 +90,7 @@ describe('WebGPUBackend', () => {
     }));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2 });
+    vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 0x10 });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubGlobal('ResizeObserver', class {
@@ -132,10 +135,13 @@ describe('WebGPUBackend', () => {
   it('publishes adapter/compiler metadata and uses explicit device options and labels', async () => {
     const first = makeDevice([{
       type: 'warning', message: 'portable warning', lineNum: 4, linePos: 2,
-    }]);
+    }], {}, ['timestamp-query']);
     const requestDevice = vi.fn(async () => first.device);
     const requestAdapter = vi.fn(async () => ({
-      info: { vendor: 'Example GPU', architecture: 'mock' }, requestDevice,
+      info: { vendor: 'Example GPU', architecture: 'mock' },
+      features: new Set(['timestamp-query']),
+      limits: { maxBufferSize: 268435456 },
+      requestDevice,
     }));
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
       requestAdapter,
@@ -147,11 +153,19 @@ describe('WebGPUBackend', () => {
     await backend.start(ctx);
 
     expect(requestAdapter).toHaveBeenCalledWith({ powerPreference: 'high-performance', forceFallbackAdapter: false });
-    expect(requestDevice).toHaveBeenCalledWith({ label: 'Sacred Breath WebGPU Device', requiredFeatures: [], requiredLimits: {} });
+    expect(requestDevice).toHaveBeenCalledWith({
+      label: 'Sacred Breath WebGPU Device',
+      requiredFeatures: ['timestamp-query'],
+      requiredLimits: { maxBufferSize: 268435456 },
+    });
     expect(first.device.createShaderModule).toHaveBeenCalledWith(expect.objectContaining({ label: expect.stringContaining('sacred-monk.wgsl') }));
     expect(first.device.createRenderPipelineAsync).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath WebGPU Pipeline' }));
     expect(first.device.createBuffer).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sacred Breath Uniform Buffer' }));
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ adapterInfo: { vendor: 'Example GPU', architecture: 'mock' } });
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ enabledFeatures: ['timestamp-query'] });
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({
+      canvasConfig: { format: 'bgra8unorm', alphaMode: 'premultiplied', colorSpace: 'srgb', usage: 0x10 },
+    });
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ compilationMessages: [{ type: 'warning', text: 'portable warning', line: 4, column: 2 }] });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('GPUCompilationInfo warning 4:2 portable warning'));
     expect(first.device.pushErrorScope).toHaveBeenCalledWith('validation');
@@ -160,7 +174,12 @@ describe('WebGPUBackend', () => {
     const firstPopOrder = (first.device.popErrorScope as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
     expect(compilationOrder).toBeLessThan(firstPopOrder);
     expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith(expect.objectContaining({
-      webgpuProbe: expect.objectContaining({ ok: true, stage: 'ok' }),
+      webgpuProbe: expect.objectContaining({
+        ok: true,
+        stage: 'ok',
+        enabledFeatures: ['timestamp-query'],
+        canvasConfig: { format: 'bgra8unorm', alphaMode: 'premultiplied', colorSpace: 'srgb', usage: 0x10 },
+      }),
     }));
     backend.stop();
   });
@@ -168,7 +187,7 @@ describe('WebGPUBackend', () => {
   it('composes a modular shader entry before creating the shader module', async () => {
     const first = makeDevice();
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -200,7 +219,7 @@ describe('WebGPUBackend', () => {
   it('stops before pipeline creation when compilation reports an error', async () => {
     const first = makeDevice([{ type: 'error', message: 'bad wgsl', lineNum: 9, linePos: 1 }]);
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());
@@ -216,7 +235,7 @@ describe('WebGPUBackend', () => {
   it('fatal-fails on module validation scope errors before pipeline creation', async () => {
     const first = makeDevice([], { module: { message: 'invalid wgsl' } as GPUError });
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());
@@ -235,7 +254,7 @@ describe('WebGPUBackend', () => {
   it('fatal-fails on pipeline validation scope errors when compilation info is empty', async () => {
     const first = makeDevice([], { pipeline: { message: 'bad pipeline' } as GPUError });
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());
@@ -258,7 +277,9 @@ describe('WebGPUBackend', () => {
     const first = makeDevice();
     const second = makeDevice();
     const devices = [first.device, second.device];
-    const requestAdapter = vi.fn(async () => ({ info: { vendor: 'Mock' }, requestDevice: vi.fn(async () => devices.shift()!) }));
+    const requestAdapter = vi.fn(async () => ({
+      info: { vendor: 'Mock' }, features: new Set(), limits: {}, requestDevice: vi.fn(async () => devices.shift()!),
+    }));
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: { requestAdapter, getPreferredCanvasFormat: () => 'bgra8unorm' } });
     const ctx = makeContext(makeCanvas());
     const governor = ctx.governor;
@@ -284,7 +305,7 @@ describe('WebGPUBackend', () => {
   it('falls back when the one recovery adapter request fails', async () => {
     const first = makeDevice();
     const requestAdapter = vi.fn()
-      .mockResolvedValueOnce({ info: {}, requestDevice: vi.fn(async () => first.device) })
+      .mockResolvedValueOnce({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })
       .mockRejectedValueOnce(new Error('adapter reset failed'));
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: { requestAdapter, getPreferredCanvasFormat: () => 'bgra8unorm' } });
     const ctx = makeContext(makeCanvas());
@@ -303,7 +324,7 @@ describe('WebGPUBackend', () => {
   it('treats uncaptured GPU errors as a staged fatal failure', async () => {
     const first = makeDevice();
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());
@@ -325,7 +346,7 @@ describe('WebGPUBackend', () => {
   it('reconfigures on resize and retries one current-texture acquisition', async () => {
     const first = makeDevice();
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());
@@ -348,7 +369,7 @@ describe('WebGPUBackend', () => {
   it('treats consecutive current-texture acquisition failures as fatal', async () => {
     const first = makeDevice();
     Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
-      requestAdapter: vi.fn(async () => ({ info: {}, requestDevice: vi.fn(async () => first.device) })),
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => first.device) })),
       getPreferredCanvasFormat: () => 'bgra8unorm',
     } });
     const ctx = makeContext(makeCanvas());

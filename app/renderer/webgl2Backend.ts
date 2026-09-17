@@ -1,6 +1,8 @@
+import { monotonicNow } from '../lib/monotonicClock';
 import { UNIFORM_FIELDS, WEBGL_MAIN_UNIFORM_MAP, type UniformValues } from '../lib/shaderContract';
 import { buildGLUniforms, createProgramFromSources, resizeCanvasForDpr, uploadUniform } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
+import { getWebGL2ContextOptions } from './gpuDeviceContract';
 import { WEBGL_VERTEX_SHADER } from './overlay';
 import type { GLUniforms, RendererBackend, RendererBackendContext } from './types';
 
@@ -222,9 +224,9 @@ export class WebGL2Backend implements RendererBackend {
     this.contextLossHandled = false;
     this.waitingForRestore = false;
     const { canvas } = ctx;
-    this.startTime = Date.now();
+    this.startTime = monotonicNow();
 
-    const gl = canvas.getContext('webgl2', { alpha: true, antialias: true });
+    const gl = canvas.getContext('webgl2', getWebGL2ContextOptions(ctx.performanceMode));
     if (!gl) {
       ctx.onFatalError('WebGL2 is unavailable on this browser.');
       return;
@@ -321,8 +323,8 @@ export class WebGL2Backend implements RendererBackend {
     }
 
     const values = ctx.getUniformSnapshot();
-    const start = this.startTime ?? Date.now();
-    const currentTime = ((Date.now() - start) / 1000) * ctx.getTimeScale();
+    const start = this.startTime ?? monotonicNow();
+    const currentTime = ((monotonicNow() - start) / 1000) * ctx.getTimeScale();
 
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vertexArray);

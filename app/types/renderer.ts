@@ -19,6 +19,14 @@ export interface RendererCompilationMessage {
 
 export type RendererRecoveryStatus = 'idle' | 'recovering' | 'recovered' | 'failed';
 
+/** Resolved `context.configure()` options, published for diagnostics rather than assumed. */
+export interface RendererCanvasConfig {
+  format: string;
+  alphaMode: string;
+  colorSpace: string;
+  usage: number;
+}
+
 export type GpuFailureStage = 'module' | 'pipeline' | 'device';
 
 export const GPU_FAILURE_STAGE_LABEL: Record<GpuFailureStage, string> = {
@@ -34,6 +42,8 @@ export interface WebGpuProbeResult {
   userAgent: string;
   adapterInfo?: RendererAdapterInfo;
   compilationMessages: RendererCompilationMessage[];
+  enabledFeatures?: string[];
+  canvasConfig?: RendererCanvasConfig;
   error?: string;
   timestamp: number;
 }
@@ -41,6 +51,8 @@ export interface WebGpuProbeResult {
 export interface RendererBackendDiagnostics {
   adapterInfo?: RendererAdapterInfo;
   compilationMessages?: RendererCompilationMessage[];
+  enabledFeatures?: string[];
+  canvasConfig?: RendererCanvasConfig;
   recoveryStatus?: RendererRecoveryStatus;
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;
@@ -73,6 +85,8 @@ export interface RendererDiagnosticsState {
   governorPaused: boolean;
   adapterInfo?: RendererAdapterInfo;
   compilationMessages: RendererCompilationMessage[];
+  enabledFeatures?: string[];
+  canvasConfig?: RendererCanvasConfig;
   recoveryStatus: RendererRecoveryStatus;
   gpuFailureStage?: GpuFailureStage;
   gpuFailureReason?: string;

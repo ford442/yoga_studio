@@ -225,6 +225,8 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         governorStepDowns: snap.stepDownCount,
         governorPaused: snap.paused || meta.pauseRendering,
         adapterInfo: backendDiagnosticsRef.current.adapterInfo,
+        enabledFeatures: backendDiagnosticsRef.current.enabledFeatures,
+        canvasConfig: backendDiagnosticsRef.current.canvasConfig,
         compilationMessages: backendDiagnosticsRef.current.compilationMessages ?? [],
         recoveryStatus: backendDiagnosticsRef.current.recoveryStatus ?? 'idle',
         gpuFailureStage: backendDiagnosticsRef.current.gpuFailureStage,
