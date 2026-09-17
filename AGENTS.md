@@ -84,7 +84,7 @@ app/
 │   ├── webgpuBackend.ts / webgl2Backend.ts / staticBackend.ts
 │   ├── frameGovernor.ts          # Adaptive quality/resolution stepping under frame-time pressure
 │   ├── overlay.ts                # WebGL2 transparent geometry overlay pass
-│   └── gpuChores/                # Shared GPU-accelerated UI/media helpers (see "gpu-chores" below)
+│   └── gpuChores/                # Shared GPU/WASM/Canvas2D/JS UI/media helpers (see "gpu-chores" below)
 └── hooks/                        # ~20 hooks; notable ones:
     ├── useBreathTimer.ts         # Core breathing logic, schedule, session auto-end
     ├── useBreathAudio.ts         # Phase-transition chimes + ambient drone
@@ -206,11 +206,19 @@ The canvas dimensions are driven by `clientWidth/clientHeight × devicePixelRati
 
 ## gpu-chores (UI & media helpers)
 
-`app/lib/gpuChores/` + `app/renderer/gpuChores/` hold the shared histogram /
-downsample / LUT helpers. They borrow the renderer's `GPUDevice` through
-`lendChoreDevice()` and never request an adapter of their own; below the
-512x512 break-even, or with `?no_gpu_compute` set, they run on Canvas2D / JS.
-Studio FX shaders stay app-owned in `public/`. See `docs/gpu-chores.md`.
+`app/lib/gpuChores/` + `app/renderer/gpuChores/` + `native/gpu-chores-wasm/`
+hold the shared histogram / downsample / LUT helpers. They borrow the renderer's
+`GPUDevice` through `lendChoreDevice()` and never request an adapter of their
+own. Backend order is **WebGPU → WASM SIMD → Canvas2D (downsample only) → JS**:
+below the 512x512 break-even, or with `?no_gpu_compute` set, jobs run on the
+C++/wasm32 kernels in `native/gpu-chores-wasm/`, and on Canvas2D / JS wherever
+those cannot load.
+
+TypeScript stays the app language — C++ is only the numeric mid-tier, and
+pointers never escape `app/lib/gpuChores/wasmJobs.ts`. Rebuild the committed
+module with `npm run build:chores-wasm` (needs `clang` + `wasm-ld`) and run the
+host C++ gate with `npm run test:native`. Studio FX shaders stay app-owned in
+`public/`. See `docs/gpu-chores.md` and `native/gpu-chores-wasm/README.md`.
 
 ## Breath Timing System
 

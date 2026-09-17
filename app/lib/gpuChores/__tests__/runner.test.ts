@@ -40,7 +40,9 @@ describe('runLumaHistogram', () => {
 
   it('computes on the CPU when no device is on loan', async () => {
     const executor = fakeExecutor({ isAvailable: () => false });
-    const result = await runLumaHistogram(small(), { executor, gpuComputeDisabled: false });
+    // `wasm: null` pins this to the scalar tier: without it the native kernels
+    // would take the job, which is covered separately below.
+    const result = await runLumaHistogram(small(), { executor, gpuComputeDisabled: false, wasm: null });
 
     expect(result.backend).toBe('js');
     expect(result.value.bins[255]).toBe(64);
@@ -54,7 +56,7 @@ describe('runLumaHistogram', () => {
         throw new Error('device lost');
       }),
     });
-    const result = await runLumaHistogram(large(), { executor, gpuComputeDisabled: false });
+    const result = await runLumaHistogram(large(), { executor, gpuComputeDisabled: false, wasm: null });
 
     expect(result.backend).toBe('js');
     expect(result.fellBack).toBe(true);
@@ -77,6 +79,7 @@ describe('runDownsample2d', () => {
       executor: fakeExecutor(),
       gpuComputeDisabled: false,
       canvas2d: false,
+      wasm: null,
     });
 
     expect(result.backend).toBe('js');
@@ -90,7 +93,7 @@ describe('runLutU8Map', () => {
   it('honours the kill switch even with a live device', async () => {
     const executor = fakeExecutor();
     const lut = new Uint8Array(256).fill(7);
-    const result = await runLutU8Map(large(), lut, { executor, gpuComputeDisabled: true });
+    const result = await runLutU8Map(large(), lut, { executor, gpuComputeDisabled: true, wasm: null });
 
     expect(result.backend).toBe('js');
     expect(result.reason).toMatch(/kill switch/);
@@ -109,8 +112,8 @@ describe('runLutU8Map', () => {
 
 describe('breadcrumbs', () => {
   it('records the backend and reason of every chore', async () => {
-    await runLumaHistogram(small(), { gpuComputeDisabled: false });
-    await runDownsample2d(small(), 2, 2, { gpuComputeDisabled: true, canvas2d: false });
+    await runLumaHistogram(small(), { gpuComputeDisabled: false, wasm: null });
+    await runDownsample2d(small(), 2, 2, { gpuComputeDisabled: true, canvas2d: false, wasm: null });
 
     const crumbs = getChoreBreadcrumbs();
     expect(crumbs).toHaveLength(2);
@@ -126,7 +129,7 @@ describe('breadcrumbs', () => {
         throw new Error('pipeline validation');
       }),
     });
-    await runDownsample2d(large(), 4, 4, { executor, gpuComputeDisabled: false, canvas2d: false });
+    await runDownsample2d(large(), 4, 4, { executor, gpuComputeDisabled: false, canvas2d: false, wasm: null });
 
     expect(getChoreBreadcrumbs()[0].gpuError).toBe('pipeline validation');
     expect(getChoresStatus().reason).toMatch(/fell back/);
@@ -137,9 +140,64 @@ describe('breadcrumbs', () => {
 
   it('caps the breadcrumb ring', async () => {
     for (let i = 0; i < 22; i += 1) {
-      await runLumaHistogram(small(), { gpuComputeDisabled: true });
+      await runLumaHistogram(small(), { gpuComputeDisabled: true, wasm: null });
     }
     expect(getChoreBreadcrumbs()).toHaveLength(20);
     expect(getChoresStatus().jobCount).toBe(22);
+  });
+});
+
+describe('the WASM tier', () => {
+  it('takes every job below break-even, ahead of Canvas2D and JS', async () => {
+    const executor = fakeExecutor({ isAvailable: () => false });
+
+    const histogram = await runLumaHistogram(small(), { executor, gpuComputeDisabled: false });
+    expect(histogram.backend).toBe('wasm');
+    expect(histogram.value.bins[255]).toBe(64);
+
+    // Canvas2D is available here and still loses: the native kernel is the
+    // bit-exact area average, `drawImage` is the browser's own filter.
+    const thumb = await runDownsample2d(small(), 2, 2, {
+      executor,
+      gpuComputeDisabled: false,
+      canvas2d: true,
+    });
+    expect(thumb.backend).toBe('wasm');
+    expect(thumb.value.width).toBe(2);
+
+    const graded = await runLutU8Map(small(), new Uint8Array(256).fill(7), { gpuComputeDisabled: true });
+    expect(graded.backend).toBe('wasm');
+    expect(graded.value.data[0]).toBe(7);
+    expect(graded.value.data[3]).toBe(255); // alpha passes through
+  });
+
+  it('is still outranked by a lent device past break-even', async () => {
+    const executor = fakeExecutor();
+    const result = await runLumaHistogram(large(), { executor, gpuComputeDisabled: false });
+
+    expect(result.backend).toBe('webgpu');
+  });
+
+  it('catches the WebGPU fallback before Canvas2D does', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const executor = fakeExecutor({
+      downsample: vi.fn(async () => {
+        throw new Error('device lost');
+      }),
+    });
+    const result = await runDownsample2d(large(), 4, 4, { executor, gpuComputeDisabled: false });
+
+    expect(result.backend).toBe('wasm');
+    expect(result.fellBack).toBe(true);
+    expect(result.reason).toMatch(/device lost/);
+  });
+
+  it('breadcrumbs why a job dropped to Canvas2D or JS instead', async () => {
+    await runDownsample2d(small(), 2, 2, { gpuComputeDisabled: true, canvas2d: true, wasm: null });
+
+    const crumb = getChoreBreadcrumbs()[0];
+    expect(crumb.backend).toBe('canvas');
+    expect(crumb.reason).toMatch(/wasm tier disabled by caller/);
+    expect(getChoresStatus().backend).toBe('canvas');
   });
 });

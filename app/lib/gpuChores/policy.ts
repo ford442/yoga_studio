@@ -15,10 +15,25 @@ export interface ChorePolicyInput {
   /** `?no_gpu_compute` or the settings-equivalent. */
   gpuComputeDisabled: boolean;
   hasCanvas2d: boolean;
+  /** True when the native kernels instantiated (SIMD present, CSP permitting). */
+  hasWasm: boolean;
 }
 
-/** The CPU tier for a job: Canvas2D where it helps, otherwise the scalar loop. */
-export function cpuBackendFor(job: ChoreJobKind, hasCanvas2d: boolean): ChoresBackend {
+/**
+ * The CPU tier for a job: WASM SIMD first, then Canvas2D where it helps, then
+ * the scalar loop.
+ *
+ * WASM outranks Canvas2D even for downsample. `drawImage` is fast, but it is
+ * the *browser's* filter rather than the area average the kit specifies, so it
+ * only agrees with the goldens approximately; the native kernel is bit-exact
+ * with `cpuJobs.ts` and needs no canvas round trip on either side.
+ */
+export function cpuBackendFor(
+  job: ChoreJobKind,
+  hasCanvas2d: boolean,
+  hasWasm: boolean,
+): ChoresBackend {
+  if (hasWasm) return 'wasm';
   // Only downsample gets a real win from Canvas2D (`drawImage` box filter);
   // histogram and LUT would still need a getImageData round trip either way.
   return job === 'downsample_2d' && hasCanvas2d ? 'canvas' : 'js';
@@ -29,7 +44,7 @@ export function cpuBackendFor(job: ChoreJobKind, hasCanvas2d: boolean): ChoresBa
  * only if the renderer (and its device-recovery singleton) is lending a device.
  */
 export function selectChoresBackend(input: ChorePolicyInput): ChoresDecision {
-  const cpu = cpuBackendFor(input.job, input.hasCanvas2d);
+  const cpu = cpuBackendFor(input.job, input.hasCanvas2d, input.hasWasm);
   if (input.gpuComputeDisabled) {
     return { backend: cpu, reason: 'GPU compute disabled (kill switch)' };
   }

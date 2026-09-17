@@ -19,10 +19,12 @@ export type ChoreImageSource = Rgba8Image | ImageBitmap | HTMLCanvasElement | Of
 export type ChoreJobKind = 'luma_histogram_bt709' | 'downsample_2d' | 'lut_u8_map';
 
 /**
- * Where a chore ran. `canvas` is the Canvas2D/WASM tier (this app ships no WASM
- * helper yet, so Canvas2D fills that slot); `js` is the scalar loop of last resort.
+ * Where a chore ran. `wasm` is the native mid-tier (`native/gpu-chores-wasm`),
+ * `canvas` is Canvas2D — useful for downsample only, since a histogram or LUT
+ * would still need a `getImageData` round trip — and `js` is the scalar loop of
+ * last resort and the correctness reference for every other tier.
  */
-export type ChoresBackend = 'webgpu' | 'canvas' | 'js';
+export type ChoresBackend = 'webgpu' | 'wasm' | 'canvas' | 'js';
 
 export interface ChoresDecision {
   backend: ChoresBackend;

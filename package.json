@@ -19,6 +19,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:native": "cmake -S native/gpu-chores-wasm -B native/gpu-chores-wasm/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build native/gpu-chores-wasm/build && ./native/gpu-chores-wasm/build/chores_test",
+    "build:chores-wasm": "bash native/gpu-chores-wasm/scripts/build-wasm.sh",
     "validate:shaders": "node --import tsx scripts/validate-shaders.ts",
     "validate:content": "node --import tsx scripts/validate-content.ts",
     "audit:high": "npm audit --audit-level=high",
