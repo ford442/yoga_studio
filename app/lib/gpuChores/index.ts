@@ -5,3 +5,4 @@ export * from './levels';
 export * from './policy';
 export * from './runner';
 export * from './types';
+export * from './wasmJobs';

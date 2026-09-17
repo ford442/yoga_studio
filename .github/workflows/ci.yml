@@ -42,6 +42,15 @@ jobs:
       - name: Unit tests with core coverage thresholds
         run: npm run test:coverage
 
+      # The native kernels' fast gate. Host-only: it needs a C++20 compiler and
+      # nothing else, so it runs on every push in a couple of seconds. The
+      # committed app/lib/gpuChores/wasm/chores.wasm is not rebuilt here — the
+      # vitest suite already checks the shipped artifact against the same JS
+      # goldens, and `npm run build:chores-wasm` regenerates it when native/
+      # changes.
+      - name: gpu-chores native kernel tests
+        run: npm run test:native
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

@@ -52,6 +52,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# native kernel build trees (CMake, incl. the generated compile_commands.json —
+# it goes stale the moment a flag changes, so it is never committed)
+/native/**/build/
+/compile_commands.json
+
 # python caches
 __pycache__/
 *.pyc
