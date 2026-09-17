@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getWebGL2ContextOptions } from '../gpuDeviceContract';
 import type { RendererBackendContext } from '../types';
 import { WebGL2Backend } from '../webgl2Backend';
 
@@ -59,12 +60,18 @@ describe('WebGL2Backend recovery', () => {
       clientHeight: { configurable: true, value: 200 },
     });
     const gl = makeGl();
-    vi.spyOn(canvas, 'getContext').mockImplementation(((kind: string) => kind === 'webgl2' ? gl : null) as typeof canvas.getContext);
+    const getContext = vi.spyOn(canvas, 'getContext').mockImplementation(((kind: string) => kind === 'webgl2' ? gl : null) as typeof canvas.getContext);
     const ctx = makeContext(canvas);
     const backend = new WebGL2Backend();
     backend.start(ctx);
-    return { canvas, gl, ctx, backend };
+    return { canvas, gl, ctx, backend, getContext };
   };
+
+  it('requests the WebGL2 context using the shared adapter/canvas contract for the performance mode', () => {
+    const { getContext, backend } = setup();
+    expect(getContext).toHaveBeenCalledWith('webgl2', getWebGL2ContextOptions('auto'));
+    backend.stop();
+  });
 
   it('prevents loss and rebuilds resources after one restoration', () => {
     const { canvas, gl, ctx, backend } = setup();

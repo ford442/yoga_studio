@@ -53,10 +53,15 @@ const readStoredSettings = (): RendererSettings => {
 };
 
 interface BatteryManager {
-  save: boolean;
+  level: number;
+  charging: boolean;
   addEventListener: (type: string, listener: EventListener) => void;
   removeEventListener: (type: string, listener: EventListener) => void;
 }
+
+/** The Battery Status API has `level`/`charging`, not a `save` flag; low + unplugged is our saver signal. */
+const isBatterySaverActive = (battery: BatteryManager): boolean =>
+  !battery.charging && battery.level <= 0.2;
 
 export function useRendererSettings() {
   const [settings, setSettings] = useState<RendererSettings>(DEFAULT_RENDERER_SETTINGS);
@@ -89,7 +94,7 @@ export function useRendererSettings() {
 
     const handleLevelChange = () => {
       if (!cancelled && batteryRef) {
-        setBatterySaver(batteryRef.save);
+        setBatterySaver(isBatterySaverActive(batteryRef));
       }
     };
 
@@ -98,7 +103,7 @@ export function useRendererSettings() {
       .then((battery) => {
         if (cancelled) return;
         batteryRef = battery;
-        setBatterySaver(battery.save);
+        setBatterySaver(isBatterySaverActive(battery));
         battery.addEventListener('levelchange', handleLevelChange);
         battery.addEventListener('chargingchange', handleLevelChange);
       })

@@ -80,6 +80,14 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
           Frame p75: {p75} · Step-downs: {state.governorStepDowns}
         </div>
         {adapter && <div className="max-w-[320px] leading-tight">Adapter: {adapter}</div>}
+        {state.canvasConfig && (
+          <div className="max-w-[320px] leading-tight">
+            Canvas: {state.canvasConfig.format} · {state.canvasConfig.alphaMode} · {state.canvasConfig.colorSpace}
+          </div>
+        )}
+        {state.enabledFeatures && state.enabledFeatures.length > 0 && (
+          <div className="max-w-[320px] leading-tight">Features: {state.enabledFeatures.join(', ')}</div>
+        )}
         <div data-testid="chores-backend" data-chores-backend={state.chores?.backend ?? 'idle'}>
           Chores: {state.chores?.backend ?? 'idle'} · {state.chores?.reason ?? 'no chores run yet'}
         </div>

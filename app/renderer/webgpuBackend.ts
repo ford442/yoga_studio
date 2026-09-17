@@ -1,16 +1,18 @@
+import { monotonicNow } from '../lib/monotonicClock';
 import { resolveAssetUrl } from '../lib/resolveAssetUrl';
 import { buildUniformBuffer, UNIFORM_BUFFER_SIZE } from '../lib/shaderContract';
 import { loadWgslSource } from '../lib/wgslModules';
 import type {
   GpuFailureStage,
   RendererAdapterInfo,
+  RendererCanvasConfig,
   RendererCompilationMessage,
   WebGpuProbeResult,
 } from '../types/renderer';
-import { getWebGPUAdapterOptions } from './adapterOptions';
 import { resizeCanvasForDpr } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
 import { lendChoreDevice } from './gpuChores/choreDevice';
+import { buildGpuCanvasConfiguration, buildGpuDeviceDescriptor, getWebGPUAdapterOptions } from './gpuDeviceContract';
 import type { RendererBackend, RendererBackendContext } from './types';
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
@@ -136,6 +138,8 @@ export class WebGPUBackend implements RendererBackend {
   private ctx: RendererBackendContext | null = null;
   private probeAdapterInfo: RendererAdapterInfo | undefined;
   private probeMessages: RendererCompilationMessage[] = [];
+  private probeEnabledFeatures: string[] | undefined;
+  private probeCanvasConfig: RendererCanvasConfig | undefined;
   private uncapturedListener: ((event: GPUUncapturedErrorEvent) => void) | null = null;
   private fatal = false;
 
@@ -144,7 +148,7 @@ export class WebGPUBackend implements RendererBackend {
     this.cancelled = false;
     this.fatal = false;
     this.recoveryAttempted = false;
-    this.startTime = Date.now();
+    this.startTime = monotonicNow();
     this.canvasContext = ctx.canvas.getContext('webgpu');
     if (!this.canvasContext) {
       this.fail('device', 'Unable to create a WebGPU canvas context.');
@@ -188,6 +192,8 @@ export class WebGPUBackend implements RendererBackend {
       userAgent: currentUserAgent(),
       adapterInfo: this.probeAdapterInfo,
       compilationMessages: this.probeMessages,
+      enabledFeatures: this.probeEnabledFeatures,
+      canvasConfig: this.probeCanvasConfig,
       error,
       timestamp: Date.now(),
     };
@@ -246,22 +252,24 @@ export class WebGPUBackend implements RendererBackend {
     const generation = ++this.generation;
     this.probeAdapterInfo = undefined;
     this.probeMessages = [];
+    this.probeEnabledFeatures = undefined;
+    this.probeCanvasConfig = undefined;
     const adapter = await gpu.requestAdapter(getWebGPUAdapterOptions(ctx.performanceMode));
     if (!adapter) throw new Error('No WebGPU adapter was returned.');
     if (!this.isCurrent(generation)) return;
     this.probeAdapterInfo = readAdapterInfo(adapter);
     ctx.onBackendDiagnostics?.({ adapterInfo: this.probeAdapterInfo });
 
-    const device = await adapter.requestDevice({
-      label: DEVICE_LABEL,
-      requiredFeatures: [],
-      requiredLimits: {},
-    });
+    // gpu-chores borrows this same device rather than requesting its own adapter,
+    // so its required features/limits are resolved here, once, at boot.
+    const device = await adapter.requestDevice(buildGpuDeviceDescriptor(adapter, DEVICE_LABEL));
     if (!this.isCurrent(generation)) {
       this.discardDevice(device);
       return;
     }
     this.attachUncapturedError(device);
+    this.probeEnabledFeatures = Array.from(device.features);
+    ctx.onBackendDiagnostics?.({ enabledFeatures: this.probeEnabledFeatures });
 
     let shaderSource: string;
     try {
@@ -404,10 +412,18 @@ export class WebGPUBackend implements RendererBackend {
       return true;
     }
     try { context.unconfigure(); } catch { /* older implementations may reject redundant unconfigure */ }
-    context.configure({ device, format, alphaMode: 'premultiplied' });
+    const config = buildGpuCanvasConfiguration(device, format);
+    context.configure(config);
     this.configuredDevice = device;
     this.configuredWidth = canvas.width;
     this.configuredHeight = canvas.height;
+    this.probeCanvasConfig = {
+      format: config.format,
+      alphaMode: config.alphaMode ?? 'premultiplied',
+      colorSpace: config.colorSpace ?? 'srgb',
+      usage: config.usage ?? GPUTextureUsage.RENDER_ATTACHMENT,
+    };
+    this.ctx?.onBackendDiagnostics?.({ canvasConfig: this.probeCanvasConfig });
     return true;
   }
 
@@ -467,7 +483,7 @@ export class WebGPUBackend implements RendererBackend {
     }
 
     const values = ctx.getUniformSnapshot();
-    const currentTime = ((Date.now() - (this.startTime ?? Date.now())) / 1000) * ctx.getTimeScale();
+    const currentTime = ((monotonicNow() - (this.startTime ?? monotonicNow())) / 1000) * ctx.getTimeScale();
     const uniforms = buildUniformBuffer({
       ...values,
       time: currentTime,

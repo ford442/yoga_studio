@@ -8,6 +8,7 @@ import {
   type BreathSettings,
   type PhaseSnapshot,
 } from '../lib/breathSchedule';
+import { monotonicNow } from '../lib/monotonicClock';
 
 export type { BreathPhase, BreathSettings, BreathSchedule, PhaseSnapshot };
 
@@ -48,14 +49,7 @@ export interface BreathTick {
 
 const defaultSettings: BreathSettings = { inhale: 4, hold1: 4, exhale: 6, hold2: 2 };
 
-/**
- * Monotonic clock. `performance.now()` is immune to system-clock adjustments,
- * which `Date.now()` is not; both are faked together by the test clocks.
- */
-export const monotonicNow = (): number =>
-  typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
+export { monotonicNow };
 
 const idleTick = (schedule: BreathSchedule): BreathTick => {
   const snap = resolvePhaseAt(schedule, 0);
