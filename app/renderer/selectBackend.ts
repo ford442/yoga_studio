@@ -9,10 +9,16 @@ export interface RendererCapabilities {
   webgl2: boolean;
 }
 
-/** Probe what the current browser claims to support (WebGPU may still fail to init an adapter/device). */
+/**
+ * Probe what the current browser claims to support (WebGPU may still fail to
+ * init an adapter/device). WebGL2 is only probed with a real context when
+ * WebGPU is absent: a WebGPU session never falls back to GL (`getNextMode`),
+ * so it must not open a WebGL context, even a throwaway one.
+ */
 export const probeCapabilities = (): RendererCapabilities => {
   if (typeof navigator === 'undefined') return { webgpu: false, webgl2: false };
   const webgpu = Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
+  if (webgpu) return { webgpu, webgl2: typeof WebGL2RenderingContext !== 'undefined' };
   let webgl2 = false;
   if (typeof document !== 'undefined') {
     try {

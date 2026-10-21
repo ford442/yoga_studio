@@ -14,6 +14,8 @@ import { attachVisibilityPause, beginFrame } from './frameGate';
 import { lendChoreDevice } from './gpuChores/choreDevice';
 import { buildGpuCanvasConfiguration, buildGpuDeviceDescriptor, getWebGPUAdapterOptions } from './gpuDeviceContract';
 import { createGpuFrameTimer, supportsTimestampQuery, type GpuFrameTimer } from './gpuTimestamps';
+import { buildOverlayWgsl, OVERLAY_BLEND, OVERLAY_FRAGMENT_ENTRY, OVERLAY_VERTEX_ENTRY } from './overlayWgsl';
+import { createFramePipelineLayouts, FULLSCREEN_VERTEX_COUNT, UNIFORMS_BINDING, UNIFORMS_GROUP } from './pipelineLayout';
 import type { RendererBackend, RendererBackendContext } from './types';
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
@@ -133,6 +135,8 @@ export class WebGPUBackend implements RendererBackend {
   private resizeFn: (() => void) | null = null;
   private loopArgs: {
     pipeline: GPURenderPipeline;
+    /** Null when the overlay failed to compile; the scene still renders. */
+    overlayPipeline: GPURenderPipeline | null;
     uniformBuffer: GPUBuffer;
     bindGroup: GPUBindGroup;
   } | null = null;
@@ -164,12 +168,7 @@ export class WebGPUBackend implements RendererBackend {
 
     this.resizeFn = () => {
       try {
-        const resized = resizeCanvasForDpr(
-          ctx.canvas,
-          ctx.getMaxDevicePixelRatio(),
-          () => this.configureCanvas(true),
-        );
-        if (resized) ctx.overlay?.resize(ctx.getMaxDevicePixelRatio());
+        resizeCanvasForDpr(ctx.canvas, ctx.getMaxDevicePixelRatio(), () => this.configureCanvas(true));
       } catch (error) {
         this.fail('device', 'Failed to configure the WebGPU context after resize.', error);
       }
@@ -326,9 +325,12 @@ export class WebGPUBackend implements RendererBackend {
       return;
     }
 
+    // Explicit layout: the overlay pass (and later post/compute passes) bind
+    // the same group-0 uniforms bind group as the scene.
+    const layouts = createFramePipelineLayouts(device);
     const pipelineDescriptor: GPURenderPipelineDescriptor = {
       label: 'Sacred Breath WebGPU Pipeline',
-      layout: 'auto',
+      layout: layouts.fullscreen,
       vertex: { module: shaderModule, entryPoint: ctx.vertexEntry },
       fragment: { module: shaderModule, entryPoint: ctx.fragmentEntry, targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list' },
@@ -344,6 +346,11 @@ export class WebGPUBackend implements RendererBackend {
       this.discardDevice(device);
       throw error;
     }
+    const overlayPipeline = await this.createOverlayPipeline(device, layouts.fullscreen);
+    if (!this.isCurrent(generation)) {
+      this.discardDevice(device);
+      return;
+    }
     const uniformBuffer = device.createBuffer({
       label: 'Sacred Breath Uniform Buffer',
       size: UNIFORM_BUFFER_SIZE,
@@ -351,8 +358,8 @@ export class WebGPUBackend implements RendererBackend {
     });
     const bindGroup = device.createBindGroup({
       label: 'Sacred Breath Uniform Bind Group',
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      layout: layouts.uniforms,
+      entries: [{ binding: UNIFORMS_BINDING, resource: { buffer: uniformBuffer } }],
     });
     if (!this.isCurrent(generation)) {
       this.discardDevice(device);
@@ -361,7 +368,7 @@ export class WebGPUBackend implements RendererBackend {
 
     const previousDevice = this.device;
     this.device = device;
-    this.loopArgs = { pipeline, uniformBuffer, bindGroup };
+    this.loopArgs = { pipeline, overlayPipeline, uniformBuffer, bindGroup };
     this.currentTextureFailed = false;
     this.configureCanvas(true);
     this.resizeFn?.();
@@ -388,6 +395,43 @@ export class WebGPUBackend implements RendererBackend {
     });
     this.reportProbe('ok');
     this.scheduleFrame();
+  }
+
+  /**
+   * The geometry overlay, drawn as a second pass on the scene's encoder. A
+   * failure here only costs the overlay, never the session, matching the old
+   * WebGL2 overlay's `init()` returning false.
+   */
+  private async createOverlayPipeline(
+    device: GPUDevice,
+    layout: GPUPipelineLayout,
+  ): Promise<GPURenderPipeline | null> {
+    if (!this.format) return null;
+    const format = this.format;
+    try {
+      const overlayModule = await createWithValidationScope(device, 'module', () =>
+        device.createShaderModule({ label: 'Sacred Breath overlay shader', code: buildOverlayWgsl() }),
+      );
+      const descriptor: GPURenderPipelineDescriptor = {
+        label: 'Sacred Breath Overlay Pipeline',
+        layout,
+        vertex: { module: overlayModule, entryPoint: OVERLAY_VERTEX_ENTRY },
+        fragment: {
+          module: overlayModule,
+          entryPoint: OVERLAY_FRAGMENT_ENTRY,
+          targets: [{ format, blend: OVERLAY_BLEND }],
+        },
+        primitive: { topology: 'triangle-list' },
+      };
+      return await createWithValidationScope(device, 'pipeline', () =>
+        typeof device.createRenderPipelineAsync === 'function'
+          ? device.createRenderPipelineAsync(descriptor)
+          : device.createRenderPipeline(descriptor),
+      );
+    } catch (error) {
+      console.warn('[WebGPU] geometry overlay disabled:', error);
+      return null;
+    }
   }
 
   private isCurrent(generation: number): boolean {
@@ -522,16 +566,26 @@ export class WebGPUBackend implements RendererBackend {
         ...(timestampWrites ? { timestampWrites } : {}),
       });
       pass.setPipeline(args.pipeline);
-      pass.setBindGroup(0, args.bindGroup);
-      pass.draw(6);
+      pass.setBindGroup(UNIFORMS_GROUP, args.bindGroup);
+      pass.draw(FULLSCREEN_VERTEX_COUNT);
       pass.end();
+      if (gate.governor.overlayEnabled && args.overlayPipeline) {
+        const overlayWrites = sampling ? timer?.auxWrites() : undefined;
+        const overlayPass = encoder.beginRenderPass({
+          colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
+          ...(overlayWrites ? { timestampWrites: overlayWrites } : {}),
+        });
+        overlayPass.setPipeline(args.overlayPipeline);
+        overlayPass.setBindGroup(UNIFORMS_GROUP, args.bindGroup);
+        overlayPass.draw(FULLSCREEN_VERTEX_COUNT);
+        overlayPass.end();
+      }
       if (sampling) timer?.resolve(encoder);
       device.queue.submit([encoder.finish()]);
       // Fire-and-forget: the map resolves on a later task, never inside this rAF.
       if (sampling) timer?.readback();
       const gpuPassMs = timer?.lastGpuPassMs() ?? null;
       if (gpuPassMs != null) ctx.governor.noteGpuPass(gate.now, gpuPassMs);
-      if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
     } catch (error) {
       this.fail('device', 'WebGPU render loop failed.', error);
       return;

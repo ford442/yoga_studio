@@ -3,10 +3,10 @@ import {
   WEBGL_OVERLAY_UNIFORM_MAP,
   type UniformValues,
 } from '../lib/shaderContract';
-import { buildGLUniforms, createProgramFromSources, resizeCanvasForDpr, uploadUniform } from './canvasUtils';
+import { buildGLUniforms, createProgramFromSources, uploadUniform } from './canvasUtils';
 import type { GLUniforms } from './types';
 
-/** Fullscreen-triangle vertex shader shared by the WebGL2 fallback and the overlay. */
+/** Fullscreen-triangle vertex shader shared by the WebGL2 fallback scene and its overlay. */
 export const WEBGL_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -169,88 +169,76 @@ void main() {
   vec3 color = ringCol + shapes;
   float alpha = clamp(max(rings * 0.28, shapeAlpha) * (0.42 + uIntensity * 0.18), 0.0, 0.72);
   alpha *= smoothstep(1.35, 0.15, length(uv));
-  outColor = vec4(color, alpha);
+  // clamp(color) * a^3 under a screen blend; see OVERLAY_BLEND in overlayWgsl.ts.
+  outColor = vec4(clamp(color, 0.0, 1.0) * (alpha * alpha * alpha), 0.0);
 }
 `;
 
 /**
- * The transparent WebGL2 geometry overlay drawn on top of either the WebGPU
- * or WebGL2 main renderer. Owns its own GL context, program, and canvas sizing.
+ * Screen blend onto the opaque scene, identical to `OVERLAY_BLEND` on the
+ * WebGPU path: color = dst + src * (1 - dst), destination alpha kept.
+ */
+const applyOverlayBlend = (gl: WebGL2RenderingContext): void => {
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFuncSeparate(gl.ONE_MINUS_DST_COLOR, gl.ONE, gl.ZERO, gl.ONE);
+};
+
+/**
+ * The geometry overlay for the WebGL2 fallback backend. It draws into that
+ * backend's own context right after the scene, so a GL session never opens a
+ * second context, and a WebGPU session never opens one at all (WebGPU draws
+ * the WGSL port in `overlayWgsl.ts` on its own encoder).
  */
 export class GeometryOverlay {
-  private readonly canvas: HTMLCanvasElement;
-  private gl: WebGL2RenderingContext | null = null;
+  private readonly gl: WebGL2RenderingContext;
   private program: WebGLProgram | null = null;
   private vertexArray: WebGLVertexArrayObject | null = null;
   private uniforms: GLUniforms = {};
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
+  constructor(gl: WebGL2RenderingContext) {
+    this.gl = gl;
   }
 
-  /** Returns true if the overlay GL context + program initialized successfully. */
+  /** Returns true if the overlay program compiled and linked in the shared context. */
   init(): boolean {
-    const gl = this.canvas.getContext('webgl2', {
-      alpha: true,
-      antialias: true,
-      premultipliedAlpha: false,
-    });
-    if (!gl) {
-      console.warn('[GeometryOverlay] WebGL2 overlay is unavailable.');
-      return false;
-    }
-
+    const { gl } = this;
     try {
-      this.gl = gl;
       this.program = createProgramFromSources(gl, WEBGL_VERTEX_SHADER, WEBGL_OVERLAY_FRAGMENT_SHADER);
       this.vertexArray = gl.createVertexArray();
       this.uniforms = buildGLUniforms(gl, this.program, WEBGL_OVERLAY_UNIFORM_MAP);
       return true;
     } catch (error) {
       console.warn('[GeometryOverlay] WebGL2 overlay setup failed:', error);
-      this.gl = null;
-      this.program = null;
+      this.destroy();
       return false;
     }
   }
 
-  resize(maxDpr: number): void {
-    const gl = this.gl;
-    resizeCanvasForDpr(this.canvas, maxDpr, () => gl?.viewport(0, 0, this.canvas.width, this.canvas.height));
-  }
-
-  render(time: number, values: Partial<UniformValues>): void {
+  /** Blend the overlay over whatever the backend just drew into the current framebuffer. */
+  render(values: Partial<UniformValues>): void {
     const { gl, program, vertexArray, uniforms } = this;
-    if (!gl || !program || this.canvas.width === 0 || this.canvas.height === 0) return;
+    if (!program) return;
 
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(program);
     gl.bindVertexArray(vertexArray);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    const overlayValues: Partial<UniformValues> = {
-      ...values,
-      time,
-      resolution: { x: this.canvas.width, y: this.canvas.height },
-    };
     for (const field of UNIFORM_FIELDS) {
       if (!(field.name in WEBGL_OVERLAY_UNIFORM_MAP)) continue;
-      const value = overlayValues[field.name];
+      const value = values[field.name];
       if (value === undefined) continue;
       uploadUniform(gl, uniforms[field.name], field, value);
     }
 
+    applyOverlayBlend(gl);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
   }
 
   destroy(): void {
-    if (this.vertexArray) this.gl?.deleteVertexArray(this.vertexArray);
-    if (this.program) this.gl?.deleteProgram(this.program);
-    this.gl = null;
+    if (this.vertexArray) this.gl.deleteVertexArray(this.vertexArray);
+    if (this.program) this.gl.deleteProgram(this.program);
     this.program = null;
     this.vertexArray = null;
+    this.uniforms = {};
   }
 }
