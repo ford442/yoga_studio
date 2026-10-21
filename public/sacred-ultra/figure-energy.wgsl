@@ -496,8 +496,8 @@ fn chakraColumn(uv: vec2<f32>, t: f32, breath: f32, expand: f32) -> vec3<f32> {
         col += chakraCol * glow;
         col += chakraCol * ringGlow;
 
-        if (u.chakraPhase < 0.5 && i < 6u) {
-            let nextPos = vec2<f32>(0.0, positions[i + 1u]);
+        if (u.chakraPhase < 0.5 && i < 6) {
+            let nextPos = vec2<f32>(0.0, positions[i + 1]);
             let midPos  = (pos + nextPos) * 0.5;
             let midDist = length(p - midPos);
             let flowGlow = exp(-midDist * 25.0) * u.phaseProgress * 0.25;
