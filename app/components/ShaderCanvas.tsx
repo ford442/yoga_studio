@@ -372,13 +372,14 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     <div
       ref={containerRef}
       className={`absolute inset-0 w-full h-full ${className}`}
-      // Absent in the prerendered HTML: the server can't know which backend will run.
+      // Absent in the prerendered HTML: the server can't know which backend will run,
+      // nor the viewport/DPR/device heuristics behind quality and the DPR cap.
       data-renderer={hydrating ? undefined : rendererMode}
       data-shader={shaderPath}
       data-fallback-reason={fallbackReason ?? ''}
       data-gpu-failure-stage={gpuFailureStage ?? ''}
-      data-quality={Math.min(effectiveQualityPreset, governorSnap.qualityPreset)}
-      data-dpr-cap={resolvedMaxDpr}
+      data-quality={hydrating ? undefined : Math.min(effectiveQualityPreset, governorSnap.qualityPreset)}
+      data-dpr-cap={hydrating ? undefined : resolvedMaxDpr}
       data-resolution-scale={governorSnap.resolutionScale}
       data-overlay={governorSnap.overlayEnabled && effectiveOverlayEnabled}
       data-reduced-motion={Boolean(reducedMotion)}
