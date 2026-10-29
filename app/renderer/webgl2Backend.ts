@@ -3,7 +3,7 @@ import { UNIFORM_FIELDS, WEBGL_MAIN_UNIFORM_MAP, type UniformValues } from '../l
 import { buildGLUniforms, createProgramFromSources, resizeCanvasForDpr, uploadUniform } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
 import { getWebGL2ContextOptions } from './gpuDeviceContract';
-import { WEBGL_VERTEX_SHADER } from './overlay';
+import { GeometryOverlay, WEBGL_VERTEX_SHADER } from './overlay';
 import type { GLUniforms, RendererBackend, RendererBackendContext } from './types';
 
 const WEBGL_FRAGMENT_SHADER = `#version 300 es
@@ -173,6 +173,8 @@ export class WebGL2Backend implements RendererBackend {
   private program: WebGLProgram | null = null;
   private vertexArray: WebGLVertexArrayObject | null = null;
   private uniforms: GLUniforms = {};
+  /** Built on the first frame the governor wants it; `false` once it failed to compile. */
+  private overlay: GeometryOverlay | false | null = null;
   private animationFrame: number | null = null;
   private startTime: number | null = null;
   private lastFrameMs: number | null = null;
@@ -245,7 +247,6 @@ export class WebGL2Backend implements RendererBackend {
     const resize = () => {
       resizeCanvasForDpr(canvas, ctx.getMaxDevicePixelRatio(), () => gl.viewport(0, 0, canvas.width, canvas.height));
       gl.viewport(0, 0, canvas.width, canvas.height);
-      ctx.overlay?.resize(ctx.getMaxDevicePixelRatio());
     };
     this.resizeFn = resize;
 
@@ -265,6 +266,7 @@ export class WebGL2Backend implements RendererBackend {
     if (!gl) throw new Error('WebGL2 context is unavailable.');
     if (this.vertexArray) gl.deleteVertexArray(this.vertexArray);
     if (this.program) gl.deleteProgram(this.program);
+    this.destroyOverlay();
     const program = createProgramFromSources(gl, WEBGL_VERTEX_SHADER, WEBGL_FRAGMENT_SHADER);
     const vertexArray = gl.createVertexArray();
     if (!vertexArray) {
@@ -274,6 +276,20 @@ export class WebGL2Backend implements RendererBackend {
     this.program = program;
     this.vertexArray = vertexArray;
     this.uniforms = buildGLUniforms(gl, program, WEBGL_MAIN_UNIFORM_MAP);
+  }
+
+  /** Same context as the scene: a GL session never opens a second WebGL context for the overlay. */
+  private ensureOverlay(gl: WebGL2RenderingContext): GeometryOverlay | null {
+    if (this.overlay === null) {
+      const overlay = new GeometryOverlay(gl);
+      this.overlay = overlay.init() ? overlay : false;
+    }
+    return this.overlay || null;
+  }
+
+  private destroyOverlay(): void {
+    if (this.overlay) this.overlay.destroy();
+    this.overlay = null;
   }
 
   private clearRestorationTimer(): void {
@@ -345,7 +361,7 @@ export class WebGL2Backend implements RendererBackend {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    if (gate.governor.overlayEnabled) ctx.overlay?.render(currentTime, values);
+    if (gate.governor.overlayEnabled) this.ensureOverlay(gl)?.render(mainValues);
 
     this.scheduleFrame();
   };
@@ -362,6 +378,7 @@ export class WebGL2Backend implements RendererBackend {
     this.clearRestorationTimer();
     this.ctx?.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     this.ctx?.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    this.destroyOverlay();
     if (this.vertexArray) this.gl?.deleteVertexArray(this.vertexArray);
     if (this.program) this.gl?.deleteProgram(this.program);
     this.gl = null;

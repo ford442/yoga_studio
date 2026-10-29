@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { GeometryOverlay } from '../renderer/overlay';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { probeCapabilities, mountRenderer, pickInitialMode } from '../renderer/selectBackend';
 import { resolveMaxDpr, resolveQualityPreset } from '../renderer/quality';
 import {
@@ -39,7 +38,7 @@ interface ShaderCanvasProps {
   interference?: number; // 0.0=still, 1.0=strong moire/interference
   qualityPreset?: number; // 0=mobile, 1=high, undefined=auto-detect
   maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
-  overlayEnabled?: boolean; // WebGL2 transparent geometry layer on top of the main renderer
+  overlayEnabled?: boolean; // geometry overlay pass, drawn by the active backend on its own canvas
   effectivePerformanceMode: PerformanceMode;
   className?: string;
   shaderPath?: string;
@@ -76,6 +75,17 @@ type ShaderPropsRef = Required<
 >;
 
 const capabilities = probeCapabilities();
+
+// The static export is prerendered where no GPU can be probed, so hydration
+// must start from the server's answer ('static') and switch to the probed
+// mode right after. Reading it via `useState` instead left the server's
+// `data-renderer` etc. attributes stale, since React doesn't patch attribute
+// mismatches on hydration.
+const subscribeNever = () => () => {};
+const getProbedMode = (): RendererMode => pickInitialMode(capabilities);
+const getServerMode = (): RendererMode => 'static';
+const getHydrating = () => false;
+const getServerHydrating = () => true;
 
 const toBaseTier = (
   qualityPreset: number,
@@ -118,8 +128,10 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [rendererMode, setRendererMode] = useState<RendererMode>(() => pickInitialMode(capabilities));
+  const probedMode = useSyncExternalStore(subscribeNever, getProbedMode, getServerMode);
+  const hydrating = useSyncExternalStore(subscribeNever, getHydrating, getServerHydrating);
+  const [fallbackMode, setFallbackMode] = useState<RendererMode | null>(null);
+  const rendererMode = fallbackMode ?? probedMode;
   const [fallbackReason, setFallbackReason] = useState<string | undefined>(undefined);
   const [gpuFailureStage, setGpuFailureStage] = useState<GpuFailureStage | undefined>(undefined);
   const [governorSnap, setGovernorSnap] = useState<GovernorSnapshot>(() => ({
@@ -301,15 +313,8 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     const canvas = canvasRef.current;
     const container = containerRef.current;
     const governor = governorRef.current;
-    if (!canvas || !container || !governor) return;
-
-    // Overlay canvas is created when the base setting allows it; skip it on the
-    // static hard-fail path so a failed WebGPU probe does not open a WebGL context.
-    let overlay: GeometryOverlay | null = null;
-    if (rendererMode !== 'static' && effectiveOverlayEnabled && overlayCanvasRef.current) {
-      overlay = new GeometryOverlay(overlayCanvasRef.current);
-      if (!overlay.init()) overlay = null;
-    }
+    // Wait out the hydration pass, which still carries the server's 'static'.
+    if (hydrating || !canvas || !container || !governor) return;
 
     const getUniformSnapshot = (): AnimatedUniformValues => {
       const base = propsRef.current;
@@ -325,7 +330,6 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       caps: capabilities,
       canvas,
       container,
-      overlay,
       shaderPath,
       vertexEntry,
       fragmentEntry,
@@ -355,21 +359,21 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       },
       onFallback: (nextMode, reason) => {
         setFallbackReason(reason);
-        setRendererMode(nextMode);
+        setFallbackMode(nextMode);
       },
     });
 
-    return () => {
-      unmount();
-      overlay?.destroy();
-    };
-  }, [shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveOverlayEnabled, effectiveMaxDpr, effectivePerformanceMode]);
+    // The overlay toggles through the governor's base tier (see `setBase` above),
+    // so turning it on/off never remounts the renderer.
+    return unmount;
+  }, [hydrating, shaderPath, vertexEntry, fragmentEntry, rendererMode, effectiveMaxDpr, effectivePerformanceMode]);
 
   return (
     <div
       ref={containerRef}
       className={`absolute inset-0 w-full h-full ${className}`}
-      data-renderer={rendererMode}
+      // Absent in the prerendered HTML: the server can't know which backend will run.
+      data-renderer={hydrating ? undefined : rendererMode}
       data-shader={shaderPath}
       data-fallback-reason={fallbackReason ?? ''}
       data-gpu-failure-stage={gpuFailureStage ?? ''}
@@ -385,14 +389,6 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         className="absolute inset-0 w-full h-full"
         style={{ display: 'block' }}
       />
-      {effectiveOverlayEnabled && rendererMode !== 'static' && (
-        <canvas
-          ref={overlayCanvasRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          data-layer="webgl2-overlay"
-          style={{ display: 'block', mixBlendMode: 'screen' }}
-        />
-      )}
     </div>
   );
 };

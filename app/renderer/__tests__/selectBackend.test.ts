@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   fallbackOrder,
+  probeCapabilities,
   pickInitialMode,
   getNextMode,
   createBackend,
@@ -14,6 +15,27 @@ import type { RendererBackendContext } from '../types';
 const fullCaps = { webgpu: true, webgl2: true };
 const noWebgpuCaps = { webgpu: false, webgl2: true };
 const noneCaps = { webgpu: false, webgl2: false };
+
+describe('probeCapabilities', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'gpu');
+    vi.restoreAllMocks();
+  });
+
+  it('does not open a throwaway WebGL context when WebGPU is present', () => {
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {} });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+    expect(probeCapabilities().webgpu).toBe(true);
+    expect(getContext).not.toHaveBeenCalled();
+  });
+
+  it('probes WebGL2 with a real context only when WebGPU is absent', () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation((() => ({})) as unknown as HTMLCanvasElement['getContext']);
+    expect(probeCapabilities()).toEqual({ webgpu: false, webgl2: true });
+    expect(getContext).toHaveBeenCalledWith('webgl2');
+  });
+});
 
 describe('fallbackOrder', () => {
   it('orders webgpu -> webgl2 -> static when everything is supported', () => {
@@ -78,7 +100,6 @@ describe('mountRenderer', () => {
   const baseCtx = (): Omit<RendererBackendContext, 'onFatalError'> => ({
     canvas: {} as HTMLCanvasElement,
     container: {} as HTMLElement,
-    overlay: null,
     shaderPath: 'sacred-lotus-final.wgsl',
     vertexEntry: 'vs',
     fragmentEntry: 'main',

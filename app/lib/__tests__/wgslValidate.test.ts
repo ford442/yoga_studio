@@ -3,6 +3,7 @@ import {
   findDuplicateDeclarations,
   findEntryPointNames,
   findFloatModulo,
+  findFullscreenQuads,
   findIncrementOperators,
   findU32ArrayIndexes,
   findUnparenthesizedIf,
@@ -31,5 +32,24 @@ describe('wgslValidate', () => {
     expect(findU32ArrayIndexes('return CHAKRA[u32(i)];')).toHaveLength(1);
     expect(findUnparenthesizedIf('fn f() { if length(p) > 1.0 { return; } }')).toHaveLength(1);
     expect(findUnparenthesizedIf('fn f() { if (length(p) > 1.0) { return; } }')).toHaveLength(0);
+  });
+
+  it('flags a 6-vertex fullscreen quad but not a triangle or fragment-side arrays', () => {
+    const quad = `@vertex
+fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+    let pos = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
+        vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
+    return vec4<f32>(pos[i], 0.0, 1.0);
+}`;
+    expect(findFullscreenQuads(quad)).toEqual([
+      "vertex 'vs' builds a 6-vertex position array; use a 3-vertex fullscreen triangle",
+    ]);
+    const triangle = `@vertex
+fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+    let pos = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    return vec4<f32>(pos[i], 0.0, 1.0);
+}
+fn hexagon() -> f32 { let corners = array<vec2<f32>, 6>(); return 0.0; }`;
+    expect(findFullscreenQuads(triangle)).toEqual([]);
   });
 });
