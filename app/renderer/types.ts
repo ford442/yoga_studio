@@ -1,7 +1,6 @@
 import type { UniformValues } from '../lib/shaderContract';
 import type { PerformanceMode, RendererBackendDiagnostics, RendererMode } from '../types/renderer';
 import type { FrameGovernor } from './frameGovernor';
-import type { GeometryOverlay } from './overlay';
 
 export type { RendererMode };
 
@@ -12,7 +11,6 @@ export type AnimatedUniformValues = Omit<UniformValues, 'time' | 'resolution'>;
 export interface RendererBackendContext {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
-  overlay: GeometryOverlay | null;
   shaderPath: string;
   vertexEntry: string;
   fragmentEntry: string;

@@ -86,6 +86,15 @@ export const buildUniformBuffer = (values: Partial<UniformValues>): Float32Array
   return arr;
 };
 
+/**
+ * `struct Uniforms` + its group-0 binding, generated from `UNIFORM_FIELDS`, for
+ * WGSL that lives in TypeScript (the geometry overlay). Public `.wgsl` scenes
+ * keep their hand-written struct, which `npm run validate:shaders` checks.
+ */
+export const buildUniformsWgsl = (): string =>
+  `struct Uniforms {\n${UNIFORM_FIELDS.map((field) => `    ${field.name}: ${field.type},`).join('\n')}\n}\n\n` +
+  '@group(0) @binding(0) var<uniform> u: Uniforms;\n';
+
 /** GLSL uniform name mapping for the WebGL2 main fallback shader. */
 export const WEBGL_MAIN_UNIFORM_MAP: Record<string, string> = {
   time: 'uTime',

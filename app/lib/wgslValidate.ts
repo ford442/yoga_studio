@@ -131,3 +131,39 @@ export function findLeftoverIncludes(source: string): string[] {
     ? ['composed source still contains // @include directives']
     : [];
 }
+
+/** Body of every `@vertex` function, brace-matched (WGSL has no nested fn). */
+function vertexFunctionBodies(text: string): Array<{ name: string; body: string }> {
+  const bodies: Array<{ name: string; body: string }> = [];
+  const re = /@vertex\s+(?:@[^\n]+\s+)*fn\s+(\w+)[^{]*\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    let depth = 1;
+    let index = re.lastIndex;
+    while (index < text.length && depth > 0) {
+      if (text[index] === '{') depth += 1;
+      else if (text[index] === '}') depth -= 1;
+      index += 1;
+    }
+    bodies.push({ name: match[1], body: text.slice(re.lastIndex, index - 1) });
+  }
+  return bodies;
+}
+
+/**
+ * Every fullscreen pass draws `FULLSCREEN_VERTEX_COUNT` (3) vertices. A vertex
+ * entry still holding a 6-entry quad array would leave half the screen unset.
+ */
+export function findFullscreenQuads(source: string): string[] {
+  const errors: string[] = [];
+  for (const { name, body } of vertexFunctionBodies(stripWgslComments(source))) {
+    const re = /array<\s*vec2<f32>\s*,\s*(\d+)\s*>/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(body))) {
+      if (match[1] !== '3') {
+        errors.push(`vertex '${name}' builds a ${match[1]}-vertex position array; use a 3-vertex fullscreen triangle`);
+      }
+    }
+  }
+  return errors;
+}
