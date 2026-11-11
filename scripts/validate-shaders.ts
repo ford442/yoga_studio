@@ -11,10 +11,12 @@ import { dirname, join, normalize } from 'node:path';
 import { TECHNIQUES } from '../app/data/techniques.ts';
 import { UNIFORM_FIELDS, UNIFORM_BUFFER_SIZE } from '../app/lib/shaderContract.ts';
 import { parseWgslModule } from '../app/lib/wgslModules.ts';
+import { buildOverlayWgsl, OVERLAY_FRAGMENT_ENTRY, OVERLAY_VERTEX_ENTRY } from '../app/renderer/overlayWgsl.ts';
 import {
   findDuplicateDeclarations,
   findEntryPointNames,
   findFloatModulo,
+  findFullscreenQuads,
   findIncrementOperators,
   findLeftoverIncludes,
   findU32ArrayIndexes,
@@ -97,14 +99,13 @@ function lineCount(source: string): number {
 }
 
 function validateShader(filePath: string): string[] {
-  const errors: string[] = [];
   let tree: ShaderTree;
   try {
     tree = readShaderTree(filePath);
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];
   }
-  const source = tree.source;
+  const errors: string[] = [];
 
   if (tree.files.size > 1) {
     for (const [modulePath, moduleSource] of tree.files) {
@@ -115,6 +116,39 @@ function validateShader(filePath: string): string[] {
     }
   }
 
+  errors.push(...validateComposedSource(tree.source));
+  const entries = findEntryPointNames(tree.source);
+  const relativePath = filePath.replace(/^public\//, '');
+  for (const technique of TECHNIQUES) {
+    if (technique.shaderPath !== relativePath) continue;
+    if (!entries.vertex.includes(technique.vertexEntry)) {
+      errors.push(
+        `technique '${technique.id}' expects vertex '${technique.vertexEntry}' (found: ${entries.vertex.join(', ') || 'none'})`,
+      );
+    }
+    if (!entries.fragment.includes(technique.fragmentEntry)) {
+      errors.push(
+        `technique '${technique.id}' expects fragment '${technique.fragmentEntry}' (found: ${entries.fragment.join(', ') || 'none'})`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+/** The geometry overlay's WGSL is built in TS (`overlayWgsl.ts`); hold it to the same contract. */
+function validateOverlay(): string[] {
+  const source = buildOverlayWgsl();
+  const errors = validateComposedSource(source);
+  const entries = findEntryPointNames(source);
+  if (!entries.vertex.includes(OVERLAY_VERTEX_ENTRY)) errors.push(`missing overlay vertex '${OVERLAY_VERTEX_ENTRY}'`);
+  if (!entries.fragment.includes(OVERLAY_FRAGMENT_ENTRY)) errors.push(`missing overlay fragment '${OVERLAY_FRAGMENT_ENTRY}'`);
+  return errors;
+}
+
+/** Uniform-struct, grammar, and fullscreen-triangle checks on one composed WGSL source. */
+function validateComposedSource(source: string): string[] {
+  const errors: string[] = [];
   if (!source.includes(EXPECTED_BINDING)) {
     errors.push(`missing or unexpected binding declaration (expected: ${EXPECTED_BINDING})`);
   }
@@ -162,39 +196,27 @@ function validateShader(filePath: string): string[] {
     ...findFloatModulo(source),
     ...findU32ArrayIndexes(source),
     ...findUnparenthesizedIf(source),
+    ...findFullscreenQuads(source),
   );
 
   const entries = findEntryPointNames(source);
   if (entries.vertex.length === 0) errors.push('missing @vertex entry point');
   if (entries.fragment.length === 0) errors.push('missing @fragment entry point');
-
-  const relativePath = filePath.replace(/^public\//, '');
-  for (const technique of TECHNIQUES) {
-    if (technique.shaderPath !== relativePath) continue;
-    if (!entries.vertex.includes(technique.vertexEntry)) {
-      errors.push(
-        `technique '${technique.id}' expects vertex '${technique.vertexEntry}' (found: ${entries.vertex.join(', ') || 'none'})`,
-      );
-    }
-    if (!entries.fragment.includes(technique.fragmentEntry)) {
-      errors.push(
-        `technique '${technique.id}' expects fragment '${technique.fragmentEntry}' (found: ${entries.fragment.join(', ') || 'none'})`,
-      );
-    }
-  }
-
   return errors;
 }
 
 function main() {
   let failed = false;
-  for (const filePath of ACTIVE_SHADERS) {
-    const errors = validateShader(filePath);
+  const results: Array<[string, string[]]> = [
+    ...ACTIVE_SHADERS.map((filePath): [string, string[]] => [filePath, validateShader(filePath)]),
+    ['app/renderer/overlayWgsl.ts (generated)', validateOverlay()],
+  ];
+  for (const [label, errors] of results) {
     if (errors.length === 0) {
-      console.log(`✓ ${filePath}`);
+      console.log(`✓ ${label}`);
     } else {
       failed = true;
-      console.error(`✗ ${filePath}`);
+      console.error(`✗ ${label}`);
       for (const err of errors) {
         console.error(`    ${err}`);
       }

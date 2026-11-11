@@ -2,10 +2,10 @@
  * GPU pass timing via `timestamp-query`.
  *
  * The CPU governor can only see how long the JS frame took — React commit,
- * `writeBuffer`, the WebGL2 overlay on its second canvas, video decode and GC
- * all land in the same number. This module reads the GPU's own clock around
- * the render passes so the governor can tell "the shader is 18ms deep" from
- * "the instructor video hitched".
+ * `writeBuffer`, video decode and GC all land in the same number. This module
+ * reads the GPU's own clock around the scene and overlay passes so the
+ * governor can tell "the shader is 18ms deep" from "the instructor video
+ * hitched".
  *
  * Contract:
  * - Optional. `createGpuFrameTimer` returns null when the device does not

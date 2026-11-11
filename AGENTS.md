@@ -83,7 +83,9 @@ app/
 │   ├── selectBackend.ts          # probeCapabilities / pickInitialMode / mountRenderer
 │   ├── webgpuBackend.ts / webgl2Backend.ts / staticBackend.ts
 │   ├── frameGovernor.ts          # Adaptive quality/resolution stepping under frame-time pressure
-│   ├── overlay.ts                # WebGL2 transparent geometry overlay pass
+│   ├── overlayWgsl.ts            # Geometry overlay (WGSL): second pass on the WebGPU encoder
+│   ├── overlay.ts                # Same overlay in GLSL, drawn inside the WebGL2 fallback's own context
+│   ├── pipelineLayout.ts         # Explicit group-0 uniforms layout shared by every fullscreen pass
 │   └── gpuChores/                # Shared GPU/WASM/Canvas2D/JS UI/media helpers (see "gpu-chores" below)
 └── hooks/                        # ~20 hooks; notable ones:
     ├── useBreathTimer.ts         # Core breathing logic, schedule, session auto-end
@@ -165,7 +167,7 @@ Filmed instructor clips are derived assets, not hand-authored ones. To add or re
 
 ## WebGPU Shader Architecture
 
-`ShaderCanvas.tsx` is a thin React shell that owns refs, prop plumbing, and diagnostics reporting. It delegates the actual rendering to `app/renderer/`: `selectBackend.ts` (`probeCapabilities` / `pickInitialMode` / `mountRenderer`) picks between `webgpuBackend.ts`, `webgl2Backend.ts`, and `staticBackend.ts`. The WebGPU backend fetches the active `.wgsl` entry (e.g. `public/sacred-monk.wgsl`) at runtime, composes any `// @include "..."` modules, creates one render pipeline, and draws a full-screen triangle. `frameGovernor.ts` adaptively steps quality/resolution down under frame-time pressure, and `overlay.ts` optionally layers a WebGL2 transparent geometry pass on top.
+`ShaderCanvas.tsx` is a thin React shell that owns refs, prop plumbing, and diagnostics reporting. It delegates the actual rendering to `app/renderer/`: `selectBackend.ts` (`probeCapabilities` / `pickInitialMode` / `mountRenderer`) picks between `webgpuBackend.ts`, `webgl2Backend.ts`, and `staticBackend.ts`. The WebGPU backend fetches the active `.wgsl` entry (e.g. `public/sacred-monk.wgsl`) at runtime, composes any `// @include "..."` modules, builds the scene and geometry-overlay pipelines against one explicit layout (`pipelineLayout.ts`), and each frame encodes the scene pass, then the overlay pass (`overlayWgsl.ts`, `loadOp: 'load'` + a screen blend), on one command encoder, each drawing a 3-vertex fullscreen triangle (`draw(3)`). `frameGovernor.ts` adaptively steps quality/resolution down under frame-time pressure and can switch the overlay off. A WebGPU session opens no WebGL context at all; the WebGL2 fallback draws the GLSL overlay (`overlay.ts`) inside its own context. Every active shader's vertex entry must emit the 3-vertex triangle (`npm run validate:shaders` rejects a 6-vertex quad).
 
 ### Uniform Buffer Layout
 

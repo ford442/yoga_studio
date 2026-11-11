@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererBackendContext } from '../types';
 import { READBACK_INTERVAL_FRAMES } from '../gpuTimestamps';
+import { OVERLAY_BLEND } from '../overlayWgsl';
 import { normalizeCompilationMessages, WebGPUBackend } from '../webgpuBackend';
 
 const deferred = <T,>() => {
@@ -35,6 +36,8 @@ function makeDevice(
       return scopeErrors.pipeline ?? null;
     }),
     createShaderModule: vi.fn(() => shaderModule),
+    createBindGroupLayout: vi.fn((descriptor: GPUBindGroupLayoutDescriptor) => ({ kind: 'bind-group-layout', descriptor })),
+    createPipelineLayout: vi.fn((descriptor: GPUPipelineLayoutDescriptor) => ({ kind: 'pipeline-layout', descriptor })),
     createRenderPipeline: vi.fn(() => ({ getBindGroupLayout: vi.fn(() => ({})) })),
     createRenderPipelineAsync: vi.fn(async () => ({ getBindGroupLayout: vi.fn(() => ({})) })),
     addEventListener: vi.fn(),
@@ -83,11 +86,26 @@ function makeTimestampDevice() {
   return { ...made, querySet, staging, encoder, pass };
 }
 
+/** `makeDevice` plus a recording command encoder so frames can be inspected. */
+function makeFrameDevice(...args: Parameters<typeof makeDevice>) {
+  const made = makeDevice(...args);
+  const passes: Array<{ setPipeline: ReturnType<typeof vi.fn>; setBindGroup: ReturnType<typeof vi.fn>; draw: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }> = [];
+  const encoder = {
+    beginRenderPass: vi.fn((_descriptor: GPURenderPassDescriptor) => {
+      const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() };
+      passes.push(pass);
+      return pass;
+    }),
+    finish: vi.fn(() => ({})),
+  };
+  (made.device as unknown as { createCommandEncoder: ReturnType<typeof vi.fn> }).createCommandEncoder = vi.fn(() => encoder);
+  return { ...made, encoder, passes };
+}
+
 function makeContext(canvas: HTMLCanvasElement): RendererBackendContext {
   return {
     canvas,
     container: document.createElement('div'),
-    overlay: null,
     shaderPath: 'sacred-monk.wgsl',
     vertexEntry: 'vs',
     fragmentEntry: 'main',
@@ -129,6 +147,7 @@ describe('WebGPUBackend', () => {
     vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2, QUERY_RESOLVE: 4, COPY_SRC: 8, MAP_READ: 16 });
     vi.stubGlobal('GPUMapMode', { READ: 1 });
     vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 0x10 });
+    vi.stubGlobal('GPUShaderStage', { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubGlobal('ResizeObserver', class {
@@ -332,6 +351,7 @@ describe('WebGPUBackend', () => {
     first.lost.resolve({ reason: 'unknown', message: 'reset' } as GPUDeviceLostInfo);
     await flush();
     await flush();
+    await flush();
 
     expect(requestAdapter).toHaveBeenCalledTimes(2);
     expect(ctx.governor).toBe(governor);
@@ -457,10 +477,14 @@ describe('WebGPUBackend', () => {
     const sampledPasses = first.encoder.beginRenderPass.mock.calls
       .map(([descriptor]) => descriptor.timestampWrites)
       .filter(Boolean);
-    // Exactly one frame in the interval carries timestampWrites.
-    expect(sampledPasses).toHaveLength(1);
+    // Exactly one frame in the interval carries timestampWrites: the scene
+    // pass and the overlay pass that follows it on the same encoder.
+    expect(sampledPasses).toHaveLength(2);
     expect(sampledPasses[0]).toEqual(
       expect.objectContaining({ beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }),
+    );
+    expect(sampledPasses[1]).toEqual(
+      expect.objectContaining({ beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 }),
     );
     expect(first.encoder.resolveQuerySet).toHaveBeenCalledTimes(1);
 
@@ -513,6 +537,121 @@ describe('WebGPUBackend', () => {
     expect(first.querySet.destroy).toHaveBeenCalled();
     expect((second.device as unknown as { createQuerySet: ReturnType<typeof vi.fn> }).createQuerySet)
       .toHaveBeenCalled();
+    backend.stop();
+  });
+
+
+  const bootWith = (device: GPUDevice) => {
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {
+      requestAdapter: vi.fn(async () => ({ info: {}, features: new Set(), limits: {}, requestDevice: vi.fn(async () => device) })),
+      getPreferredCanvasFormat: () => 'bgra8unorm',
+    } });
+  };
+
+  const withOverlay = (ctx: RendererBackendContext, overlayEnabled: boolean) => {
+    const snap = { ...ctx.governor.getSnapshot(), overlayEnabled };
+    ctx.governor.getSnapshot = vi.fn(() => snap);
+    ctx.governor.noteFrame = vi.fn(() => ({ ...snap, changed: false }));
+  };
+
+  it('shares one explicit pipeline layout and uniform bind group between the scene and overlay passes', async () => {
+    const first = makeFrameDevice();
+    bootWith(first.device);
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    const device = first.device as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    expect(device.createBindGroupLayout).toHaveBeenCalledTimes(1);
+    expect(device.createBindGroupLayout).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [expect.objectContaining({ binding: 0, buffer: { type: 'uniform', minBindingSize: 72 } })],
+    }));
+    const bindGroupLayout = device.createBindGroupLayout.mock.results[0].value;
+    const pipelineLayout = device.createPipelineLayout.mock.results[0].value;
+    expect(device.createPipelineLayout).toHaveBeenCalledWith(expect.objectContaining({ bindGroupLayouts: [bindGroupLayout] }));
+
+    const pipelineDescriptors = device.createRenderPipelineAsync.mock.calls.map(([descriptor]) => descriptor as GPURenderPipelineDescriptor);
+    expect(pipelineDescriptors.map((descriptor) => descriptor.label)).toEqual([
+      'Sacred Breath WebGPU Pipeline',
+      'Sacred Breath Overlay Pipeline',
+    ]);
+    for (const descriptor of pipelineDescriptors) expect(descriptor.layout).toBe(pipelineLayout);
+    expect(pipelineDescriptors[1].fragment?.targets).toEqual([{ format: 'bgra8unorm', blend: OVERLAY_BLEND }]);
+    expect(device.createBindGroup).toHaveBeenCalledTimes(1);
+    expect(device.createBindGroup).toHaveBeenCalledWith(expect.objectContaining({ layout: bindGroupLayout }));
+    const overlayCode = (device.createShaderModule.mock.calls[1][0] as GPUShaderModuleDescriptor).code;
+    expect(overlayCode).toContain('struct Uniforms');
+    expect(overlayCode).toContain('fn overlay_fs');
+
+    rafCallbacks.shift()?.(0);
+
+    // One encoder, one submit: the scene clears, the overlay loads and blends onto the same view.
+    expect(device.createCommandEncoder).toHaveBeenCalledTimes(1);
+    expect(first.device.queue.submit).toHaveBeenCalledTimes(1);
+    const [sceneDescriptor, overlayDescriptor] = first.encoder.beginRenderPass.mock.calls.map(([descriptor]) => descriptor);
+    const sceneAttachment = [...sceneDescriptor.colorAttachments][0]!;
+    const overlayAttachment = [...overlayDescriptor.colorAttachments][0]!;
+    expect(sceneAttachment.loadOp).toBe('clear');
+    expect(overlayAttachment.loadOp).toBe('load');
+    expect(overlayAttachment.view).toBe(sceneAttachment.view);
+    const bindGroup = device.createBindGroup.mock.results[0].value;
+    for (const pass of first.passes) {
+      expect(pass.draw).toHaveBeenCalledWith(3);
+      expect(pass.setBindGroup).toHaveBeenCalledWith(0, bindGroup);
+    }
+    backend.stop();
+  });
+
+  it('skips the overlay pass when the governor or settings turn it off', async () => {
+    const first = makeFrameDevice();
+    bootWith(first.device);
+    const ctx = makeContext(makeCanvas());
+    withOverlay(ctx, false);
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    rafCallbacks.shift()?.(0);
+
+    expect(first.encoder.beginRenderPass).toHaveBeenCalledTimes(1);
+    expect(first.passes[0].draw).toHaveBeenCalledWith(3);
+    backend.stop();
+  });
+
+  it('keeps the scene running when the overlay pipeline fails to compile', async () => {
+    const first = makeFrameDevice();
+    let scope = 0;
+    (first.device as unknown as { popErrorScope: ReturnType<typeof vi.fn> }).popErrorScope = vi.fn(async () => {
+      scope += 1;
+      // 1/2: scene module + pipeline, 3: overlay module.
+      return scope === 3 ? ({ message: 'overlay wgsl broke' } as GPUError) : null;
+    });
+    bootWith(first.device);
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    expect(ctx.onFatalError).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith('[WebGPU] geometry overlay disabled:', expect.any(Error));
+    rafCallbacks.shift()?.(0);
+    expect(first.encoder.beginRenderPass).toHaveBeenCalledTimes(1);
+    backend.stop();
+  });
+
+  it('never opens a WebGL context, with the overlay on, across boot and frames', async () => {
+    const first = makeFrameDevice();
+    bootWith(first.device);
+    const canvas = makeCanvas();
+    const ctx = makeContext(canvas);
+    const createElement = vi.spyOn(document, 'createElement');
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+    for (let frame = 0; frame < 3; frame += 1) rafCallbacks.shift()?.(frame * 16);
+
+    const requested = (canvas.getContext as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([kind]) => kind);
+    expect(requested).toContain('webgpu');
+    expect(requested.filter((kind) => /webgl/.test(String(kind)))).toEqual([]);
+    expect(createElement).not.toHaveBeenCalledWith('canvas');
+    expect(first.encoder.beginRenderPass).toHaveBeenCalledTimes(6);
     backend.stop();
   });
 
