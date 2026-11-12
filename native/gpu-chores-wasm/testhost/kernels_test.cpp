@@ -1,9 +1,11 @@
+#include "corpus.h"
 #include "microtest.h"
 #include "reference.h"
 
 #include "api.h"
 
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -176,6 +178,121 @@ TEST_CASE("lut map rejects bad input without trapping") {
   CHECK(chores_lut_u8_map(src, 1u, nullptr, dst) == CHORES_ERR_NULL);
   CHECK(chores_lut_u8_map(src, 1u, lut, nullptr) == CHORES_ERR_NULL);
   CHECK(chores_lut_u8_map(src, 0u, lut, dst) == CHORES_ERR_EMPTY);
+}
+
+// ---- differential fuzz ------------------------------------------------------
+//
+// Every kernel is compared with the reference over `corpus.h`'s seeded corpus:
+// odd and prime-ish sizes, 1-pixel images, up/down/identity scaling, tie-heavy
+// and saturated content. Buffers are exact-size heap allocations (so ASan red
+// zones sit immediately after the last valid byte), start at a varying
+// misalignment, and outputs are fenced with sentinel bytes so an overwrite is
+// caught even without a sanitizer.
+
+namespace {
+
+constexpr uint8_t kGuard = 0xA5;
+constexpr size_t kGuardBytes = 16;
+
+/** Exact-size buffer whose first byte sits at `offset` into its allocation. */
+struct Misaligned {
+  std::vector<uint8_t> raw;
+  size_t offset;
+  Misaligned(const std::vector<uint8_t>& bytes, size_t off) : raw(off + bytes.size()), offset(off) {
+    std::memcpy(raw.data() + offset, bytes.data(), bytes.size());
+  }
+  const uint8_t* data() const { return raw.data() + offset; }
+  uint8_t* data() { return raw.data() + offset; }
+};
+
+/** Output buffer fenced front and back with sentinels. */
+struct Fenced {
+  std::vector<uint8_t> raw;
+  size_t size;
+  explicit Fenced(size_t n) : raw(kGuardBytes + n + kGuardBytes, kGuard), size(n) {}
+  uint8_t* data() { return raw.data() + kGuardBytes; }
+  std::vector<uint8_t> payload() const {
+    return std::vector<uint8_t>(raw.begin() + static_cast<std::ptrdiff_t>(kGuardBytes),
+                                raw.begin() + static_cast<std::ptrdiff_t>(kGuardBytes + size));
+  }
+  bool GuardsIntact() const {
+    for (size_t i = 0; i < kGuardBytes; ++i) {
+      if (raw[i] != kGuard || raw[kGuardBytes + size + i] != kGuard) return false;
+    }
+    return true;
+  }
+};
+
+}  // namespace
+
+TEST_CASE("fuzz corpus digest is the one the TypeScript suite asserts") {
+  CHECK_EQ(corpus::Digest(), corpus::kCorpusDigest);
+}
+
+TEST_CASE("fuzz: histogram, downsample and lut match the references over the corpus") {
+  for (uint32_t index = 0; index < corpus::kCorpusCases; ++index) {
+    const corpus::Case c = corpus::MakeCase(index);
+    const size_t offset = index % 4u;  // 0..3: every 32-bit-load misalignment
+    const uint32_t pixels = c.w * c.h;
+    const Misaligned src(c.image, offset);
+
+    // histogram
+    {
+      Fenced bins(256u * sizeof(uint32_t));
+      auto* words = reinterpret_cast<uint32_t*>(bins.data());  // guard is 16 bytes: 4-aligned
+      REQUIRE(chores_luma_histogram_bt709(src.data(), pixels, words) == CHORES_OK);
+      const std::vector<uint32_t> want = reference::LumaHistogram(c.image, pixels);
+      bool same = true;
+      for (uint32_t bin = 0; bin < 256u; ++bin) same = same && words[bin] == want[bin];
+      if (!same) std::fprintf(stderr, "    histogram mismatch, corpus case %u (%ux%u)\n", index, c.w, c.h);
+      CHECK(same);
+      CHECK(bins.GuardsIntact());
+    }
+
+    // downsample
+    {
+      Fenced dst(static_cast<size_t>(c.dw) * c.dh * 4u);
+      REQUIRE(chores_downsample_2d(src.data(), c.w, c.h, dst.data(), c.dw, c.dh) == CHORES_OK);
+      const bool same = BytesEqual(dst.payload(), reference::Downsample2d(c.image, c.w, c.h, c.dw, c.dh));
+      if (!same) std::fprintf(stderr, "    downsample mismatch, corpus case %u (%ux%u -> %ux%u)\n",
+                              index, c.w, c.h, c.dw, c.dh);
+      CHECK(same);
+      CHECK(dst.GuardsIntact());
+    }
+
+    // lut, out of place and then in place
+    {
+      Fenced dst(c.image.size());
+      const Misaligned lut(c.lut, (index / 4u) % 4u);
+      REQUIRE(chores_lut_u8_map(src.data(), pixels, lut.data(), dst.data()) == CHORES_OK);
+      const std::vector<uint8_t> want = reference::LutU8Map(c.image, c.lut.data());
+      CHECK(BytesEqual(dst.payload(), want));
+      CHECK(dst.GuardsIntact());
+
+      Misaligned inplace(c.image, offset);
+      REQUIRE(chores_lut_u8_map(inplace.data(), pixels, lut.data(), inplace.data()) == CHORES_OK);
+      CHECK(BytesEqual(std::vector<uint8_t>(inplace.data(), inplace.data() + c.image.size()), want));
+    }
+  }
+}
+
+TEST_CASE("fuzz: zero-sized inputs report EMPTY and leave outputs untouched") {
+  uint8_t pixel[4] = {1, 2, 3, 4};
+  uint8_t lut[256] = {0};
+  Fenced out(8u);
+  uint32_t bins[256];
+  for (uint32_t& bin : bins) bin = 7u;
+
+  CHECK(chores_luma_histogram_bt709(pixel, 0u, bins) == CHORES_ERR_EMPTY);
+  for (const uint32_t bin : bins) CHECK_EQ(bin, 0u);  // zeroed, never stale
+
+  CHECK(chores_lut_u8_map(pixel, 0u, lut, out.data()) == CHORES_ERR_EMPTY);
+  CHECK(chores_downsample_2d(pixel, 0u, 1u, out.data(), 1u, 1u) == CHORES_ERR_EMPTY);
+  CHECK(chores_downsample_2d(pixel, 1u, 0u, out.data(), 1u, 1u) == CHORES_ERR_EMPTY);
+  CHECK(chores_downsample_2d(pixel, 1u, 1u, out.data(), 0u, 1u) == CHORES_ERR_EMPTY);
+  CHECK(chores_downsample_2d(pixel, 1u, 1u, out.data(), 1u, 0u) == CHORES_ERR_EMPTY);
+  CHECK(out.GuardsIntact());
+  for (const uint8_t byte : out.payload()) CHECK_EQ(byte, kGuard);
 }
 
 int main() { return microtest::RunAll(); }

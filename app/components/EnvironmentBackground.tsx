@@ -40,17 +40,24 @@ const EnvironmentBackground: React.FC<EnvironmentBackgroundProps> = ({
   gpuComputeEnabled = true,
 }) => {
   const [layers, setLayers] = useState<LayerState[]>([{ id: environmentId, visible: true }]);
+  const [trackedId, setTrackedId] = useState(environmentId);
   const prevIdRef = useRef(environmentId);
 
+  // Cross-fade state machine, step 1: when the environment changes, fade out the
+  // existing layers and stage the new one (hidden). Adjusting state while
+  // rendering — rather than in an effect — avoids a cascading extra commit.
+  if (environmentId !== trackedId) {
+    setTrackedId(environmentId);
+    setLayers((prev) => [
+      ...prev.map((layer) => ({ ...layer, visible: false })),
+      { id: environmentId, visible: false },
+    ]);
+  }
+
+  // Step 2 (timers only): fade the staged layer in, then collapse to one layer.
   useEffect(() => {
     if (environmentId === prevIdRef.current) return;
     prevIdRef.current = environmentId;
-
-    // Cross-fade state machine: fade out existing layers, fade in the new one.
-    setLayers((prev) => {
-      const fading = prev.map((layer) => ({ ...layer, visible: false }));
-      return [...fading, { id: environmentId, visible: false }];
-    });
 
     const raf = requestAnimationFrame(() => {
       setLayers((prev) => {

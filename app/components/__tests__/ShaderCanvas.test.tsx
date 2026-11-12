@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MountRendererOptions } from '../../renderer/selectBackend';
 
 const mocks = vi.hoisted(() => ({
-  mountRenderer: vi.fn((_options: MountRendererOptions) => vi.fn()),
+  mountRenderer: vi.fn<(options: MountRendererOptions) => () => void>(() => vi.fn()),
 }));
 
 vi.mock('../../renderer/selectBackend', () => ({

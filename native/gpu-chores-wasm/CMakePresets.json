@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "host",
+      "displayName": "Host gate (Release, SSE2)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "host-asan",
+      "displayName": "Host gate under AddressSanitizer + UBSan",
+      "inherits": "host",
+      "binaryDir": "${sourceDir}/build/host-asan",
+      "cacheVariables": { "CHORES_SANITIZE": "ON", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "host-tidy",
+      "displayName": "Host gate + clang-tidy (CI)",
+      "inherits": "host",
+      "binaryDir": "${sourceDir}/build/host-tidy",
+      "cacheVariables": { "CHORES_CLANG_TIDY": "ON" }
+    },
+    {
+      "name": "wasm",
+      "displayName": "wasm32 module (app/lib/gpuChores/wasm/chores.wasm)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/wasm",
+      "toolchainFile": "${sourceDir}/cmake/wasm32-toolchain.cmake",
+      "cacheVariables": {
+        "CHORES_TARGET_WASM": "ON",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host", "configurePreset": "host" },
+    { "name": "host-asan", "configurePreset": "host-asan" },
+    { "name": "host-tidy", "configurePreset": "host-tidy" },
+    { "name": "wasm", "configurePreset": "wasm" }
+  ],
+  "testPresets": [
+    { "name": "host", "configurePreset": "host", "output": { "outputOnFailure": true } },
+    { "name": "host-asan", "configurePreset": "host-asan", "output": { "outputOnFailure": true } },
+    { "name": "host-tidy", "configurePreset": "host-tidy", "output": { "outputOnFailure": true } }
+  ]
+}

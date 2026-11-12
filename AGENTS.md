@@ -16,13 +16,18 @@ An AI coding agent guide for this Next.js React application featuring a WebGPU-p
 
 | Layer | Technology | Version / Notes |
 |-------|------------|-----------------|
-| Framework | Next.js | 16.1.6 (App Router) |
-| UI Library | React | 19.2.3 |
-| Language | TypeScript | 5.x |
+| Framework | Next.js | 16.4.x (App Router) — exact pin in `package.json` |
+| UI Library | React | 19.3.x |
+| Language | TypeScript | 6.0.x, `target: ES2022`. Capped below 6.1 because `typescript-eslint` (via `eslint-config-next`) doesn't support TS 7 yet — with TS 7 `npm run lint` crashes at startup. Dependabot is told to skip it (`.github/dependabot.yml`). |
+| Unit tests | Vitest | Two projects: `unit-node` + `ui-jsdom` (see Testing Instructions) |
+| Browser tests | Playwright | `e2e/`, serialized (`workers: 1`) |
+| Native kernels | C++20 → wasm32 | clang 18 + lld; CMake presets (see gpu-chores) |
 | Styling | Tailwind CSS | v4 (`@import "tailwindcss"` in `globals.css`) |
 | Build Output | Static Export | `output: 'export'` in `next.config.ts` |
-| Graphics API | WebGPU / WGSL | `@webgpu/types` ^0.1.69 |
-| Linting | ESLint | Flat config (`eslint.config.mjs`) with `eslint-config-next` |
+| Graphics API | WebGPU / WGSL | `@webgpu/types` (see `package.json`) |
+| Linting | ESLint | Flat config (`eslint.config.mjs`) with `eslint-config-next`; `npm run lint` is `--max-warnings 0` |
+
+Runtime: Node 22 / npm 10+ (CI uses Node 22). Treat `package.json` as the source of truth for versions — if this table disagrees with it, fix the table.
 
 ---
 
@@ -43,9 +48,16 @@ npm run build
 # Start production server (for local verification)
 npm start
 
-# Run ESLint
+# Run ESLint (zero warnings allowed)
 npm run lint
+
+# Everything CI's first gate runs: lint + typecheck + validate:shaders + validate:content
+npm run check
 ```
+
+`package-lock.json` is tracked (CI runs `npm ci`). After editing a dependency in
+`package.json`, run `npm install` and commit both files — `npm ci` fails when they
+disagree, and that failure takes down every CI job.
 
 ---
 
@@ -157,9 +169,12 @@ Filmed instructor clips are derived assets, not hand-authored ones. To add or re
 | File | Purpose |
 |------|---------|
 | `next.config.ts` | Static export, no `basePath`, `assetPrefix: './'`, optional `NEXT_PUBLIC_BASE_PATH` for sub-path hosts |
-| `tsconfig.json` | ES2017, strict, bundler resolution, `@/*` → `./*` |
+| `tsconfig.json` | `target: ES2022` (the app ships to modern Chromium/WebGPU browsers only, so no down-levelling is wanted; the bundler handles the rest), strict, bundler resolution, `@/*` → `./*` |
+| `tsconfig.scripts.json` | Typechecks `scripts/` + `app/` with Node types (run by `npm run typecheck`) |
+| `vitest.config.ts` | Two projects (`unit-node`, `ui-jsdom`), timeouts, bounded workers, coverage thresholds |
+| `native/gpu-chores-wasm/CMakePresets.json` | `host` / `host-asan` / `host-tidy` / `wasm` presets; flags live in `cmake/` |
 | `postcss.config.mjs` | Tailwind v4 PostCSS plugin |
-| `eslint.config.mjs` | Flat ESLint config with Next.js web-vitals + typescript presets |
+| `eslint.config.mjs` | Flat ESLint config with Next.js web-vitals + typescript presets; ignores CMake `build*/` trees |
 | `webgpu.d.ts` | `/// <reference types="@webgpu/types" />` |
 | `deploy.py` | SFTP deployment script (see Deployment) |
 
@@ -218,9 +233,26 @@ those cannot load.
 
 TypeScript stays the app language — C++ is only the numeric mid-tier, and
 pointers never escape `app/lib/gpuChores/wasmJobs.ts`. Rebuild the committed
-module with `npm run build:chores-wasm` (needs `clang` + `wasm-ld`) and run the
-host C++ gate with `npm run test:native`. Studio FX shaders stay app-owned in
-`public/`. See `docs/gpu-chores.md` and `native/gpu-chores-wasm/README.md`.
+module with `npm run build:chores-wasm` (needs clang 16+ and `wasm-ld`; CI pins
+clang 18). The script builds into a temp dir and only replaces the committed
+`chores.wasm` / `choresWasmBinary.ts` after every step succeeded, and fails early
+with an install hint when the toolchain is incomplete.
+
+Native gates (all run in the CI `native-kernels` job):
+
+```bash
+npm run test:native        # host build vs. references + seeded differential fuzz
+npm run test:native:asan   # same, under AddressSanitizer + UBSan
+npm run test:native:tidy   # same, with clang-tidy (bugprone/performance/pro-bounds) as errors
+```
+
+CI also rebuilds `chores.wasm` from `native/` and fails if it differs from the
+committed one, so **any change under `native/` must be followed by
+`npm run build:chores-wasm` and committing `app/lib/gpuChores/wasm/`**. The fuzz
+corpus is shared with TS (`testhost/corpus.h` ↔ `app/lib/gpuChores/__tests__/corpus.ts`,
+tied together by a digest both sides assert) and also runs against the shipped
+wasm in `wasmFuzz.test.ts`. Studio FX shaders stay app-owned in `public/`. See
+`docs/gpu-chores.md` and `native/gpu-chores-wasm/README.md`.
 
 ## Breath Timing System
 
@@ -348,7 +380,7 @@ There is no standalone preset picker anymore — each technique in `app/data/tec
 ## Code Style Guidelines
 
 ### TypeScript
-- Target: ES2017
+- Target: ES2022 (modern Chromium only; see Configuration Files)
 - Strict mode enabled
 - Module resolution: `bundler`
 - Path alias: `@/*` maps to `./*`
@@ -375,24 +407,43 @@ There is no standalone preset picker anymore — each technique in `app/data/tec
 
 ### Automated Tests
 
-The project now uses **Vitest** for unit/hook tests and **Playwright** for browser/export smoke tests.
+**Vitest** runs as two projects (`vitest.config.ts`): `unit-node` (pure logic in
+`app/lib`, `app/renderer`, `app/data`, `app/utils`, plus `app/features/session`
+tests — plain node, fast) and `ui-jsdom` (`app/components`, `app/features`,
+`app/hooks` — jsdom + React Testing Library). A node-project test that genuinely
+needs a DOM opts in with a `// @vitest-environment jsdom` first line; don't move
+it to the jsdom project wholesale, jsdom setup dominates run time. Timeouts are
+20 s and workers are bounded (4 locally, 2 in CI) so load can't flake a test.
+**Playwright** covers browser/export smoke tests.
 
 ```bash
-# Run unit/hook tests (deterministic, jsdom)
+# Full unit suite, both projects (~25 s)
 npm test
 
-# Run unit tests in watch mode
-npm run test:watch
+# One project only
+npm run test:unit      # unit-node
+npm run test:ui        # ui-jsdom
 
-# Run a single test file
+# Watch mode / single file
+npm run test:watch
 npx vitest run app/hooks/__tests__/useBreathTimer.test.ts
 
-# Run static export smoke checks (files present + HTTP 200s)
+# Coverage with the CI thresholds (lib 90%, renderer 70%, useBreathTimer 95%)
+npm run test:coverage
+
+# Native C++ gates (see gpu-chores)
+npm run test:native && npm run test:native:asan && npm run test:native:tidy
+
+# Static export smoke checks (files present + HTTP 200s) — needs `npm run build` first
 npm run smoke
 
-# Run Playwright browser smoke tests (requires `npx playwright install`)
+# Playwright browser smoke tests (requires `npx playwright install chromium`)
 npm run test:e2e
 ```
+
+Verification order before pushing: `npm run check`, `npm test`, `npm run build`,
+`npm run smoke` (see `CONTRIBUTING.md`). Don't "fix" a failing timing test by
+raising its timeout; find out what it is waiting on.
 
 ### Playwright setup
 
@@ -418,12 +469,11 @@ When making changes, verify the following in a WebGPU-compatible browser (Chrome
 - [ ] Cycle count increments after each full round
 - [ ] Pause stops the timer; resume continues
 - [ ] Reset returns to cycle 0, phase inhale
-- [ ] Preset buttons (BOX, 478, SIGH, FREE) update durations
+- [ ] Selecting a technique (Techniques Library / mode switcher) applies its breath ratio from `app/data/techniques.ts` and switches shader/theme
 - [ ] Custom settings drawer sliders change phase durations
 - [ ] WebGPU canvas renders (not black) — check for shader compilation errors in DevTools
 - [ ] Mouse/touch on canvas triggers ripple distortion and sound
-- [ ] Theme buttons change visual colors
-- [ ] Mandala style buttons change pattern
+- [ ] Technique theme / mandala style visibly change the scene
 - [ ] Voice guidance toggle speaks phase names
 - [ ] Sanskrit toggle switches to Sanskrit terms
 - [ ] Mute toggle silences chimes and drone
@@ -480,8 +530,10 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 4. **Duplicating `Uniforms` struct in WGSL** — The active shader already declares `struct Uniforms`. Adding another definition will cause a compilation error.
 5. **Editing uniform indices by hand** — The buffer layout lives in `app/lib/shaderContract.ts` and is consumed by `ShaderCanvas.tsx` / `app/renderer/webgpuBackend.ts` and the WebGL2 fallback. Update the contract and run `npm run validate:shaders` rather than chasing magic indices.
 6. **Editing `app/data/sessionModes.ts` directly** — it's a `@deprecated` re-export of `techniques.ts`. Add or modify techniques in `techniques.ts` instead.
-7. **Assuming tests exist** — Unit/hook tests (Vitest) and Playwright smoke tests do exist now (see Testing Instructions below); still run `npm run build` and manual browser verification too, since coverage is partial.
+7. **Skipping the gates** — Vitest (two projects), Playwright, native C++ gates and a `npm run check` lint/typecheck/validate pass all exist (see Testing Instructions); coverage is partial, so still run `npm run build` and verify visuals in a browser. Lint allows zero warnings.
 8. **Forgetting static export** — Do not add server-dependent Next.js features (API routes, `getServerSideProps`, etc.) because the build is configured for static export only.
+9. **Editing `native/` without regenerating `chores.wasm`** — CI rebuilds it and fails on any diff. Run `npm run build:chores-wasm` and commit `app/lib/gpuChores/wasm/`. Don't add `// eslint-disable` for `react-hooks/set-state-in-effect`: derive state during render (adjust-state-on-prop-change) or from an event instead.
+10. **Changing `package.json` dependencies without the lockfile** — `npm ci` in CI fails when they disagree. Run `npm install`, commit both.
 
 ---
 
@@ -530,14 +582,34 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 
 ## Cursor Cloud specific instructions
 
-- Dependency install is `npm install` (Node 22, npm 10). This runs automatically on VM startup as the update script.
-- Standard commands are in `package.json`: `npm run dev` (dev server on `http://localhost:3000`), `npm run lint`, `npm run build` (static export to `out/`).
+- Dependency install is `npm install` (Node 22+, npm 10). This runs automatically on VM startup as the update script.
+- Standard commands are in `package.json`: `npm run dev` (dev server on `http://localhost:3000`), `npm run check` (lint + typecheck + validators), `npm test`, `npm run build` (static export to `out/`).
 - `npm start`/`npm run preview` serve the pre-built `out/` via `npx serve`; run `npm run build` first.
 - Run the dev server as a long-lived process (e.g. tmux), not a blocking foreground call.
 - WebGPU **does** render in this environment's Chrome — the cosmic/mandala visualization shows correctly, so verify canvas visuals via the browser, not just a black-canvas assumption.
-- `npm run lint` emits 3 pre-existing `react-hooks/exhaustive-deps` warnings (0 errors); this is the expected clean baseline.
-- No automated test suite exists; validate changes with `npm run build` plus manual browser checks (see Manual Testing Checklist above).
+- `npm run lint` is expected to be completely clean (0 errors, 0 warnings; it runs with `--max-warnings 0`). Anything it reports is yours.
+- Validate changes with `npm run check`, `npm test` and `npm run build`, plus manual browser checks for visual changes (see Manual Testing Checklist above).
+- The native C++ gates need `clang`, `cmake` and `lld` (`apt install clang lld cmake clang-tidy`); they are not part of `npm install`.
 - `next.config.ts` uses `output: 'export'` with `assetPrefix: './'` and `trailingSlash: true`; do not add server-only Next.js features.
+
+---
+
+## Common Tasks
+
+**Adding or modifying a technique** — edit `app/data/techniques.ts` (`shaderPath` / `theme` / `strengthLevel` / `breath`). A new shader file must declare the exact `Uniforms` struct; verify in the browser with the DevTools console open. `strengthLevel` is the visualization-intensity uniform (`0 = light`, `1 = regular`, `2 = strong`).
+
+**Changing the uniform layout** — update in lockstep: `app/lib/shaderContract.ts` (fields, offsets, size), every active `.wgsl` `struct Uniforms`, per-technique data if relevant, then `npm run validate:shaders`.
+
+**Adding an active shader** — place it in `public/`, reference it from a `TECHNIQUES` entry, copy the `Uniforms` struct from `sacred-monk.wgsl`, and add it to the active list above and in `docs/shaders/SHADER_INVENTORY.md`.
+
+**Adjusting breath timing** — edit a technique's `breath` ratio, or let users tweak live via the settings drawer (`updateSettings` via `useSession()`).
+
+## Quick Troubleshooting
+
+- **Black canvas / rendering aborts** — read the DevTools console. Most common cause: the WGSL `struct Uniforms` doesn't match the 72-byte layout in `app/lib/shaderContract.ts`; update *all* active `.wgsl` files and run `npm run validate:shaders`. `ShaderCanvas` falls back to WebGL2 or a static image when WebGPU init fails — `RendererDiagnostics` / `GpuErrorBanner` report the stage.
+- **Timer stuck** — make sure you read `useSession()` rather than a stale local copy.
+- **CI red at "Install dependencies"** — `package.json` and `package-lock.json` disagree (see pitfall 10).
+- **Browser support** — Chrome / Edge 113+ have WebGPU; browsers without it get the WebGL2 / static backends.
 
 ---
 

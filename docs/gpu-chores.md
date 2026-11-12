@@ -72,7 +72,8 @@ The module is committed (`app/lib/gpuChores/wasm/chores.wasm`, ~6 KB) alongside 
 generated base64 module, so `npm run build` works on a machine with no C++
 toolchain and the static export needs no extra fetch. Regenerate both with
 `npm run build:chores-wasm` after touching `native/`; a unit test fails if they
-drift apart.
+drift apart, and CI rebuilds the module from source and fails on any diff against
+the committed one (pinned to clang 18).
 
 **Failure is expected and handled.** The module is compiled with SIMD, so an
 engine without wasm SIMD rejects it at compile time — and that rejection *is* the
@@ -97,9 +98,8 @@ has the full reasoning and the point at which switching to emsdk would be right.
 it records one machine's absolute paths:
 
 ```sh
-cmake -S native/gpu-chores-wasm -B native/gpu-chores-wasm/build \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-ln -sf native/gpu-chores-wasm/build/compile_commands.json compile_commands.json
+(cd native/gpu-chores-wasm && cmake --preset host)
+ln -sf native/gpu-chores-wasm/build/host/compile_commands.json compile_commands.json
 ```
 
 ## Jobs

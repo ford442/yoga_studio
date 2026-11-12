@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 type Phase = 'inhale' | 'hold1' | 'exhale' | 'hold2';
 type BurstKind = 'peak' | 'settle';
@@ -15,7 +15,6 @@ interface Burst {
   id: number;
   kind: BurstKind;
   color: string;
-  particles: Particle[];
 }
 
 interface ParticleBurstProps {
@@ -49,61 +48,65 @@ const buildParticles = (kind: BurstKind): Particle[] => {
   }));
 };
 
+const burstKindFor = (from: Phase, to: Phase): BurstKind | null => {
+  if (from === 'inhale' && to === 'hold1') return 'peak';
+  if (from === 'exhale' && to === 'hold2') return 'settle';
+  return null;
+};
+
+/** One burst: owns its particles and removes itself when its animation ends. */
+const BurstLayer: React.FC<{ burst: Burst; onDone: (id: number) => void }> = ({ burst, onDone }) => {
+  const [particles] = useState(() => buildParticles(burst.kind));
+  const { id, kind } = burst;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () => onDone(id),
+      kind === 'peak' ? PEAK_DURATION_MS : SETTLE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [id, kind, onDone]);
+
+  return (
+    <div className="absolute inset-0">
+      {particles.map((particle, index) => (
+        <span
+          key={`${id}-${index}`}
+          className={kind === 'peak' ? 'phase-burst-spark' : 'phase-burst-settle'}
+          style={{
+            ['--dx' as string]: `${particle.dx}px`,
+            ['--dy' as string]: `${particle.dy}px`,
+            ['--particle-size' as string]: `${particle.size}px`,
+            color: burst.color,
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  );
+};
+
 const ParticleBurst: React.FC<ParticleBurstProps> = ({ phase, isRunning, color }) => {
-  const prevPhaseRef = useRef<Phase>(phase);
-  const timersRef = useRef<number[]>([]);
+  // Phase transitions are detected while rendering (state derived from props),
+  // so no effect has to call setState synchronously.
+  const [tracked, setTracked] = useState({ phase, seq: 0 });
   const [bursts, setBursts] = useState<Burst[]>([]);
 
-  useEffect(() => {
-    return () => {
-      timersRef.current.forEach((timer) => window.clearTimeout(timer));
-      timersRef.current = [];
-    };
-  }, []);
+  if (tracked.phase !== phase) {
+    const kind = isRunning ? burstKindFor(tracked.phase, phase) : null;
+    const seq = kind ? tracked.seq + 1 : tracked.seq;
+    setTracked({ phase, seq });
+    if (kind) setBursts((prev) => [...prev, { id: seq, kind, color }]);
+  }
 
-  useEffect(() => {
-    const from = prevPhaseRef.current;
-    prevPhaseRef.current = phase;
-    if (!isRunning) return;
-
-    let kind: BurstKind | null = null;
-    if (from === 'inhale' && phase === 'hold1') kind = 'peak';
-    if (from === 'exhale' && phase === 'hold2') kind = 'settle';
-    if (!kind) return;
-
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    const burst: Burst = {
-      id,
-      kind,
-      color,
-      particles: buildParticles(kind),
-    };
-    setBursts((prev) => [...prev, burst]);
-
-    const timeout = window.setTimeout(() => {
-      setBursts((prev) => prev.filter((item) => item.id !== id));
-      timersRef.current = timersRef.current.filter((value) => value !== timeout);
-    }, kind === 'peak' ? PEAK_DURATION_MS : SETTLE_DURATION_MS);
-    timersRef.current.push(timeout);
-  }, [phase, isRunning, color]);
+  const removeBurst = useCallback(
+    (id: number) => setBursts((prev) => prev.filter((item) => item.id !== id)),
+    [],
+  );
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20">
       {bursts.map((burst) => (
-        <div key={burst.id} className="absolute inset-0">
-          {burst.particles.map((particle, index) => (
-            <span
-              key={`${burst.id}-${index}`}
-              className={burst.kind === 'peak' ? 'phase-burst-spark' : 'phase-burst-settle'}
-              style={{
-                ['--dx' as string]: `${particle.dx}px`,
-                ['--dy' as string]: `${particle.dy}px`,
-                ['--particle-size' as string]: `${particle.size}px`,
-                color: burst.color,
-              } as React.CSSProperties}
-            />
-          ))}
-        </div>
+        <BurstLayer key={burst.id} burst={burst} onDone={removeBurst} />
       ))}
     </div>
   );

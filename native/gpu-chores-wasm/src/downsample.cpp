@@ -31,6 +31,10 @@ inline uint32_t CeilU32(double v) {
 
 }  // namespace
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic):
+// the audited pointer surface. Box bounds satisfy x0 < x1 <= src_width and
+// y0 < y1 <= src_height (clamped above), and every dimension is <= 0xFFFF, so
+// all row/column offsets stay inside the caller's tightly packed RGBA8 buffers.
 extern "C" chores_status_t chores_downsample_2d(const uint8_t* src, uint32_t src_width,
                                                  uint32_t src_height, uint8_t* dst,
                                                  uint32_t dst_width, uint32_t dst_height) {
@@ -82,3 +86,4 @@ extern "C" chores_status_t chores_downsample_2d(const uint8_t* src, uint32_t src
   }
   return CHORES_OK;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic)

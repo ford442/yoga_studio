@@ -39,20 +39,55 @@ jobs:
       - name: Static export smoke (files + HTTP 200s)
         run: npm run smoke
 
-      - name: Unit tests with core coverage thresholds
+      # One run, both vitest projects (`unit-node` and `ui-jsdom`, shown as the
+      # |project| prefix in the output) so the coverage thresholds see everything.
+      - name: Unit + UI tests with core coverage thresholds
         run: npm run test:coverage
-
-      # The native kernels' fast gate. Host-only: it needs a C++20 compiler and
-      # nothing else, so it runs on every push in a couple of seconds. The
-      # committed app/lib/gpuChores/wasm/chores.wasm is not rebuilt here — the
-      # vitest suite already checks the shipped artifact against the same JS
-      # goldens, and `npm run build:chores-wasm` regenerates it when native/
-      # changes.
-      - name: gpu-chores native kernel tests
-        run: npm run test:native
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
       - name: Browser smoke tests
         run: npm run test:e2e
+
+  # The native kernels. Separate job so it runs in parallel with the app build and
+  # can pin the toolchain: the committed chores.wasm is only byte-reproducible with
+  # the same clang major (and `-flto --strip-all` output is not guaranteed stable
+  # across majors), so the runner image and clang version are pinned together.
+  native-kernels:
+    runs-on: ubuntu-24.04
+    env:
+      CXX: clang++-18
+      CLANG: clang++-18
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain (clang 18, lld, clang-tidy)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 lld-18 clang-tidy-18 cmake
+
+      - name: Host gate (kernels vs references + seeded differential fuzz)
+        run: npm run test:native
+
+      - name: Host gate under ASan + UBSan
+        run: npm run test:native:asan
+
+      - name: clang-tidy (bugprone, performance, pro-bounds)
+        run: npm run test:native:tidy
+
+      # Fails when native/ changed without regenerating the committed artifact:
+      # rebuild from source and require zero diff against what is checked in.
+      - name: Rebuild chores.wasm and require it to match the committed one
+        run: |
+          npm run build:chores-wasm
+          if ! git diff --exit-code --stat -- app/lib/gpuChores/wasm/ \
+             || [ -n "$(git status --porcelain -- app/lib/gpuChores/wasm/)" ]; then
+            echo "::error::app/lib/gpuChores/wasm/ is out of date with native/. Run 'npm run build:chores-wasm' (clang 18) and commit the result."
+            exit 1
+          fi

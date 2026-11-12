@@ -10,6 +10,9 @@
  * words, which halves the store traffic against the JS byte-at-a-time version.
  */
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-bounds-array-to-pointer-decay):
+// the audited pointer surface. i < pixel_count bounds the pixel reads/writes;
+// channel bytes index the 256-entry LUT, which a u8 cannot exceed.
 extern "C" chores_status_t chores_lut_u8_map(const uint8_t* src, uint32_t pixel_count,
                                               const uint8_t* lut, uint8_t* dst) {
   if (src == nullptr || dst == nullptr || lut == nullptr) return CHORES_ERR_NULL;
@@ -25,3 +28,4 @@ extern "C" chores_status_t chores_lut_u8_map(const uint8_t* src, uint32_t pixel_
   }
   return CHORES_OK;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-bounds-array-to-pointer-decay)
