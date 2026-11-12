@@ -9,6 +9,8 @@
  * runs and the canvas usage stays `RENDER_ATTACHMENT` only.
  */
 
+import type { FieldTier } from './frameGovernor';
+
 export const GPU_READBACK_PARAM = 'gpu_readback';
 
 export interface ReadbackRequest {
@@ -16,6 +18,8 @@ export interface ReadbackRequest {
   time: number;
   /** Force the geometry overlay on/off for the captured frame, independent of the governor. */
   overlay?: boolean;
+  /** Force breath-field knobs for the captured frame (the field must be buildable). */
+  field?: Partial<FieldTier>;
 }
 
 export interface ReadbackResult {

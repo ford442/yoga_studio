@@ -12,6 +12,7 @@ public/                          # Copied to out/ during static export — runti
 ├── sacred-ultra.wgsl            # Active shader entry/include manifest
 ├── sacred-ultra/                # Cohesive Sacred Ultra WGSL modules
 ├── yoga-regular.wgsl            # Active shader
+├── breath-field/                # WebGPU-only breath field: sim / particles / post modules
 ├── manifest.webmanifest         # PWA manifest
 ├── backgrounds/                 # Runtime background images
 └── instructor/                  # Runtime instructor clips
@@ -47,6 +48,51 @@ entry files whose `// @include "..."` directives are resolved by the WebGPU
 loader. Keep each file in their matching module directories under 700 lines;
 `validate:shaders` enforces this limit and validates each composed source.
 
+## Breath field modules (`public/breath-field/`, WebGPU only)
+
+Not technique shaders: these are the optional GPU passes the WebGPU backend
+interleaves with the technique's scene when the **Breath field** renderer
+setting is `particles` or `hdr` (`app/renderer/breathField/breathField.ts`).
+Each module `// @include`s `common.wgsl`, which carries the group-0
+`struct Uniforms` plus the group-1 structs (`Particle`, `FieldParams`,
+`DrawArgs`) declared in `app/lib/shaderContract.ts` (`GROUP1_STRUCTS`, offsets
+derived by `layoutStruct`, not hand-written). `npm run validate:shaders`
+checks both groups and each module's entry points.
+
+| File | Entry points | Pass (timestamp label) | Role |
+|------|--------------|------------------------|------|
+| `breath-field/common.wgsl` | — | — | Shared structs, hash, palette; included by the three below |
+| `breath-field/sim.wgsl` | `field_step`, `field_cull` (`@compute`, workgroup 64) | `field-sim` | Ping-pong particle step (curl noise + breath radial force + pointer), GPU respawn, cull into `drawIndirect` args |
+| `breath-field/particles.wgsl` | `particle_vs` / `particle_fs` | `particles` | Additive billboards, instance count from the cull pass; `override HDR_GAIN` per target format |
+| `breath-field/post.wgsl` | `post_vs`, `bloom_prefilter_fs`, `bloom_down_fs`, `bloom_up_fs`, `tonemap_fs` | `bloom`, `tonemap` | Dual-filter bloom chain (≤5 mips) on `rgba16float`, soft-shoulder tone map to the swap chain |
+
+Frame order with the field on: `field-sim` → `scene` → `particles` → `bloom`
+→ `tonemap` → `overlay`. Particles-only (`hdr` off) draws the scene and
+particles straight onto the swap chain and skips bloom/tonemap. With the
+setting `off` the frame is exactly `scene` → `overlay`, pixel-identical to the
+pre-pass renderer (checked with `scripts/capture-readback.mjs`).
+
+Governor tiers: particles 4k / 16k / 64k (`PARTICLE_COUNTS`), bloom 5 → 3 →
+0 mips, HDR on/off. Under GPU pressure these are shed **before** resolution;
+particles drop to 4k before resolution and only go fully off after the
+resolution ladder is exhausted.
+
+### Deliberate capability gap: WebGL2 fallback
+
+The WebGL2 fallback keeps its current look and has **no** breath field: no
+compute, no particle sim, no HDR/bloom. Its particles stay the analytic ones
+baked into each scene shader. There is no WebGL2 compute emulation, and the
+governor's field ceiling is forced to off on any non-WebGPU backend, so it
+never "sheds" knobs that do nothing there.
+
+### Not done yet
+
+- `display-p3` + `toneMapping: { mode: 'extended' }` output on HDR displays.
+  The tone map writes the sRGB/standard swap chain. Extended output needs an
+  `rgba16float` canvas format, which means re-targeting the overlay and tone-map
+  pipelines per format. It is a follow-up behind `matchMedia('(dynamic-range: high)')`.
+- OffscreenCanvas + Worker render path (issue stretch goal).
+
 ## Legacy reference shaders (`archive/shaders/legacy/`)
 
 These were earlier iterations or direct GLSL-to-WGSL ports. They are kept for historical context but are **not loaded** by the app.
@@ -67,7 +113,7 @@ These are compute passes, swarm experiments, and composable modules that were ne
 | `aurora-compute.wgsl` | Aurora background compute pass (legacy multi-pass pipeline). |
 | `bloom-compute.wgsl` | Bright extract + Gaussian blur compute pass (legacy multi-pass pipeline). |
 | `composite.wgsl` | Final blend pass for the legacy multi-pass pipeline. |
-| `particle-compute.wgsl` | Particle simulation compute pass (legacy). |
+| `particle-compute.wgsl` | Particle simulation compute pass (legacy). Superseded by `public/breath-field/sim.wgsl`. |
 | `particle-render.wgsl` | Particle instanced-quad render pass (legacy). |
 | `breath-swarm-merged.wgsl` | Swarm experiment: merged breath-shader output. |
 | `breath-swarm-next.wgsl` | Swarm experiment: follow-up iteration. |

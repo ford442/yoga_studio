@@ -3,7 +3,8 @@
  * Capture a WebGPU frame by GPU readback (not a screenshot) and optionally
  * compare it with an earlier capture.
  *
- *   node scripts/capture-readback.mjs <url> <out.json> [--compare base.json] [--time 3.25] [--query gpu_shader=yoga-regular.wgsl]
+ *   node scripts/capture-readback.mjs <url> <out.json> [--compare base.json] [--time 3.25] [--query gpu_shader=sacred-ultra.wgsl]
+ *     [--png out.png] [--field '{"particleLevel":2,"hdrEnabled":true,"bloomLevels":5}'] [--frames N]
  *
  * <url> is a served build (e.g. http://localhost:3001/); `?gpu_readback` is
  * appended. Headless Chrome only exposes a WebGPU adapter with the SwiftShader
@@ -22,6 +23,9 @@ const flag = (name) => {
 const compare = flag('--compare');
 const time = Number(flag('--time') ?? '3.25');
 const extraQuery = flag('--query') ?? '';
+const pngOut = flag('--png');
+const fieldOverride = flag('--field');
+const frames = Number(flag('--frames') ?? '1');
 const [url, out] = args;
 if (!url || !out) {
   console.error('usage: capture-readback.mjs <url> <out.json> [--compare base.json] [--time s] [--query k=v&...]');
@@ -58,10 +62,44 @@ try {
   await page.waitForTimeout(Number(process.env.READBACK_SETTLE_MS ?? 4000));
   const attrs = await page.evaluate(() => {
     const el = document.querySelector('[data-renderer]');
-    return el ? { renderer: el.getAttribute('data-renderer'), overlay: el.getAttribute('data-overlay'), quality: el.getAttribute('data-quality') } : null;
+    return el
+      ? {
+          renderer: el.getAttribute('data-renderer'),
+          overlay: el.getAttribute('data-overlay'),
+          quality: el.getAttribute('data-quality'),
+          field: el.getAttribute('data-breath-field'),
+        }
+      : null;
   });
   console.log('canvas attrs', JSON.stringify(attrs));
-  const result = await page.evaluate((t) => window.__sacredBreathReadback({ time: t, overlay: true }), time);
+  const field = fieldOverride ? JSON.parse(fieldOverride) : undefined;
+  // With --frames N, capture N consecutive frames (the sim advances between them) and keep the last.
+  let result;
+  for (let i = 0; i < frames; i += 1) {
+    result = await page.evaluate(
+      ([t, f]) => window.__sacredBreathReadback({ time: t, overlay: true, ...(f ? { field: f } : {}) }),
+      [time + i / 60, field],
+    );
+  }
+  if (pngOut) {
+    const dataUrl = await page.evaluate((r) => {
+      const bytes = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0));
+      if (r.format.startsWith('bgra')) {
+        for (let i = 0; i < bytes.length; i += 4) {
+          const b = bytes[i];
+          bytes[i] = bytes[i + 2];
+          bytes[i + 2] = b;
+        }
+      }
+      for (let i = 3; i < bytes.length; i += 4) bytes[i] = 255;
+      const canvas = document.createElement('canvas');
+      canvas.width = r.width;
+      canvas.height = r.height;
+      canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer), r.width, r.height), 0, 0);
+      return canvas.toDataURL('image/png');
+    }, result);
+    writeFileSync(pngOut, Buffer.from(dataUrl.split(',')[1], 'base64'));
+  }
   writeFileSync(out, JSON.stringify(result));
   const bytes = Buffer.from(result.base64, 'base64');
   let sum = 0;

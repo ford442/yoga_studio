@@ -32,8 +32,8 @@ function makeContext(canvas: HTMLCanvasElement): RendererBackendContext {
     getTimeScale: () => 1,
     governor: {
       setBase: vi.fn(), setPaused: vi.fn(), noteGpuPass: vi.fn(), noteChore: vi.fn(),
-      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false, changed: false })),
-      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false })),
+      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, gpuPassBreakdown: null, particleLevel: 0 as const, bloomLevels: 0, hdrEnabled: false, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false, changed: false })),
+      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, gpuPassBreakdown: null, particleLevel: 0 as const, bloomLevels: 0, hdrEnabled: false, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false })),
     },
     shouldRender: () => true,
     onFatalError: vi.fn(),

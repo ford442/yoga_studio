@@ -184,6 +184,28 @@ export default function SettingsDrawer({
             />
             Reduced motion (lowers detail & disables overlay)
           </label>
+          <p className="text-sm text-white/60 mb-2 tracking-wider">BREATH FIELD (WEBGPU)</p>
+          <div className="flex flex-wrap gap-2 mb-2" role="group" aria-label="Breath field">
+            {(['off', 'particles', 'hdr'] as const).map((field) => (
+              <button
+                key={field}
+                aria-pressed={rendererSettings.breathField === field}
+                onClick={() => updateRendererSettings({ breathField: field })}
+                className={`px-3 py-2 rounded-xl text-xs tracking-wider border transition-all ${
+                  rendererSettings.breathField === field
+                    ? 'bg-emerald-500/30 border-emerald-300 text-emerald-100'
+                    : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10'
+                }`}
+              >
+                {field === 'off' && 'OFF'}
+                {field === 'particles' && 'PARTICLES'}
+                {field === 'hdr' && 'PARTICLES + HDR BLOOM'}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-white/45 leading-relaxed mb-3">
+            GPU particles that gather on inhale and settle on exhale. WebGPU only; reduced motion turns it off.
+          </p>
           <label className="flex items-center gap-3 text-sm text-white/70 mb-2">
             <input
               type="checkbox"

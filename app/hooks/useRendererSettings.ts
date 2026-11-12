@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  BREATH_FIELD_MODES,
   DEFAULT_RENDERER_SETTINGS,
+  type BreathFieldMode,
   RENDERER_STORAGE_KEY,
   type GovernorPersistedTier,
   type PerformanceMode,
@@ -13,6 +15,9 @@ import { safeGetItem, safeSetItem } from '../lib/safeStorage';
 
 const isPerformanceMode = (v: unknown): v is PerformanceMode =>
   v === 'auto' || v === 'performance' || v === 'quality';
+
+const isBreathFieldMode = (v: unknown): v is BreathFieldMode =>
+  (BREATH_FIELD_MODES as readonly unknown[]).includes(v);
 
 const parseSettings = (raw: unknown): RendererSettings => {
   if (!raw || typeof raw !== 'object') return DEFAULT_RENDERER_SETTINGS;
@@ -27,6 +32,9 @@ const parseSettings = (raw: unknown): RendererSettings => {
           resolutionScale: parsed.resolutionScale,
           qualityPreset: parsed.qualityPreset,
           overlayEnabled: parsed.overlayEnabled,
+          ...(parsed.particleLevel !== undefined ? { particleLevel: parsed.particleLevel } : {}),
+          ...(parsed.bloomLevels !== undefined ? { bloomLevels: parsed.bloomLevels } : {}),
+          ...(parsed.hdrEnabled !== undefined ? { hdrEnabled: parsed.hdrEnabled } : {}),
         }
       : undefined;
   return {
@@ -36,6 +44,7 @@ const parseSettings = (raw: unknown): RendererSettings => {
     reducedMotion: Boolean(data.reducedMotion),
     showDiagnostics: Boolean(data.showDiagnostics),
     gpuComputeEnabled: data.gpuComputeEnabled !== false,
+    breathField: isBreathFieldMode(data.breathField) ? data.breathField : DEFAULT_RENDERER_SETTINGS.breathField,
     ...(governorTier ? { governorTier } : {}),
   };
 };

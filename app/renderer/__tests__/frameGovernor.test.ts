@@ -9,10 +9,10 @@ import {
   createFrameGovernor,
   percentile,
   parseGovernorTier,
-  type GovernorTier,
+  type GovernorTierInput,
 } from '../frameGovernor';
 
-const highBase: GovernorTier = {
+const highBase: GovernorTierInput = {
   resolutionScale: 1,
   qualityPreset: 1,
   overlayEnabled: true,
