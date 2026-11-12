@@ -94,6 +94,7 @@ export default function PracticeScreen() {
         effectivePerformanceMode={renderer.effectivePerformanceMode}
         reducedMotion={renderer.settings.reducedMotion || renderer.isPerformanceForced}
         pauseRendering={completion.showCompletion}
+        breathField={renderer.settings.breathField}
         persistedGovernorTier={renderer.settings.governorTier}
         onGovernorTierChange={(governorTier) => renderer.updateSettings({ governorTier })}
         onDiagnostics={renderer.updateDiagnostics}

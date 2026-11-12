@@ -9,7 +9,13 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import { TECHNIQUES } from '../app/data/techniques.ts';
-import { UNIFORM_FIELDS, UNIFORM_BUFFER_SIZE } from '../app/lib/shaderContract.ts';
+import {
+  GROUP1_STRUCTS,
+  layoutStruct,
+  UNIFORM_FIELDS,
+  UNIFORM_BUFFER_SIZE,
+} from '../app/lib/shaderContract.ts';
+import { FIELD_MODULES } from '../app/renderer/breathField/breathField.ts';
 import { parseWgslModule } from '../app/lib/wgslModules.ts';
 import { buildOverlayWgsl, OVERLAY_FRAGMENT_ENTRY, OVERLAY_VERTEX_ENTRY } from '../app/renderer/overlayWgsl.ts';
 import {
@@ -40,8 +46,8 @@ interface ParsedField {
   type: string;
 }
 
-function parseStruct(source: string): ParsedField[] | null {
-  const match = source.match(/struct\s+Uniforms\s*\{([\s\S]*?)\}/);
+function parseStruct(source: string, name = 'Uniforms'): ParsedField[] | null {
+  const match = source.match(new RegExp(`struct\\s+${name}\\s*\\{([\\s\\S]*?)\\}`));
   if (!match) return null;
 
   const body = match[1];
@@ -146,8 +152,99 @@ function validateOverlay(): string[] {
   return errors;
 }
 
+/** Field-by-field comparison of one parsed struct against a contract field list. */
+function compareStruct(
+  label: string,
+  parsed: ParsedField[],
+  expected: ReadonlyArray<{ name: string; type: string }>,
+): string[] {
+  const errors: string[] = [];
+  if (parsed.length !== expected.length) {
+    errors.push(`${label} field count mismatch: shader has ${parsed.length}, contract expects ${expected.length}`);
+  }
+  const len = Math.max(parsed.length, expected.length);
+  for (let i = 0; i < len; i++) {
+    const want = expected[i];
+    const actual = parsed[i];
+    if (!want) {
+      errors.push(`${label} extra field[${i}]: ${actual.name}: ${actual.type}`);
+      continue;
+    }
+    if (!actual) {
+      errors.push(`${label} missing field[${i}]: expected ${want.name}: ${want.type}`);
+      continue;
+    }
+    if (actual.name !== want.name) {
+      errors.push(`${label} field[${i}] name mismatch: shader '${actual.name}' vs contract '${want.name}'`);
+    }
+    if (normalizeType(actual.type) !== normalizeType(want.type)) {
+      errors.push(`${label} field[${i}] '${want.name}' type mismatch: shader '${actual.type}' vs contract '${want.type}'`);
+    }
+  }
+  return errors;
+}
+
+/**
+ * Entry points each breath-field module must export (the backend binds them by
+ * name in `breathField.ts`).
+ */
+const FIELD_ENTRY_POINTS: Record<keyof typeof FIELD_MODULES, { compute?: string[]; vertex?: string[]; fragment?: string[] }> = {
+  sim: { compute: ['field_step', 'field_cull'] },
+  particles: { vertex: ['particle_vs'], fragment: ['particle_fs'] },
+  post: { vertex: ['post_vs'], fragment: ['bloom_prefilter_fs', 'bloom_down_fs', 'bloom_up_fs', 'tonemap_fs'] },
+};
+
+function findComputeEntryPoints(source: string): string[] {
+  const names: string[] = [];
+  const re = /@compute\s+(?:@[^\n]+\s+)*fn\s+(\w+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(source.replace(/\/\/[^\n]*/g, '')))) names.push(match[1]);
+  return names;
+}
+
+/**
+ * Breath-field modules (`public/breath-field/*.wgsl`): same group-0 contract
+ * and grammar checks as the scenes, plus every group-1 struct in
+ * `GROUP1_STRUCTS` declared exactly as the contract derives it. They are
+ * compute/billboard/post shaders, so the scene-only "vertex + fragment"
+ * requirement does not apply; their own entry points are checked instead.
+ */
+function validateFieldModule(key: keyof typeof FIELD_MODULES): string[] {
+  let tree: ShaderTree;
+  try {
+    tree = readShaderTree(`public/${FIELD_MODULES[key]}`);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+  const source = tree.source;
+  const errors = validateUniformsAndGrammar(source);
+  for (const [name, fields] of Object.entries(GROUP1_STRUCTS)) {
+    const parsed = parseStruct(source, name);
+    if (parsed === null) {
+      errors.push(`missing \`struct ${name}\` (group-1 contract, app/lib/shaderContract.ts)`);
+      continue;
+    }
+    errors.push(...compareStruct(name, parsed, fields));
+  }
+  const entries = findEntryPointNames(source);
+  const compute = findComputeEntryPoints(source);
+  const expected = FIELD_ENTRY_POINTS[key];
+  for (const name of expected.compute ?? []) if (!compute.includes(name)) errors.push(`missing @compute '${name}'`);
+  for (const name of expected.vertex ?? []) if (!entries.vertex.includes(name)) errors.push(`missing @vertex '${name}'`);
+  for (const name of expected.fragment ?? []) if (!entries.fragment.includes(name)) errors.push(`missing @fragment '${name}'`);
+  return errors;
+}
+
 /** Uniform-struct, grammar, and fullscreen-triangle checks on one composed WGSL source. */
 function validateComposedSource(source: string): string[] {
+  const errors = validateUniformsAndGrammar(source);
+  const entries = findEntryPointNames(source);
+  if (entries.vertex.length === 0) errors.push('missing @vertex entry point');
+  if (entries.fragment.length === 0) errors.push('missing @fragment entry point');
+  return errors;
+}
+
+function validateUniformsAndGrammar(source: string): string[] {
   const errors: string[] = [];
   if (!source.includes(EXPECTED_BINDING)) {
     errors.push(`missing or unexpected binding declaration (expected: ${EXPECTED_BINDING})`);
@@ -198,10 +295,6 @@ function validateComposedSource(source: string): string[] {
     ...findUnparenthesizedIf(source),
     ...findFullscreenQuads(source),
   );
-
-  const entries = findEntryPointNames(source);
-  if (entries.vertex.length === 0) errors.push('missing @vertex entry point');
-  if (entries.fragment.length === 0) errors.push('missing @fragment entry point');
   return errors;
 }
 
@@ -210,6 +303,9 @@ function main() {
   const results: Array<[string, string[]]> = [
     ...ACTIVE_SHADERS.map((filePath): [string, string[]] => [filePath, validateShader(filePath)]),
     ['app/renderer/overlayWgsl.ts (generated)', validateOverlay()],
+    ...(Object.keys(FIELD_MODULES) as Array<keyof typeof FIELD_MODULES>).map(
+      (key): [string, string[]] => [`public/${FIELD_MODULES[key]}`, validateFieldModule(key)],
+    ),
   ];
   for (const [label, errors] of results) {
     if (errors.length === 0) {
@@ -224,6 +320,10 @@ function main() {
   }
 
   console.log(`\nExpected buffer size: ${UNIFORM_BUFFER_SIZE} bytes`);
+  for (const [name, fields] of Object.entries(GROUP1_STRUCTS)) {
+    const layout = layoutStruct(fields);
+    console.log(`Group-1 ${name}: ${layout.size} bytes (align ${layout.align})`);
+  }
   if (failed) {
     console.error('\nShader contract validation failed.');
     process.exit(1);

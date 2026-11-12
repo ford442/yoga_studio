@@ -74,11 +74,13 @@ export const GPU_CANVAS_COLOR_SPACE: PredefinedColorSpace = 'srgb';
 export function buildGpuCanvasConfiguration(
   device: GPUDevice,
   format: GPUTextureFormat,
+  options: { copySrc?: boolean } = {},
 ): GPUCanvasConfiguration {
   return {
     device,
     format,
-    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    // COPY_SRC only for the `?gpu_readback` debug hook (see gpuReadback.ts).
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | (options.copySrc ? GPUTextureUsage.COPY_SRC : 0),
     alphaMode: 'premultiplied',
     colorSpace: GPU_CANVAS_COLOR_SPACE,
     viewFormats: [],

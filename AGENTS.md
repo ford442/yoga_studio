@@ -98,6 +98,9 @@ app/
 │   ├── overlayWgsl.ts            # Geometry overlay (WGSL): second pass on the WebGPU encoder
 │   ├── overlay.ts                # Same overlay in GLSL, drawn inside the WebGL2 fallback's own context
 │   ├── pipelineLayout.ts         # Explicit group-0 uniforms layout shared by every fullscreen pass
+│   ├── passes/                   # FramePass interface + scene/overlay passes (ordered list per frame)
+│   ├── breathField/              # WebGPU-only particle sim, HDR target, bloom, tone map (opt-in setting)
+│   ├── gpuReadback.ts            # `?gpu_readback` debug hook: pixel-exact frame capture (scripts/capture-readback.mjs)
 │   └── gpuChores/                # Shared GPU/WASM/Canvas2D/JS UI/media helpers (see "gpu-chores" below)
 └── hooks/                        # ~20 hooks; notable ones:
     ├── useBreathTimer.ts         # Core breathing logic, schedule, session auto-end
@@ -182,7 +185,7 @@ Filmed instructor clips are derived assets, not hand-authored ones. To add or re
 
 ## WebGPU Shader Architecture
 
-`ShaderCanvas.tsx` is a thin React shell that owns refs, prop plumbing, and diagnostics reporting. It delegates the actual rendering to `app/renderer/`: `selectBackend.ts` (`probeCapabilities` / `pickInitialMode` / `mountRenderer`) picks between `webgpuBackend.ts`, `webgl2Backend.ts`, and `staticBackend.ts`. The WebGPU backend fetches the active `.wgsl` entry (e.g. `public/sacred-monk.wgsl`) at runtime, composes any `// @include "..."` modules, builds the scene and geometry-overlay pipelines against one explicit layout (`pipelineLayout.ts`), and each frame encodes the scene pass, then the overlay pass (`overlayWgsl.ts`, `loadOp: 'load'` + a screen blend), on one command encoder, each drawing a 3-vertex fullscreen triangle (`draw(3)`). `frameGovernor.ts` adaptively steps quality/resolution down under frame-time pressure and can switch the overlay off. A WebGPU session opens no WebGL context at all; the WebGL2 fallback draws the GLSL overlay (`overlay.ts`) inside its own context. Every active shader's vertex entry must emit the 3-vertex triangle (`npm run validate:shaders` rejects a 6-vertex quad).
+`ShaderCanvas.tsx` is a thin React shell that owns refs, prop plumbing, and diagnostics reporting. It delegates the actual rendering to `app/renderer/`: `selectBackend.ts` (`probeCapabilities` / `pickInitialMode` / `mountRenderer`) picks between `webgpuBackend.ts`, `webgl2Backend.ts`, and `staticBackend.ts`. The WebGPU backend fetches the active `.wgsl` entry (e.g. `public/sacred-monk.wgsl`) at runtime, composes any `// @include "..."` modules, builds the scene and geometry-overlay pipelines against one explicit layout (`pipelineLayout.ts`), and each frame encodes an ordered list of `FramePass`es (`app/renderer/passes/`) on one command encoder: by default the scene pass, then the overlay pass (`overlayWgsl.ts`, `loadOp: 'load'` + a screen blend), each drawing a 3-vertex fullscreen triangle (`draw(3)`). With the opt-in **breath field** renderer setting, `app/renderer/breathField/` adds a compute particle sim (`drawIndirect`), an `rgba16float` HDR scene target, a dual-filter bloom chain and a tone map; see `docs/shaders/SHADER_INVENTORY.md`. The field is built lazily and any failure there disables only the field, never the session. The loop keeps at most `MAX_FRAMES_IN_FLIGHT` frames queued on the GPU. `frameGovernor.ts` adaptively steps quality/resolution down under frame-time pressure and can switch the overlay off. A WebGPU session opens no WebGL context at all; the WebGL2 fallback draws the GLSL overlay (`overlay.ts`) inside its own context. Every active shader's vertex entry must emit the 3-vertex triangle (`npm run validate:shaders` rejects a 6-vertex quad).
 
 ### Uniform Buffer Layout
 
@@ -201,6 +204,8 @@ npm run validate:shaders
 ```
 
 **Critical:** When adding or reordering uniforms, update `app/lib/shaderContract.ts` first, then update every active `.wgsl` file, and run `npm run validate:shaders` to catch drift. `ShaderCanvas.tsx` / `app/renderer/webgpuBackend.ts` read the buffer size and field order from the contract, so they should not need manual index updates. WebGPU will hard crash (blank canvas) on size or layout mismatch.
+
+Group 1 belongs to whichever pass is bound. The breath-field structs (`Particle`, `FieldParams`, `DrawArgs`) are declared by name/type in `GROUP1_STRUCTS` in the same file, with offsets/stride **derived** by `layoutStruct()` (WGSL alignment rules). `validate:shaders` checks `public/breath-field/*.wgsl` against both groups.
 
 Each composed shader source defines one `struct Uniforms`. Standalone shaders keep it at the top of their `.wgsl` file; Sacred Lotus and Sacred Ultra keep it in their respective `core.wgsl` modules. Do **not** duplicate this struct elsewhere.
 
@@ -552,8 +557,11 @@ Because `next.config.ts` sets `output: 'export'`, the `out/` folder is a complet
 | `app/features/practice/PracticeScreen.tsx` | Actual page UI composition | **Active** |
 | `app/components/ShaderCanvas.tsx` | Renderer shell (WebGPU/WebGL2/static backends) | **Active** |
 | `app/renderer/selectBackend.ts` + `webgpuBackend.ts` / `webgl2Backend.ts` / `staticBackend.ts` | Rendering backends | **Active** |
-| `app/renderer/frameGovernor.ts` | Two-signal (CPU delta + GPU pass) adaptive quality governor | **Active** |
-| `app/renderer/gpuTimestamps.ts` | Optional `timestamp-query` GPU pass timer feeding the governor | **Active** |
+| `app/renderer/frameGovernor.ts` | Two-signal (CPU delta + GPU pass) adaptive quality governor; field tiers (particles / bloom / HDR) shed before resolution | **Active** |
+| `app/renderer/passes/` | `FramePass` interface, scene + overlay passes | **Active** |
+| `app/renderer/breathField/breathField.ts` | Breath field: particle sim, HDR target, bloom, tone map (WebGPU only, opt-in) | **Active** |
+| `public/breath-field/*.wgsl` | Breath field WGSL modules (sim / particles / post + shared `common.wgsl`) | **Active** |
+| `app/renderer/gpuTimestamps.ts` | Optional `timestamp-query` GPU timer, per labelled pass, feeding the governor | **Active** |
 | `app/lib/shaderContract.ts` | Single source of truth for the 72-byte uniform layout | **Active** |
 | `app/components/InstallPrompt.tsx` | PWA install prompt | **Active** |
 | `app/components/ExportStats.tsx` | Stats PNG export | **Active** |

@@ -193,4 +193,38 @@ describe('createGpuFrameTimer', () => {
     expect(timer.lastGpuPassMs()).toBeNull();
     expect(timer.status()).toBe('off');
   });
+
+  it('hands out one slot pair per labelled pass and sums passes sharing a label', async () => {
+    const { device } = makeDevice({
+      mapped: timestampBytes([
+        1_000_000n, 5_000_000n, // scene 4ms
+        5_000_000n, 6_000_000n, // field-sim 1ms
+        6_000_000n, 7_500_000n, // bloom mip 0: 1.5ms
+        7_500_000n, 8_000_000n, // bloom mip 1: 0.5ms
+        8_000_000n, 8_250_000n, // overlay 0.25ms
+      ]),
+    });
+    const timer = createGpuFrameTimer(device)!;
+    runToSampledFrame(timer);
+    expect(timer.sceneWrites()).toEqual(expect.objectContaining({ beginningOfPassWriteIndex: 0 }));
+    expect(timer.passWrites('field-sim')).toEqual(expect.objectContaining({ beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 }));
+    expect(timer.passWrites('bloom')).toEqual(expect.objectContaining({ beginningOfPassWriteIndex: 4 }));
+    expect(timer.passWrites('bloom')).toEqual(expect.objectContaining({ beginningOfPassWriteIndex: 6 }));
+    expect(timer.passWrites('overlay')).toEqual(expect.objectContaining({ beginningOfPassWriteIndex: 8 }));
+    timer.resolve(makeEncoder());
+    timer.readback();
+    await vi.waitFor(() => expect(timer.lastGpuPassMs()).toBeCloseTo(7.25));
+    expect(timer.lastPassBreakdown()).toEqual({ scene: 4, 'field-sim': 1, bloom: 2, overlay: 0.25 });
+  });
+
+  it('stops handing out pairs when the query set is full rather than overflowing', () => {
+    const { device } = makeDevice();
+    const timer = createGpuFrameTimer(device)!;
+    runToSampledFrame(timer);
+    const writes = Array.from({ length: TIMESTAMP_QUERY_SLOTS }, () => timer.passWrites('bloom'));
+    const handed = writes.filter(Boolean) as GPURenderPassTimestampWrites[];
+    expect(handed).toHaveLength(TIMESTAMP_QUERY_SLOTS / 2 - 1);
+    expect(Math.max(...handed.map((w) => w.endOfPassWriteIndex ?? 0))).toBe(TIMESTAMP_QUERY_SLOTS - 1);
+  });
 });
+

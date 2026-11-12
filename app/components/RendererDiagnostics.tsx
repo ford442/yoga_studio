@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { PARTICLE_COUNTS } from '../renderer/frameGovernor';
 import {
   GPU_FAILURE_STAGE_LABEL,
   type RendererDiagnosticsState,
@@ -82,6 +83,23 @@ export default function RendererDiagnostics({ state }: RendererDiagnosticsProps)
         <div data-testid="governor-timing" data-governor-bound={state.governorBound ?? 'none'}>
           cpu p75: {cpuP75} · gpu p75: {gpuP75} · chores: {choreMs} · timestamps: {timestamps}
         </div>
+        {state.gpuPassBreakdown && (
+          <div className="max-w-[320px] leading-tight" data-testid="gpu-pass-breakdown">
+            Passes:{' '}
+            {Object.entries(state.gpuPassBreakdown)
+              .map(([label, value]) => `${label} ${value.toFixed(1)}`)
+              .join(' · ')}
+          </div>
+        )}
+        {state.breathField.status !== 'off' && (
+          <div className="max-w-[320px] leading-tight" data-testid="breath-field-diagnostics">
+            Field: {state.breathField.status}
+            {state.breathField.status === 'on'
+              ? ` · particles ${PARTICLE_COUNTS[state.breathField.particleLevel] ?? 0} · bloom ${state.breathField.bloomLevels} · ${state.breathField.hdrEnabled ? 'HDR' : 'SDR'}`
+              : ''}
+            {state.breathField.reason ? ` · ${state.breathField.reason}` : ''}
+          </div>
+        )}
         <div>
           Step-downs: {state.governorStepDowns}
           {state.governorBound ? ` · ${state.governorBound}-bound` : ''}

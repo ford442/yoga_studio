@@ -13,22 +13,43 @@ import { resizeCanvasForDpr } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
 import { lendChoreDevice } from './gpuChores/choreDevice';
 import { buildGpuCanvasConfiguration, buildGpuDeviceDescriptor, getWebGPUAdapterOptions } from './gpuDeviceContract';
+import {
+  BreathFieldUnavailableError,
+  createBreathField,
+  HDR_FORMAT,
+  type BreathField,
+} from './breathField/breathField';
+import { encodeReadback, isReadbackEnabled, readbackShaderOverride, type ReadbackRequest, type ReadbackResult } from './gpuReadback';
+import { createOverlayPass, createScenePass } from './passes/fullscreenPasses';
+import { encodePasses, type FramePass, type PassFrame } from './passes/types';
 import { createGpuFrameTimer, supportsTimestampQuery, type GpuFrameTimer } from './gpuTimestamps';
 import { buildOverlayWgsl, OVERLAY_BLEND, OVERLAY_FRAGMENT_ENTRY, OVERLAY_VERTEX_ENTRY } from './overlayWgsl';
-import { createFramePipelineLayouts, FULLSCREEN_VERTEX_COUNT, UNIFORMS_BINDING, UNIFORMS_GROUP } from './pipelineLayout';
+import { createFramePipelineLayouts, type FramePipelineLayouts, UNIFORMS_BINDING } from './pipelineLayout';
 import type { RendererBackend, RendererBackendContext } from './types';
+import { createWithValidationScope, GpuStageError } from './gpuValidation';
+
+export { createWithValidationScope, GpuStageError };
 
 const DEVICE_LABEL = 'Sacred Breath WebGPU Device';
 
-export class GpuStageError extends Error {
-  readonly stage: GpuFailureStage;
+/**
+ * Frames the loop may have queued on the GPU before it waits. Browsers usually
+ * apply this back-pressure through the swap chain, but not all do (software
+ * adapters queue without bound), and an unbounded queue stalls every
+ * queue-ordered promise — `popErrorScope`, `mapAsync`, `onSubmittedWorkDone`.
+ * A skipped rAF also keeps the CPU frame delta honest for the governor when
+ * the GPU, not the CPU, is the bottleneck.
+ */
+export const MAX_FRAMES_IN_FLIGHT = 2;
 
-  constructor(stage: GpuFailureStage, message: string) {
-    super(message);
-    this.name = 'GpuStageError';
-    this.stage = stage;
-  }
-}
+/** Sim step ceiling: a resumed tab must not fling every particle off screen. */
+const MAX_SIM_DT_SECONDS = 1 / 20;
+
+type FieldState =
+  | { status: 'idle' }
+  | { status: 'building' }
+  | { status: 'ready'; field: BreathField }
+  | { status: 'unavailable'; reason: string };
 
 type ShaderModuleWithOptionalInfo = GPUShaderModule & {
   getCompilationInfo?: () => Promise<GPUCompilationInfo>;
@@ -58,39 +79,6 @@ function publishWebGpuProbe(probe: WebGpuProbeResult): void {
 
 function currentUserAgent(): string {
   return typeof navigator !== 'undefined' ? navigator.userAgent : '';
-}
-
-/**
- * Run `create` inside a validation error scope. The scope stays open until
- * `create` settles (including `getCompilationInfo()` / `createRenderPipelineAsync`),
- * so Chrome/Edge async WGSL and pipeline validation surface as JS instead of
- * a silent uncaptured GPU error.
- */
-export async function createWithValidationScope<T>(
-  device: GPUDevice,
-  stage: 'module' | 'pipeline',
-  create: () => T | Promise<T>,
-): Promise<T> {
-  device.pushErrorScope('validation');
-  let result: T | undefined;
-  let createError: unknown;
-  try {
-    result = await create();
-  } catch (error) {
-    createError = error;
-  }
-  const scopeError = await device.popErrorScope();
-  if (scopeError) {
-    console.error(`[WebGPU] ${stage} validation:`, scopeError.message);
-    throw new GpuStageError(stage, scopeError.message);
-  }
-  if (createError) {
-    if (createError instanceof GpuStageError) throw createError;
-    const message = createError instanceof Error ? createError.message : String(createError);
-    console.error(`[WebGPU] ${stage} validation:`, message);
-    throw new GpuStageError(stage, message);
-  }
-  return result as T;
 }
 
 export function readAdapterInfo(adapter: GPUAdapter): RendererAdapterInfo | undefined {
@@ -139,7 +127,19 @@ export class WebGPUBackend implements RendererBackend {
     overlayPipeline: GPURenderPipeline | null;
     uniformBuffer: GPUBuffer;
     bindGroup: GPUBindGroup;
+    /** Kept so the breath field can re-target the scene at the HDR format. */
+    sceneModule: GPUShaderModule;
+    layouts: FramePipelineLayouts;
+    scenePass: FramePass;
+    overlayPass: FramePass;
   } | null = null;
+  /** Built lazily the first time the governor asks for particles or HDR. */
+  private fieldState: FieldState = { status: 'idle' };
+  private fieldGeneration = 0;
+  private frameIndex = 0;
+  private framesInFlight = 0;
+  /** Bumped per device so a lost device's work-done callbacks can't skew the count. */
+  private inFlightEpoch = 0;
   private ctx: RendererBackendContext | null = null;
   private frameTimer: GpuFrameTimer | null = null;
   private probeAdapterInfo: RendererAdapterInfo | undefined;
@@ -148,6 +148,12 @@ export class WebGPUBackend implements RendererBackend {
   private probeCanvasConfig: RendererCanvasConfig | undefined;
   private uncapturedListener: ((event: GPUUncapturedErrorEvent) => void) | null = null;
   private fatal = false;
+  private readbackEnabled = false;
+  private pendingReadbacks: Array<{
+    request: ReadbackRequest;
+    resolve: (result: ReadbackResult) => void;
+    reject: (error: unknown) => void;
+  }> = [];
 
   async start(ctx: RendererBackendContext): Promise<void> {
     this.ctx = ctx;
@@ -155,6 +161,13 @@ export class WebGPUBackend implements RendererBackend {
     this.fatal = false;
     this.recoveryAttempted = false;
     this.startTime = monotonicNow();
+    this.readbackEnabled = isReadbackEnabled();
+    if (this.readbackEnabled && typeof window !== 'undefined') {
+      window.__sacredBreathReadback = (request) => new Promise((resolve, reject) => {
+        this.pendingReadbacks.push({ request: { time: request?.time ?? 0, overlay: request?.overlay, field: request?.field }, resolve, reject });
+        this.scheduleFrame();
+      });
+    }
     this.canvasContext = ctx.canvas.getContext('webgpu');
     if (!this.canvasContext) {
       this.fail('device', 'Unable to create a WebGPU canvas context.');
@@ -290,9 +303,10 @@ export class WebGPUBackend implements RendererBackend {
         : 'unsupported',
     });
 
+    const shaderPath = readbackShaderOverride() ?? ctx.shaderPath;
     let shaderSource: string;
     try {
-      shaderSource = await loadWgslSource(resolveAssetUrl(ctx.shaderPath));
+      shaderSource = await loadWgslSource(resolveAssetUrl(shaderPath));
     } catch (error) {
       this.discardDevice(device);
       throw error;
@@ -301,7 +315,7 @@ export class WebGPUBackend implements RendererBackend {
     try {
       shaderModule = await createWithValidationScope(device, 'module', async () => {
         const created = device.createShaderModule({
-          label: `Sacred Breath shader: ${ctx.shaderPath}`,
+          label: `Sacred Breath shader: ${shaderPath}`,
           code: shaderSource,
         }) as ShaderModuleWithOptionalInfo;
         let messages: RendererCompilationMessage[] = [];
@@ -368,7 +382,25 @@ export class WebGPUBackend implements RendererBackend {
 
     const previousDevice = this.device;
     this.device = device;
-    this.loopArgs = { pipeline, overlayPipeline, uniformBuffer, bindGroup };
+    this.inFlightEpoch += 1;
+    this.framesInFlight = 0;
+    this.destroyField();
+    const format = this.format;
+    const scenePass = createScenePass((target) => {
+      if (target === format) return pipeline;
+      const state = this.fieldState;
+      return target === HDR_FORMAT && state.status === 'ready' ? state.field.hdrScenePipeline() : null;
+    });
+    this.loopArgs = {
+      pipeline,
+      overlayPipeline,
+      uniformBuffer,
+      bindGroup,
+      sceneModule: shaderModule,
+      layouts,
+      scenePass,
+      overlayPass: createOverlayPass(overlayPipeline),
+    };
     this.currentTextureFailed = false;
     this.configureCanvas(true);
     this.resizeFn?.();
@@ -443,6 +475,7 @@ export class WebGPUBackend implements RendererBackend {
     if (!ctx || this.cancelled) return;
     this.cancelFrame();
     this.loopArgs = null;
+    this.destroyField();
     this.destroyFrameTimer();
     lendChoreDevice(null, 'renderer device lost');
     if (this.recoveryAttempted) {
@@ -467,6 +500,87 @@ export class WebGPUBackend implements RendererBackend {
     }
   }
 
+  private trackInFlight(device: GPUDevice): void {
+    if (typeof device.queue.onSubmittedWorkDone !== 'function') return;
+    const epoch = this.inFlightEpoch;
+    this.framesInFlight += 1;
+    const settle = () => {
+      if (epoch === this.inFlightEpoch) this.framesInFlight = Math.max(0, this.framesInFlight - 1);
+    };
+    device.queue.onSubmittedWorkDone().then(settle, settle);
+  }
+
+  private destroyField(): void {
+    this.fieldGeneration += 1;
+    if (this.fieldState.status === 'ready') {
+      try { this.fieldState.field.destroy(); } catch { /* device already gone */ }
+    }
+    this.fieldState = { status: 'idle' };
+  }
+
+  private reportField(): void {
+    const state = this.fieldState;
+    const hdrReason = state.status === 'ready' && state.field.hdrStatus() === 'unavailable'
+      ? `HDR unavailable: ${state.field.hdrReason() ?? 'unknown'}`
+      : undefined;
+    this.ctx?.onBackendDiagnostics?.({
+      breathFieldStatus: state.status === 'ready' ? 'on' : state.status === 'idle' ? 'off' : state.status,
+      breathFieldReason: state.status === 'unavailable' ? state.reason : hdrReason,
+    });
+  }
+
+  /** Disable the field for this device; the plain scene + overlay keep running. */
+  private markFieldUnavailable(reason: string, error?: unknown): void {
+    console.warn(`[WebGPU] breath field unavailable: ${reason}`, error ?? '');
+    if (this.fieldState.status === 'ready') {
+      try { this.fieldState.field.destroy(); } catch { /* device already gone */ }
+    }
+    this.fieldGeneration += 1;
+    this.fieldState = { status: 'unavailable', reason };
+    this.reportField();
+  }
+
+  /** Kick off the async field build once per device; frames keep rendering without it meanwhile. */
+  private ensureField(device: GPUDevice): void {
+    const ctx = this.ctx;
+    const args = this.loopArgs;
+    if (!ctx || !args || !this.format || this.fieldState.status !== 'idle') return;
+    const generation = ++this.fieldGeneration;
+    this.fieldState = { status: 'building' };
+    this.reportField();
+    createBreathField({
+      device,
+      uniformsLayout: args.layouts.uniforms,
+      fullscreenLayout: args.layouts.fullscreen,
+      swapFormat: this.format,
+      sceneModule: args.sceneModule,
+      sceneVertexEntry: ctx.vertexEntry,
+      sceneFragmentEntry: ctx.fragmentEntry,
+      loadSource: (path) => loadWgslSource(resolveAssetUrl(path)),
+    }).then(
+      (field) => {
+        if (generation !== this.fieldGeneration || this.cancelled) {
+          field.destroy();
+          return;
+        }
+        this.fieldState = { status: 'ready', field };
+        field.onHdrSettled = () => {
+          if (this.fieldState.status !== 'ready' || this.fieldState.field !== field) return;
+          this.reportField();
+          this.scheduleFrame();
+        };
+        this.reportField();
+        this.scheduleFrame();
+      },
+      (error: unknown) => {
+        if (generation !== this.fieldGeneration || this.cancelled) return;
+        const reason = error instanceof BreathFieldUnavailableError ? error.message : String(error);
+        this.markFieldUnavailable(reason, error);
+        this.scheduleFrame();
+      },
+    );
+  }
+
   private configureCanvas(force: boolean): boolean {
     const context = this.canvasContext;
     const device = this.device;
@@ -477,7 +591,7 @@ export class WebGPUBackend implements RendererBackend {
       return true;
     }
     try { context.unconfigure(); } catch { /* older implementations may reject redundant unconfigure */ }
-    const config = buildGpuCanvasConfiguration(device, format);
+    const config = buildGpuCanvasConfiguration(device, format, { copySrc: this.readbackEnabled });
     context.configure(config);
     this.configuredDevice = device;
     this.configuredWidth = canvas.width;
@@ -514,6 +628,13 @@ export class WebGPUBackend implements RendererBackend {
     const context = this.canvasContext;
     if (this.cancelled || !ctx || !device || !args || !context) return;
 
+    // GPU still busy with earlier frames: wait a vsync without sampling the
+    // governor, so the next delta carries the real (GPU-bound) frame time.
+    if (this.framesInFlight >= MAX_FRAMES_IN_FLIGHT) {
+      this.scheduleFrame();
+      return;
+    }
+
     const gate = beginFrame(ctx, this.lastFrameMs);
     this.lastFrameMs = gate?.now ?? null;
     if (gate?.governor.changed) this.resizeFn?.();
@@ -528,8 +649,10 @@ export class WebGPUBackend implements RendererBackend {
     }
 
     let view: GPUTextureView;
+    let texture: GPUTexture;
     try {
-      view = context.getCurrentTexture().createView();
+      texture = context.getCurrentTexture();
+      view = texture.createView();
       this.currentTextureFailed = false;
     } catch (error) {
       if (!this.currentTextureFailed) {
@@ -548,45 +671,110 @@ export class WebGPUBackend implements RendererBackend {
     }
 
     const values = ctx.getUniformSnapshot();
-    const currentTime = ((monotonicNow() - (this.startTime ?? monotonicNow())) / 1000) * ctx.getTimeScale();
+    const readback = this.pendingReadbacks[0];
+    const tier = {
+      overlayEnabled: readback?.request.overlay ?? gate.governor.overlayEnabled,
+      particleLevel: readback?.request.field?.particleLevel ?? gate.governor.particleLevel ?? 0,
+      bloomLevels: readback?.request.field?.bloomLevels ?? gate.governor.bloomLevels ?? 0,
+      hdrEnabled: readback?.request.field?.hdrEnabled ?? gate.governor.hdrEnabled ?? false,
+    };
+    const wantsField = tier.particleLevel > 0 || tier.hdrEnabled;
+    if (wantsField && this.fieldState.status === 'idle') this.ensureField(device);
+    // A capture that asked for the field waits until the build settles.
+    if (readback && wantsField && this.fieldState.status === 'building') {
+      this.scheduleFrame();
+      return;
+    }
+    if (readback) this.pendingReadbacks.shift();
+    const fieldState = this.fieldState;
+    const field = wantsField && fieldState.status === 'ready' ? fieldState.field : null;
+    if (field && tier.hdrEnabled) field.requestHdr();
+    // Same for a capture that asked for HDR: wait for the lazy HDR stage.
+    if (readback && field && tier.hdrEnabled && field.hdrStatus() === 'building') {
+      this.pendingReadbacks.unshift(readback);
+      this.scheduleFrame();
+      return;
+    }
+
+    const currentTime = readback
+      ? readback.request.time
+      : ((monotonicNow() - (this.startTime ?? monotonicNow())) / 1000) * ctx.getTimeScale();
     const uniforms = buildUniformBuffer({
       ...values,
       time: currentTime,
       resolution: { x: canvas.width, y: canvas.height },
     });
 
+    // Field frames run inside error scopes: a bad field pass disables the
+    // field instead of reaching the uncaptured-error → fatal banner path.
+    const scoped = field !== null;
+    const scopedGeneration = this.fieldGeneration;
+    let scopesOpen = false;
     try {
       device.queue.writeBuffer(args.uniformBuffer, 0, uniforms as GPUAllowSharedBufferSource);
       const timer = this.frameTimer;
       const sampling = timer?.beginFrame() ?? false;
-      const encoder = device.createCommandEncoder();
-      const timestampWrites = sampling ? timer?.sceneWrites() : undefined;
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: 'store' }],
-        ...(timestampWrites ? { timestampWrites } : {}),
-      });
-      pass.setPipeline(args.pipeline);
-      pass.setBindGroup(UNIFORMS_GROUP, args.bindGroup);
-      pass.draw(FULLSCREEN_VERTEX_COUNT);
-      pass.end();
-      if (gate.governor.overlayEnabled && args.overlayPipeline) {
-        const overlayWrites = sampling ? timer?.auxWrites() : undefined;
-        const overlayPass = encoder.beginRenderPass({
-          colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
-          ...(overlayWrites ? { timestampWrites: overlayWrites } : {}),
-        });
-        overlayPass.setPipeline(args.overlayPipeline);
-        overlayPass.setBindGroup(UNIFORMS_GROUP, args.bindGroup);
-        overlayPass.draw(FULLSCREEN_VERTEX_COUNT);
-        overlayPass.end();
+      const hdr = field !== null && tier.hdrEnabled && field.hdrStatus() === 'ready';
+      const frame: PassFrame = {
+        device,
+        uniforms: args.bindGroup,
+        tier,
+        width: canvas.width,
+        height: canvas.height,
+        dtSeconds: Math.min(Math.max(gate.deltaMs, 0) / 1000, MAX_SIM_DT_SECONDS),
+        frameIndex: this.frameIndex,
+        swapView: view,
+        swapFormat: this.format ?? texture.format,
+        sceneView: hdr && field ? field.hdrTargetView(canvas.width, canvas.height) : view,
+        sceneFormat: hdr ? HDR_FORMAT : (this.format ?? texture.format),
+        timestampWrites: (label) =>
+          !sampling || !timer ? undefined : label === 'scene' ? timer.sceneWrites() : timer.passWrites(label),
+      };
+      const passes: FramePass[] = field
+        ? [field.simPass, args.scenePass, field.particlesPass, field.bloomPass, field.tonemapPass, args.overlayPass]
+        : [args.scenePass, args.overlayPass];
+      if (scoped) {
+        device.pushErrorScope('out-of-memory');
+        device.pushErrorScope('validation');
+        scopesOpen = true;
       }
+      field?.writeFrame(frame);
+      const encoder = device.createCommandEncoder();
+      const encoded = encodePasses(encoder, frame, passes);
       if (sampling) timer?.resolve(encoder);
+      const capture = readback ? encodeReadback(device, encoder, texture) : null;
       device.queue.submit([encoder.finish()]);
+      this.frameIndex = (this.frameIndex + 1) >>> 0;
+      this.trackInFlight(device);
+      if (scopesOpen) {
+        scopesOpen = false;
+        const validation = device.popErrorScope();
+        const oom = device.popErrorScope();
+        void Promise.all([validation, oom]).then(([validationError, oomError]) => {
+          const error = validationError ?? oomError;
+          if (error && scopedGeneration === this.fieldGeneration && this.fieldState.status === 'ready') {
+            this.markFieldUnavailable(`field frame failed: ${error.message}`, error);
+          }
+        }, () => { /* device lost: handled by device.lost */ });
+      }
+      if (readback && capture) {
+        capture.finish(encoded).then(readback.resolve, readback.reject);
+      }
       // Fire-and-forget: the map resolves on a later task, never inside this rAF.
       if (sampling) timer?.readback();
       const gpuPassMs = timer?.lastGpuPassMs() ?? null;
-      if (gpuPassMs != null) ctx.governor.noteGpuPass(gate.now, gpuPassMs);
+      if (gpuPassMs != null) ctx.governor.noteGpuPass(gate.now, gpuPassMs, timer?.lastPassBreakdown() ?? undefined);
     } catch (error) {
+      if (scopesOpen) {
+        void device.popErrorScope().catch(() => undefined);
+        void device.popErrorScope().catch(() => undefined);
+      }
+      if (scoped) {
+        // Encoding a field pass threw synchronously: shed the field, keep the session.
+        this.markFieldUnavailable('field frame threw', error);
+        this.scheduleFrame();
+        return;
+      }
       this.fail('device', 'WebGPU render loop failed.', error);
       return;
     }
@@ -595,6 +783,8 @@ export class WebGPUBackend implements RendererBackend {
 
   stop(): void {
     this.cancelled = true;
+    for (const pending of this.pendingReadbacks.splice(0)) pending.reject(new Error('renderer stopped'));
+    if (this.readbackEnabled && typeof window !== 'undefined') delete window.__sacredBreathReadback;
     lendChoreDevice(null, 'renderer stopped');
     this.generation += 1;
     this.cancelFrame();
@@ -604,6 +794,7 @@ export class WebGPUBackend implements RendererBackend {
     this.ro = null;
     this.resizeFn = null;
     this.loopArgs = null;
+    this.destroyField();
     this.destroyFrameTimer();
     this.detachUncapturedError();
     try { this.canvasContext?.unconfigure(); } catch { /* optional cleanup */ }
