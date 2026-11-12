@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "coverage/**",
+    // CMake trees (gitignored) contain generated *.ts depfiles that ESLint cannot parse.
+    "native/**/build*/**",
     "next-env.d.ts",
   ]),
 ]);

@@ -6,55 +6,59 @@
 # Emscripten: these kernels use no libc, no STL and no JS runtime, so emsdk
 # would add a ~1GB toolchain download and a few KB of glue to buy nothing. The
 # ESM loader is hand-written in app/lib/gpuChores/wasm/choresModule.ts instead.
+# Every compile/link flag lives in CMakeLists.txt + cmake/ (the `wasm` preset),
+# shared with the host gate; this script only drives it.
 #
-# Requirements: clang 16+ and wasm-ld (Debian/Ubuntu: `clang lld`).
+# Safety: everything is built under a temp dir and moved into the repo only
+# after the whole pipeline succeeded, so a missing linker or a compile error can
+# never delete or truncate the committed artifact.
+#
+# Requirements: clang 16+, wasm-ld (Debian/Ubuntu: `apt install clang lld`),
+# cmake 3.25+, node. CI pins clang 18 — see README.md for the reproducibility note.
 # Regenerate with `npm run build:chores-wasm` after touching native/.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 out_dir="$repo/app/lib/gpuChores/wasm"
-wasm="$out_dir/chores.wasm"
 
 CLANG="${CLANG:-clang++}"
-command -v "$CLANG" >/dev/null || { echo "build-chores-wasm: $CLANG not found" >&2; exit 1; }
+export CLANG
 
+die() { echo "build-chores-wasm: $*" >&2; exit 1; }
+
+# --- preflight: fail early, with an install hint, before touching anything -----
+command -v "$CLANG" >/dev/null || die "$CLANG not found. Install clang 16+ (Debian/Ubuntu: sudo apt install clang lld; macOS: brew install llvm lld)."
+command -v cmake >/dev/null   || die "cmake not found (need 3.25+). Debian/Ubuntu: sudo apt install cmake."
+command -v node >/dev/null    || die "node not found."
+
+clang_major="$("$CLANG" --version | sed -n 's/.*clang version \([0-9][0-9]*\)\..*/\1/p' | head -n1)"
+[[ -n "$clang_major" && "$clang_major" -ge 16 ]] || die "need clang 16+, found: $("$CLANG" --version | head -n1)"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# `command -v wasm-ld` is not a reliable probe (distros ship it as wasm-ld-18
+# and clang finds it next to itself), so ask the real linker driver: link an
+# empty module for the wasm32 target and see whether it works.
+echo 'extern "C" void probe() {}' > "$tmp/probe.cpp"
+if ! "$CLANG" --target=wasm32 -nostdlib -ffreestanding -Wl,--no-entry -Wl,--export=probe \
+    -o "$tmp/probe.wasm" "$tmp/probe.cpp" 2> "$tmp/probe.log"; then
+  cat "$tmp/probe.log" >&2
+  die "cannot link for wasm32 (wasm-ld missing?). Debian/Ubuntu: sudo apt install lld; macOS: brew install lld. The committed chores.wasm was NOT touched."
+fi
+
+# --- build into $tmp ---------------------------------------------------------
+cmake --preset wasm -S "$here" -B "$tmp/build" >/dev/null || die "cmake configure failed; committed artifacts untouched."
+cmake --build "$tmp/build" || die "wasm build failed; committed artifacts untouched."
+[[ -s "$tmp/build/chores.wasm" ]] || die "build produced no chores.wasm; committed artifacts untouched."
+
+node "$here/scripts/emit-binary-module.mjs" "$tmp/build/chores.wasm" "$tmp/choresWasmBinary.ts" \
+  || die "emitting the base64 module failed; committed artifacts untouched."
+
+# --- publish: both files exist and are complete, only now touch the repo ------
 mkdir -p "$out_dir"
+mv -f "$tmp/build/chores.wasm" "$out_dir/chores.wasm.new" && mv -f "$out_dir/chores.wasm.new" "$out_dir/chores.wasm"
+mv -f "$tmp/choresWasmBinary.ts" "$out_dir/choresWasmBinary.ts.new" && mv -f "$out_dir/choresWasmBinary.ts.new" "$out_dir/choresWasmBinary.ts"
 
-# --export-dynamic is not used on purpose: every symbol the loader may call is
-# listed here, so an accidental export cannot become part of the ABI.
-exports=(
-  chores_abi_version
-  chores_has_simd
-  chores_arena_alloc
-  chores_arena_reset
-  chores_arena_used
-  chores_luma_histogram_bt709
-  chores_downsample_2d
-  chores_lut_u8_map
-)
-export_flags=()
-for symbol in "${exports[@]}"; do export_flags+=("-Wl,--export=$symbol"); done
-
-"$CLANG" \
-  --target=wasm32 \
-  -std=c++20 \
-  -O3 -flto \
-  -msimd128 \
-  -nostdlib -ffreestanding \
-  -fno-exceptions -fno-rtti \
-  -fvisibility=hidden \
-  -Wall -Wextra -Wpedantic -Werror \
-  -I "$here/src" \
-  -Wl,--no-entry \
-  -Wl,--strip-all \
-  -Wl,--export-memory \
-  -Wl,--initial-memory=1048576 \
-  -Wl,--max-memory=268435456 \
-  "${export_flags[@]}" \
-  -o "$wasm" \
-  "$here/src/histogram.cpp" "$here/src/downsample.cpp" "$here/src/lut.cpp" "$here/src/runtime.cpp"
-
-node "$here/scripts/emit-binary-module.mjs" "$wasm" "$out_dir/choresWasmBinary.ts"
-
-echo "build-chores-wasm: wrote $(wc -c <"$wasm") bytes to ${wasm#"$repo"/}"
+echo "build-chores-wasm: wrote $(wc -c <"$out_dir/chores.wasm") bytes to ${out_dir#"$repo"/}/chores.wasm (clang $clang_major)"

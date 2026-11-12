@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererBackendContext } from '../types';
 import { READBACK_INTERVAL_FRAMES } from '../gpuTimestamps';
@@ -77,7 +78,7 @@ function makeTimestampDevice() {
   });
   const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() };
   const encoder = {
-    beginRenderPass: vi.fn((_descriptor: GPURenderPassDescriptor) => pass),
+    beginRenderPass: vi.fn<(descriptor: GPURenderPassDescriptor) => typeof pass>(() => pass),
     resolveQuerySet: vi.fn(),
     copyBufferToBuffer: vi.fn(),
     finish: vi.fn(() => ({})),
@@ -91,7 +92,7 @@ function makeFrameDevice(...args: Parameters<typeof makeDevice>) {
   const made = makeDevice(...args);
   const passes: Array<{ setPipeline: ReturnType<typeof vi.fn>; setBindGroup: ReturnType<typeof vi.fn>; draw: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }> = [];
   const encoder = {
-    beginRenderPass: vi.fn((_descriptor: GPURenderPassDescriptor) => {
+    beginRenderPass: vi.fn<(descriptor: GPURenderPassDescriptor) => (typeof passes)[number]>(() => {
       const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() };
       passes.push(pass);
       return pass;

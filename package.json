@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "npx serve@latest out -l 3000",
     "preview": "npx serve@latest out -l 3000",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings 0",
     "smoke:files": "node scripts/smoke-export.mjs",
     "smoke:assets": "node scripts/smoke-assets.mjs",
     "media:instructor": "node assets/video/encode.mjs",
@@ -19,7 +19,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:native": "cmake -S native/gpu-chores-wasm -B native/gpu-chores-wasm/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build native/gpu-chores-wasm/build && ./native/gpu-chores-wasm/build/chores_test",
+    "test:unit": "vitest run --project unit-node",
+    "test:ui": "vitest run --project ui-jsdom",
+    "test:native": "cd native/gpu-chores-wasm && cmake --preset host && cmake --build --preset host && ctest --preset host",
+    "test:native:asan": "cd native/gpu-chores-wasm && cmake --preset host-asan && cmake --build --preset host-asan && ctest --preset host-asan",
+    "test:native:tidy": "cd native/gpu-chores-wasm && cmake --preset host-tidy && cmake --build --preset host-tidy && ctest --preset host-tidy",
     "build:chores-wasm": "bash native/gpu-chores-wasm/scripts/build-wasm.sh",
     "validate:shaders": "node --import tsx scripts/validate-shaders.ts",
     "validate:content": "node --import tsx scripts/validate-content.ts",
@@ -48,7 +52,7 @@
     "jsdom": "^31.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "7.0.2",
+    "typescript": "~6.0.3",
     "vitest": "^5.0.0"
   }
 }

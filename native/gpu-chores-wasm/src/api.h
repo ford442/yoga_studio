@@ -21,6 +21,7 @@ extern "C" {
 #define CHORES_HISTOGRAM_BINS 256u
 #define CHORES_LUT_ENTRIES 256u
 
+// NOLINTNEXTLINE(performance-enum-size): C ABI type; its width is part of the ABI, not a tuning knob.
 typedef enum chores_status_t {
   CHORES_OK = 0,
   CHORES_ERR_NULL = 1,

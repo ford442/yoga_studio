@@ -35,6 +35,7 @@ constexpr double kWeightB = 0.0722;
 LumaTables g_tables{};
 bool g_tables_ready = false;
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic): table fill, indices are loop-bounded below 256.
 const LumaTables& Tables() {
   if (!g_tables_ready) {
     for (int i = 0; i < 256; ++i) {
@@ -46,11 +47,17 @@ const LumaTables& Tables() {
   }
   return g_tables;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
 /** `Math.round` semantics: half rounds up, then clamp into 0..255. */
 inline uint32_t BinFor(double luma) {
   // Luma is a non-negative weighted sum of 0..255 channels, so the plain
   // +0.5 truncation is exactly Math.round here (no negative-half case).
+  // Deliberate: for luma >= 0, trunc(luma + 0.5) is what JS Math.round yields,
+  // and lround() would differ on exact ties. Checked exhaustively over all 2^24
+  // RGB triples against Math.round with this very summation order: zero
+  // disagreements.
+  // NOLINTNEXTLINE(bugprone-incorrect-roundings)
   const int32_t bin = static_cast<int32_t>(luma + 0.5);
   if (bin < 0) return 0u;
   if (bin > static_cast<int32_t>(CHORES_HISTOGRAM_BINS) - 1) return CHORES_HISTOGRAM_BINS - 1u;
@@ -59,6 +66,10 @@ inline uint32_t BinFor(double luma) {
 
 }  // namespace
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic):
+// the audited pointer surface. `rgba` is read at i*4+{0..14} only for i+4 <=
+// pixel_count (quad loop) or i < pixel_count (tail); channel bytes index the
+// 256-entry tables (u8 can never exceed 255) and BinFor() clamps to 0..255.
 extern "C" chores_status_t chores_luma_histogram_bt709(const uint8_t* rgba, uint32_t pixel_count,
                                                        uint32_t* bins) {
   if (rgba == nullptr || bins == nullptr) return CHORES_ERR_NULL;
@@ -95,3 +106,4 @@ extern "C" chores_status_t chores_luma_histogram_bt709(const uint8_t* rgba, uint
   }
   return CHORES_OK;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-pointer-arithmetic)

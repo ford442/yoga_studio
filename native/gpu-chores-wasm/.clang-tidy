@@ -1,0 +1,12 @@
+# Run from CMake with `cmake --preset host-tidy` (CI). Scope: the kernels in src/.
+# The raw-pointer ABI is the point of this tree, so pointer-arithmetic findings
+# are expected; each one is either fixed or carries a NOLINT with the reason.
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  cppcoreguidelines-pro-bounds-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/src/.*'

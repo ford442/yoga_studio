@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getChoreBreadcrumbs, getChoresStatus, resetChoreBreadcrumbs } from '../breadcrumbs';
 import { GPU_BREAK_EVEN_PIXELS } from '../policy';

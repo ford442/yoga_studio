@@ -15,27 +15,62 @@ src/histogram.cpp  BT.709 luma, 256 bins
 src/downsample.cpp area-average box filter (wasm128 / SSE2)
 src/lut.cpp        256-entry RGB map, alpha passthrough
 src/runtime.cpp    ABI probes + the wasm bump arena
-testhost/          host tests against a port of cpuJobs.ts
+testhost/          host tests + fuzz corpus against a port of cpuJobs.ts
+cmake/, CMakePresets.json   shared flags; presets host / host-asan / host-tidy / wasm
 ```
 
 ## Build and test
 
 ```sh
-npm run test:native        # configure, build, run the host C++ gate
-npm run build:chores-wasm  # regenerate app/lib/gpuChores/wasm/chores.wasm
+npm run test:native        # host build + tests (CMake preset `host`)
+npm run test:native:asan   # same under AddressSanitizer + UBSan (`host-asan`)
+npm run test:native:tidy   # same with clang-tidy as errors (`host-tidy`)
+npm run build:chores-wasm  # regenerate app/lib/gpuChores/wasm/chores.wasm (`wasm`)
 ```
 
-The host gate needs only a C++20 compiler; the wasm build needs `clang` 16+ and
-`wasm-ld` (`apt install clang lld`). Regenerate the wasm and commit it whenever
-anything under `src/` changes — a vitest case fails if the committed `.wasm` and
-its base64 module disagree.
+All four share their flags through `CMakePresets.json` and `cmake/`:
+`-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wdouble-promotion -Werror` on
+the kernels, `-fno-exceptions -fno-rtti`, so a warning the wasm build would
+reject fails the fast host gate too. The host gate needs a C++20 compiler and
+CMake 3.25+; the asan/tidy/wasm presets need `clang`, `clang-tidy` and `lld`
+(`apt install clang lld clang-tidy cmake`).
+
+**`build:chores-wasm` is safe to fail.** It preflights the toolchain (including
+a real wasm32 link of an empty module, because `wasm-ld` is shipped under
+different names), builds into a temp directory, and only then replaces the
+committed files. A missing linker or a compile error leaves `chores.wasm` and
+`choresWasmBinary.ts` untouched.
+
+**Committed artifact = reproducible artifact.** Regenerate and commit whenever
+anything under `native/` changes. CI (`native-kernels` job) rebuilds on
+`ubuntu-24.04` with clang 18 and fails on any difference, so use clang 18 when
+you regenerate (Ubuntu 24.04's `clang-18` 18.1.3 produces the committed bytes;
+`-flto --strip-all` output is not guaranteed stable across clang majors). If a
+toolchain bump ever changes the bytes without changing behaviour, bump the pin
+in `.github/workflows/ci.yml` and this paragraph in the same commit as the
+regenerated module.
+
+## Test layers
+
+- `testhost/kernels_test.cpp` — hand-written cases plus a **seeded differential
+  fuzz**: 400 cases (odd/prime sizes, 1-pixel images, up/down/identity scaling,
+  tie-heavy and saturated content, misaligned input pointers, in-place LUT,
+  sentinel-fenced outputs) compared with `testhost/reference.h`. Buffers are
+  exact-size heap allocations so ASan red zones sit right after the last byte.
+- `testhost/corpus.h` ↔ `app/lib/gpuChores/__tests__/corpus.ts` — the corpus
+  generator exists in both languages and both assert the same digest, so
+  `app/lib/gpuChores/__tests__/wasmFuzz.test.ts` runs the *identical* inputs
+  through the shipped `.wasm` and compares with the JS tier.
+- `.clang-tidy` — `bugprone-*`, `performance-*`, `cppcoreguidelines-pro-bounds-*`.
+  The raw-pointer ABI is the point of this tree, so the audited kernel loops carry
+  `NOLINTBEGIN/END` blocks that state the bounds argument; anything new outside
+  them is an error.
 
 ## clangd / compile_commands.json
 
 ```sh
-cmake -S native/gpu-chores-wasm -B native/gpu-chores-wasm/build \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-ln -sf native/gpu-chores-wasm/build/compile_commands.json compile_commands.json
+cd native/gpu-chores-wasm && cmake --preset host
+cd ../.. && ln -sf native/gpu-chores-wasm/build/host/compile_commands.json compile_commands.json
 ```
 
 Both the build tree and the symlink are gitignored. Do not commit a copy: it

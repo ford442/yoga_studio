@@ -54,6 +54,7 @@ inline u32x4 add_u32x4(u32x4 a, u32x4 b) { return _mm_add_epi32(a, b); }
 inline uint32_t lane_u32x4(u32x4 v, int lane) {
   alignas(16) uint32_t out[4];
   _mm_store_si128(reinterpret_cast<__m128i*>(out), v);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index): host SSE2 path; callers pass lane 0..3.
   return out[lane];
 }
 }  // namespace chores
@@ -71,6 +72,7 @@ inline u32x4 load_rgba_u32x4(const uint8_t* p) {
 inline u32x4 add_u32x4(u32x4 a, u32x4 b) {
   return u32x4{{a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3]}};
 }
+// NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index): scalar fallback; callers pass lane 0..3.
 inline uint32_t lane_u32x4(u32x4 v, int lane) { return v.v[lane]; }
 }  // namespace chores
 #endif
