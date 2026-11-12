@@ -13,6 +13,7 @@ import { resizeCanvasForDpr } from './canvasUtils';
 import { attachVisibilityPause, beginFrame } from './frameGate';
 import { lendChoreDevice } from './gpuChores/choreDevice';
 import { buildGpuCanvasConfiguration, buildGpuDeviceDescriptor, getWebGPUAdapterOptions } from './gpuDeviceContract';
+import { encodeReadback, isReadbackEnabled, readbackShaderOverride, type ReadbackRequest, type ReadbackResult } from './gpuReadback';
 import { createGpuFrameTimer, supportsTimestampQuery, type GpuFrameTimer } from './gpuTimestamps';
 import { buildOverlayWgsl, OVERLAY_BLEND, OVERLAY_FRAGMENT_ENTRY, OVERLAY_VERTEX_ENTRY } from './overlayWgsl';
 import { createFramePipelineLayouts, FULLSCREEN_VERTEX_COUNT, UNIFORMS_BINDING, UNIFORMS_GROUP } from './pipelineLayout';
@@ -148,6 +149,12 @@ export class WebGPUBackend implements RendererBackend {
   private probeCanvasConfig: RendererCanvasConfig | undefined;
   private uncapturedListener: ((event: GPUUncapturedErrorEvent) => void) | null = null;
   private fatal = false;
+  private readbackEnabled = false;
+  private pendingReadbacks: Array<{
+    request: ReadbackRequest;
+    resolve: (result: ReadbackResult) => void;
+    reject: (error: unknown) => void;
+  }> = [];
 
   async start(ctx: RendererBackendContext): Promise<void> {
     this.ctx = ctx;
@@ -155,6 +162,13 @@ export class WebGPUBackend implements RendererBackend {
     this.fatal = false;
     this.recoveryAttempted = false;
     this.startTime = monotonicNow();
+    this.readbackEnabled = isReadbackEnabled();
+    if (this.readbackEnabled && typeof window !== 'undefined') {
+      window.__sacredBreathReadback = (request) => new Promise((resolve, reject) => {
+        this.pendingReadbacks.push({ request: { time: request?.time ?? 0, overlay: request?.overlay }, resolve, reject });
+        this.scheduleFrame();
+      });
+    }
     this.canvasContext = ctx.canvas.getContext('webgpu');
     if (!this.canvasContext) {
       this.fail('device', 'Unable to create a WebGPU canvas context.');
@@ -290,9 +304,10 @@ export class WebGPUBackend implements RendererBackend {
         : 'unsupported',
     });
 
+    const shaderPath = readbackShaderOverride() ?? ctx.shaderPath;
     let shaderSource: string;
     try {
-      shaderSource = await loadWgslSource(resolveAssetUrl(ctx.shaderPath));
+      shaderSource = await loadWgslSource(resolveAssetUrl(shaderPath));
     } catch (error) {
       this.discardDevice(device);
       throw error;
@@ -301,7 +316,7 @@ export class WebGPUBackend implements RendererBackend {
     try {
       shaderModule = await createWithValidationScope(device, 'module', async () => {
         const created = device.createShaderModule({
-          label: `Sacred Breath shader: ${ctx.shaderPath}`,
+          label: `Sacred Breath shader: ${shaderPath}`,
           code: shaderSource,
         }) as ShaderModuleWithOptionalInfo;
         let messages: RendererCompilationMessage[] = [];
@@ -477,7 +492,7 @@ export class WebGPUBackend implements RendererBackend {
       return true;
     }
     try { context.unconfigure(); } catch { /* older implementations may reject redundant unconfigure */ }
-    const config = buildGpuCanvasConfiguration(device, format);
+    const config = buildGpuCanvasConfiguration(device, format, { copySrc: this.readbackEnabled });
     context.configure(config);
     this.configuredDevice = device;
     this.configuredWidth = canvas.width;
@@ -528,8 +543,10 @@ export class WebGPUBackend implements RendererBackend {
     }
 
     let view: GPUTextureView;
+    let texture: GPUTexture;
     try {
-      view = context.getCurrentTexture().createView();
+      texture = context.getCurrentTexture();
+      view = texture.createView();
       this.currentTextureFailed = false;
     } catch (error) {
       if (!this.currentTextureFailed) {
@@ -548,7 +565,10 @@ export class WebGPUBackend implements RendererBackend {
     }
 
     const values = ctx.getUniformSnapshot();
-    const currentTime = ((monotonicNow() - (this.startTime ?? monotonicNow())) / 1000) * ctx.getTimeScale();
+    const readback = this.pendingReadbacks.shift();
+    const currentTime = readback
+      ? readback.request.time
+      : ((monotonicNow() - (this.startTime ?? monotonicNow())) / 1000) * ctx.getTimeScale();
     const uniforms = buildUniformBuffer({
       ...values,
       time: currentTime,
@@ -569,7 +589,8 @@ export class WebGPUBackend implements RendererBackend {
       pass.setBindGroup(UNIFORMS_GROUP, args.bindGroup);
       pass.draw(FULLSCREEN_VERTEX_COUNT);
       pass.end();
-      if (gate.governor.overlayEnabled && args.overlayPipeline) {
+      const overlayOn = readback?.request.overlay ?? gate.governor.overlayEnabled;
+      if (overlayOn && args.overlayPipeline) {
         const overlayWrites = sampling ? timer?.auxWrites() : undefined;
         const overlayPass = encoder.beginRenderPass({
           colorAttachments: [{ view, loadOp: 'load', storeOp: 'store' }],
@@ -581,7 +602,12 @@ export class WebGPUBackend implements RendererBackend {
         overlayPass.end();
       }
       if (sampling) timer?.resolve(encoder);
+      const capture = readback ? encodeReadback(device, encoder, texture) : null;
       device.queue.submit([encoder.finish()]);
+      if (readback && capture) {
+        const passes = ['scene', ...(overlayOn && args.overlayPipeline ? ['overlay'] : [])];
+        capture.finish(passes).then(readback.resolve, readback.reject);
+      }
       // Fire-and-forget: the map resolves on a later task, never inside this rAF.
       if (sampling) timer?.readback();
       const gpuPassMs = timer?.lastGpuPassMs() ?? null;
@@ -595,6 +621,8 @@ export class WebGPUBackend implements RendererBackend {
 
   stop(): void {
     this.cancelled = true;
+    for (const pending of this.pendingReadbacks.splice(0)) pending.reject(new Error('renderer stopped'));
+    if (this.readbackEnabled && typeof window !== 'undefined') delete window.__sacredBreathReadback;
     lendChoreDevice(null, 'renderer stopped');
     this.generation += 1;
     this.cancelFrame();
