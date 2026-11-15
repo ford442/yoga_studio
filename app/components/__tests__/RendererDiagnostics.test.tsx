@@ -16,6 +16,8 @@ const base = (patch: Partial<RendererDiagnosticsState>): RendererDiagnosticsStat
   gpuPassP75Ms: null,
   choreLastMs: null,
   gpuTimestamps: 'unsupported',
+  gpuPassBreakdown: null,
+  breathField: { status: 'off', particleLevel: 0, bloomLevels: 0, hdrEnabled: false },
   governorBound: null,
   choresPaused: false,
   instructorVideoEnabled: true,

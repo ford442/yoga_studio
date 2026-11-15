@@ -2,17 +2,20 @@
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { probeCapabilities, mountRenderer, pickInitialMode } from '../renderer/selectBackend';
-import { resolveMaxDpr, resolveQualityPreset } from '../renderer/quality';
+import { resolveFieldCeiling, resolveMaxDpr, resolveQualityPreset } from '../renderer/quality';
 import {
   createFrameGovernor,
   parseGovernorTier,
   type FrameGovernor,
   type GovernorSnapshot,
-  type GovernorTier,
+  type FieldTier,
+  type GovernorTierInput,
 } from '../renderer/frameGovernor';
 import { getChoresStatus, setChoresPaused } from '../lib/gpuChores';
 import type { AnimatedUniformValues } from '../renderer/types';
 import {
+  type BreathFieldMode,
+  type BreathFieldStatus,
   type GpuFailureStage,
   type RendererMode,
   type RendererDiagnosticsState,
@@ -39,6 +42,8 @@ interface ShaderCanvasProps {
   qualityPreset?: number; // 0=mobile, 1=high, undefined=auto-detect
   maxDevicePixelRatio?: number; // caps render resolution while preserving CSS size
   overlayEnabled?: boolean; // geometry overlay pass, drawn by the active backend on its own canvas
+  /** WebGPU breath field (GPU particles, optional HDR + bloom). Ignored by WebGL2/static. */
+  breathField?: BreathFieldMode;
   effectivePerformanceMode: PerformanceMode;
   className?: string;
   shaderPath?: string;
@@ -90,10 +95,12 @@ const getServerHydrating = () => true;
 const toBaseTier = (
   qualityPreset: number,
   overlayEnabled: boolean,
-): GovernorTier => ({
+  field: FieldTier,
+): GovernorTierInput => ({
   resolutionScale: 1,
   qualityPreset: qualityPreset >= 0.5 ? 1 : 0,
   overlayEnabled,
+  ...field,
 });
 
 /** Thin React shell around the renderer backends: owns refs, prop plumbing, and diagnostics reporting. */
@@ -115,6 +122,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
   qualityPreset,
   maxDevicePixelRatio,
   overlayEnabled = true,
+  breathField = 'off',
   effectivePerformanceMode,
   className = '',
   shaderPath = 'sacred-lotus-final.wgsl',
@@ -140,6 +148,10 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     overlayEnabled: true,
     p75FrameMs: null,
     p75GpuMs: null,
+    gpuPassBreakdown: null,
+    particleLevel: 0,
+    bloomLevels: 0,
+    hdrEnabled: false,
     lastChoreMs: null,
     bound: null,
     choresPaused: false,
@@ -155,6 +167,16 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     : maxDevicePixelRatio;
   const effectiveOverlayEnabled = reducedMotion ? false : overlayEnabled;
   const resolvedMaxDpr = resolveMaxDpr(effectiveQualityPreset, effectiveMaxDpr);
+  const [fieldStatus, setFieldStatus] = useState<{ status: BreathFieldStatus; reason?: string }>({ status: 'off' });
+  const fieldCeiling = resolveFieldCeiling({
+    mode: breathField,
+    rendererMode,
+    qualityPreset: effectiveQualityPreset,
+    reducedMotion: Boolean(reducedMotion),
+    performanceMode: effectivePerformanceMode,
+    unavailable: fieldStatus.status === 'unavailable',
+  });
+  const { particleLevel: fieldParticles, bloomLevels: fieldBloom, hdrEnabled: fieldHdr } = fieldCeiling;
 
   const pauseRef = useRef(pauseRendering);
   const onGovernorTiersChangeRef = useRef(onGovernorTierChange);
@@ -172,12 +194,13 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     effectiveOverlayEnabled,
     reducedMotion: Boolean(reducedMotion),
     pauseRendering,
+    fieldStatus,
   });
   const governorRef = useRef<FrameGovernor | null>(null);
   const publishDiagnosticsRef = useRef<() => void>(() => {});
   if (governorRef.current == null) {
     governorRef.current = createFrameGovernor({
-      base: toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled),
+      base: toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled, fieldCeiling),
       initial: parseGovernorTier(persistedGovernorTier),
     });
   }
@@ -204,6 +227,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       effectiveOverlayEnabled,
       reducedMotion: Boolean(reducedMotion),
       pauseRendering,
+      fieldStatus,
     };
   }, [
     rendererMode,
@@ -214,12 +238,17 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
     effectiveOverlayEnabled,
     reducedMotion,
     pauseRendering,
+    fieldStatus,
   ]);
 
   // Keep the governor ceiling in sync with technique / performance-mode props.
   useEffect(() => {
-    governorRef.current?.setBase(toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled));
-  }, [effectiveQualityPreset, effectiveOverlayEnabled]);
+    governorRef.current?.setBase(toBaseTier(effectiveQualityPreset, effectiveOverlayEnabled, {
+      particleLevel: fieldParticles,
+      bloomLevels: fieldBloom,
+      hdrEnabled: fieldHdr,
+    }));
+  }, [effectiveQualityPreset, effectiveOverlayEnabled, fieldParticles, fieldBloom, fieldHdr]);
 
   // Publish diagnostics + data-attribute snapshot on an interval (external timer callback).
   useEffect(() => {
@@ -246,6 +275,14 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
         resolutionScale: snap.resolutionScale,
         frameTimeP75Ms: snap.p75FrameMs,
         gpuPassP75Ms: snap.p75GpuMs,
+        gpuPassBreakdown: snap.gpuPassBreakdown,
+        breathField: {
+          status: meta.fieldStatus.status,
+          particleLevel: snap.particleLevel,
+          bloomLevels: snap.bloomLevels,
+          hdrEnabled: snap.hdrEnabled,
+          ...(meta.fieldStatus.reason ? { reason: meta.fieldStatus.reason } : {}),
+        },
         choreLastMs: snap.lastChoreMs,
         gpuTimestamps: backendDiagnosticsRef.current.gpuTimestamps ?? 'unsupported',
         governorBound: snap.bound,
@@ -346,6 +383,9 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
           resolutionScale: snap.resolutionScale,
           qualityPreset: snap.qualityPreset,
           overlayEnabled: snap.overlayEnabled,
+          particleLevel: snap.particleLevel,
+          bloomLevels: snap.bloomLevels,
+          hdrEnabled: snap.hdrEnabled,
         });
         setGovernorSnap(snap);
       },
@@ -355,6 +395,11 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
           ...next,
         };
         if ('gpuFailureStage' in next) setGpuFailureStage(next.gpuFailureStage);
+        if (next.breathFieldStatus) {
+          const status = next.breathFieldStatus;
+          const reason = next.breathFieldReason;
+          setFieldStatus((prev) => (prev.status === status && prev.reason === reason ? prev : { status, reason }));
+        }
         if (next.gpuFailureStage || next.webgpuProbe) publishDiagnosticsRef.current();
       },
       onFallback: (nextMode, reason) => {
@@ -382,6 +427,7 @@ const ShaderCanvas: React.FC<ShaderCanvasProps> = ({
       data-dpr-cap={hydrating ? undefined : resolvedMaxDpr}
       data-resolution-scale={governorSnap.resolutionScale}
       data-overlay={governorSnap.overlayEnabled && effectiveOverlayEnabled}
+      data-breath-field={hydrating ? undefined : `${fieldStatus.status}:p${governorSnap.particleLevel}:b${governorSnap.bloomLevels}:${governorSnap.hdrEnabled ? 'hdr' : 'sdr'}`}
       data-reduced-motion={Boolean(reducedMotion)}
     >
       <canvas

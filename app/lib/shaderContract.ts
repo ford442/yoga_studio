@@ -126,3 +126,121 @@ export const WEBGL_OVERLAY_UNIFORM_MAP: Record<string, string> = {
   theme: 'uTheme',
   resolution: 'uResolution',
 };
+
+// ---------------------------------------------------------------------------
+// Group 1: breath-field storage / post structs.
+//
+// Group 0 stays the 72-byte `Uniforms` above. Group 1 belongs to whichever
+// pass is bound (particle sim, particle draw, bloom/tonemap); the structs that
+// cross the CPU/GPU boundary or are shared between modules are declared here
+// by name and type only. Offsets, alignment and size are *derived* with the
+// WGSL layout rules, never written by hand, and `npm run validate:shaders`
+// checks that every field module declares them identically.
+// ---------------------------------------------------------------------------
+
+export type StorageFieldType = 'f32' | 'u32' | 'atomic<u32>' | 'vec2<f32>' | 'vec4<f32>';
+
+export interface StorageStructField {
+  name: string;
+  type: StorageFieldType;
+  description?: string;
+}
+
+export interface StructLayout {
+  fields: Array<StorageStructField & { offset: number; size: number; align: number }>;
+  /** WGSL `AlignOf(S)`: max member alignment. */
+  align: number;
+  /** WGSL `SizeOf(S)`: last member end rounded up to `align` — the array stride. */
+  size: number;
+}
+
+const STORAGE_TYPE_LAYOUT: Record<StorageFieldType, { size: number; align: number }> = {
+  f32: { size: 4, align: 4 },
+  u32: { size: 4, align: 4 },
+  'atomic<u32>': { size: 4, align: 4 },
+  'vec2<f32>': { size: 8, align: 8 },
+  'vec4<f32>': { size: 16, align: 16 },
+};
+
+const roundUp = (value: number, align: number): number => Math.ceil(value / align) * align;
+
+/** Lay out a struct with WGSL's default (non-`@size`/`@align`) rules. */
+export function layoutStruct(fields: readonly StorageStructField[]): StructLayout {
+  let offset = 0;
+  let align = 1;
+  const laidOut = fields.map((field) => {
+    const { size, align: fieldAlign } = STORAGE_TYPE_LAYOUT[field.type];
+    offset = roundUp(offset, fieldAlign);
+    const entry = { ...field, offset, size, align: fieldAlign };
+    offset += size;
+    align = Math.max(align, fieldAlign);
+    return entry;
+  });
+  return { fields: laidOut, align, size: roundUp(offset, align) };
+}
+
+/** One particle of the breath field (storage, ping-ponged A→B every frame). */
+export const PARTICLE_FIELDS = [
+  { name: 'pos', type: 'vec2<f32>', description: 'position in pointer space: x ∈ ±aspect/2, y ∈ ±0.5, y down' },
+  { name: 'vel', type: 'vec2<f32>', description: 'velocity, pointer-space units per second' },
+  { name: 'life', type: 'f32', description: '1 at spawn → 0 at respawn' },
+  { name: 'seed', type: 'u32', description: 'per-particle hash seed, rewritten on respawn' },
+] as const satisfies readonly StorageStructField[];
+
+/** Per-frame sim parameters (uniform, group 1 binding 0 of the sim pass). */
+export const FIELD_PARAMS_FIELDS = [
+  { name: 'dt', type: 'f32', description: 'clamped frame delta, seconds' },
+  { name: 'count', type: 'u32', description: 'live particle count for this governor tier' },
+  { name: 'frame', type: 'u32', description: 'frame counter for respawn hashing' },
+  { name: 'pointerRadius', type: 'f32', description: 'radius of pointer/touch influence, pointer-space units' },
+] as const satisfies readonly StorageStructField[];
+
+/** `drawIndirect` arguments, written by the cull dispatch. */
+export const DRAW_ARGS_FIELDS = [
+  { name: 'vertexCount', type: 'u32' },
+  { name: 'instanceCount', type: 'atomic<u32>' },
+  { name: 'firstVertex', type: 'u32' },
+  { name: 'firstInstance', type: 'u32' },
+] as const satisfies readonly StorageStructField[];
+
+/** WGSL for a contract struct (field modules keep a hand-written copy the validator compares). */
+export const buildStructWgsl = (name: string, fields: readonly StorageStructField[]): string =>
+  `struct ${name} {\n${fields.map((field) => `    ${field.name}: ${field.type},`).join('\n')}\n}\n`;
+
+/** Every group-1 struct the validator holds field modules to, by WGSL name. */
+export const GROUP1_STRUCTS = {
+  Particle: PARTICLE_FIELDS,
+  FieldParams: FIELD_PARAMS_FIELDS,
+  DrawArgs: DRAW_ARGS_FIELDS,
+} as const satisfies Record<string, readonly StorageStructField[]>;
+
+export const PARTICLE_LAYOUT = layoutStruct(PARTICLE_FIELDS);
+export const FIELD_PARAMS_LAYOUT = layoutStruct(FIELD_PARAMS_FIELDS);
+export const DRAW_ARGS_LAYOUT = layoutStruct(DRAW_ARGS_FIELDS);
+
+/** Bytes per particle; the array stride of `array<Particle>`. */
+export const PARTICLE_STRIDE = PARTICLE_LAYOUT.size;
+/** Vertices per particle billboard (two triangles, no vertex buffer). */
+export const PARTICLE_VERTEX_COUNT = 6;
+
+/** Pack `FieldParams` for `queue.writeBuffer`, honouring the derived offsets. */
+export type FieldParamsValues = Record<(typeof FIELD_PARAMS_FIELDS)[number]['name'], number>;
+
+export function buildFieldParams(values: FieldParamsValues): ArrayBuffer {
+  const buffer = new ArrayBuffer(FIELD_PARAMS_LAYOUT.size);
+  const view = new DataView(buffer);
+  for (const field of FIELD_PARAMS_LAYOUT.fields) {
+    const value = values[field.name as keyof FieldParamsValues];
+    if (field.type === 'u32') view.setUint32(field.offset, value >>> 0, true);
+    else view.setFloat32(field.offset, value, true);
+  }
+  return buffer;
+}
+
+/** Initial `DrawArgs`: six vertices per billboard, zero instances until the cull pass counts them. */
+export function buildDrawArgsReset(): Uint32Array {
+  const words = new Uint32Array(DRAW_ARGS_LAYOUT.size / 4);
+  const vertexCount = DRAW_ARGS_LAYOUT.fields.find((field) => field.name === 'vertexCount');
+  if (vertexCount) words[vertexCount.offset / 4] = PARTICLE_VERTEX_COUNT;
+  return words;
+}

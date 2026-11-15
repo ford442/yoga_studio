@@ -4,7 +4,7 @@ import React, { useRef, useState } from 'react';
 import ShaderCanvas from '../../components/ShaderCanvas';
 import { monotonicNow } from '../../lib/monotonicClock';
 import { useRippleAudio } from '../../hooks/useRippleAudio';
-import type { PerformanceMode, RendererDiagnosticsState, GovernorPersistedTier } from '../../types/renderer';
+import type { BreathFieldMode, PerformanceMode, RendererDiagnosticsState, GovernorPersistedTier } from '../../types/renderer';
 import type { SessionMode } from '../../types/sessionMode';
 
 interface BreathCanvasProps {
@@ -16,6 +16,7 @@ interface BreathCanvasProps {
   effectivePerformanceMode: PerformanceMode;
   reducedMotion: boolean;
   pauseRendering?: boolean;
+  breathField?: BreathFieldMode;
   persistedGovernorTier?: GovernorPersistedTier;
   onGovernorTierChange?: (tier: GovernorPersistedTier) => void;
   onDiagnostics: (state: RendererDiagnosticsState) => void;
@@ -31,6 +32,7 @@ export default function BreathCanvas({
   effectivePerformanceMode,
   reducedMotion,
   pauseRendering = false,
+  breathField = 'off',
   persistedGovernorTier,
   onGovernorTierChange,
   onDiagnostics,
@@ -79,6 +81,7 @@ export default function BreathCanvas({
         qualityPreset={effectivePerformanceMode === 'performance' ? 0 : effectivePerformanceMode === 'quality' ? 1 : selectedMode.qualityPreset}
         maxDevicePixelRatio={effectivePerformanceMode === 'performance' ? 1 : effectivePerformanceMode === 'quality' ? 2 : selectedMode.maxDevicePixelRatio}
         overlayEnabled={effectivePerformanceMode !== 'performance'}
+        breathField={breathField}
         effectivePerformanceMode={effectivePerformanceMode}
         reducedMotion={reducedMotion}
         pauseRendering={pauseRendering}

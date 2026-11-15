@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererBackendContext } from '../types';
-import { READBACK_INTERVAL_FRAMES } from '../gpuTimestamps';
+import { READBACK_INTERVAL_FRAMES, TIMESTAMP_QUERY_SLOTS } from '../gpuTimestamps';
 import { OVERLAY_BLEND } from '../overlayWgsl';
-import { normalizeCompilationMessages, WebGPUBackend } from '../webgpuBackend';
+import { MAX_FRAMES_IN_FLIGHT, normalizeCompilationMessages, WebGPUBackend } from '../webgpuBackend';
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -120,8 +120,8 @@ function makeContext(canvas: HTMLCanvasElement): RendererBackendContext {
     getTimeScale: () => 1,
     governor: {
       setBase: vi.fn(), setPaused: vi.fn(), noteGpuPass: vi.fn(), noteChore: vi.fn(),
-      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false, changed: false })),
-      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false })),
+      noteFrame: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, gpuPassBreakdown: null, particleLevel: 0 as const, bloomLevels: 0, hdrEnabled: false, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false, changed: false })),
+      getSnapshot: vi.fn(() => ({ resolutionScale: 1 as const, qualityPreset: 1 as const, overlayEnabled: true, p75FrameMs: null, p75GpuMs: null, gpuPassBreakdown: null, particleLevel: 0 as const, bloomLevels: 0, hdrEnabled: false, lastChoreMs: null, bound: null, choresPaused: false, instructorVideoEnabled: true, stepDownCount: 0, paused: false })),
     },
     shouldRender: () => true,
     onFatalError: vi.fn(),
@@ -471,7 +471,7 @@ describe('WebGPUBackend', () => {
       expect.objectContaining({ gpuTimestamps: 'on' }),
     );
     expect((first.device as unknown as { createQuerySet: ReturnType<typeof vi.fn> }).createQuerySet)
-      .toHaveBeenCalledWith(expect.objectContaining({ type: 'timestamp', count: 4 }));
+      .toHaveBeenCalledWith(expect.objectContaining({ type: 'timestamp', count: TIMESTAMP_QUERY_SLOTS }));
 
     // Drive frames until the sampled one lands; unsampled frames stay plain.
     for (let i = 0; i < READBACK_INTERVAL_FRAMES; i += 1) rafCallbacks.shift()?.(i * 16);
@@ -492,7 +492,8 @@ describe('WebGPUBackend', () => {
     // mapAsync resolves off the rAF path; the next frame reports the measurement.
     await flush();
     rafCallbacks.shift()?.(1000);
-    expect(ctx.governor.noteGpuPass).toHaveBeenCalledWith(expect.any(Number), 9);
+    // The overlay pair (slots 2/3) is unwritten in the fake, so only the scene reports.
+    expect(ctx.governor.noteGpuPass).toHaveBeenCalledWith(expect.any(Number), 9, { scene: 9 });
     backend.stop();
     expect(first.querySet.destroy).toHaveBeenCalled();
   });
@@ -653,6 +654,67 @@ describe('WebGPUBackend', () => {
     expect(requested.filter((kind) => /webgl/.test(String(kind)))).toEqual([]);
     expect(createElement).not.toHaveBeenCalledWith('canvas');
     expect(first.encoder.beginRenderPass).toHaveBeenCalledTimes(6);
+    backend.stop();
+  });
+
+  const withField = (ctx: RendererBackendContext, field: { particleLevel: 0 | 1 | 2 | 3; bloomLevels?: number; hdrEnabled?: boolean }) => {
+    const snap = { ...ctx.governor.getSnapshot(), bloomLevels: 0, hdrEnabled: false, ...field };
+    ctx.governor.getSnapshot = vi.fn(() => snap);
+    ctx.governor.noteFrame = vi.fn(() => ({ ...snap, changed: false }));
+  };
+
+  it('reports the breath field unavailable and keeps scene + overlay when the device cannot host it', async () => {
+    const first = makeFrameDevice();
+    (first.device as unknown as { limits: Partial<GPUSupportedLimits> }).limits = {
+      maxStorageBuffersPerShaderStage: 2,
+      maxStorageBufferBindingSize: 1 << 30,
+    };
+    bootWith(first.device);
+    const ctx = makeContext(makeCanvas());
+    withField(ctx, { particleLevel: 2 });
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    rafCallbacks.shift()?.(0);
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({ breathFieldStatus: 'building', breathFieldReason: undefined });
+    await flush();
+    expect(ctx.onBackendDiagnostics).toHaveBeenCalledWith({
+      breathFieldStatus: 'unavailable',
+      breathFieldReason: expect.stringContaining('maxStorageBuffersPerShaderStage'),
+    });
+    expect(ctx.onFatalError).not.toHaveBeenCalled();
+
+    // Both the in-flight frame and the next one are the classic two passes.
+    rafCallbacks.shift()?.(16);
+    expect(first.encoder.beginRenderPass).toHaveBeenCalledTimes(4);
+    expect(first.device.createShaderModule).not.toHaveBeenCalledWith(expect.objectContaining({ label: 'Breath field sim' }));
+    backend.stop();
+  });
+
+  it('caps GPU frames in flight and skips governor sampling while waiting', async () => {
+    const first = makeFrameDevice();
+    const pending: Array<() => void> = [];
+    (first.device.queue as unknown as { onSubmittedWorkDone: () => Promise<undefined> }).onSubmittedWorkDone =
+      vi.fn(() => new Promise<undefined>((resolve) => { pending.push(() => resolve(undefined)); }));
+    bootWith(first.device);
+    const ctx = makeContext(makeCanvas());
+    const backend = new WebGPUBackend();
+    await backend.start(ctx);
+
+    for (let frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame += 1) rafCallbacks.shift()?.(frame * 16);
+    expect(first.device.queue.submit).toHaveBeenCalledTimes(MAX_FRAMES_IN_FLIGHT);
+    const sampled = (ctx.governor.noteFrame as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    // GPU still busy: this rAF neither submits nor feeds the governor a fake-fast delta.
+    rafCallbacks.shift()?.(100);
+    expect(first.device.queue.submit).toHaveBeenCalledTimes(MAX_FRAMES_IN_FLIGHT);
+    expect((ctx.governor.noteFrame as ReturnType<typeof vi.fn>).mock.calls.length).toBe(sampled);
+    expect(rafCallbacks).toHaveLength(1);
+
+    pending.shift()?.();
+    await flush();
+    rafCallbacks.shift()?.(116);
+    expect(first.device.queue.submit).toHaveBeenCalledTimes(MAX_FRAMES_IN_FLIGHT + 1);
     backend.stop();
   });
 

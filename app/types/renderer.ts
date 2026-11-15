@@ -65,6 +65,9 @@ export interface RendererBackendDiagnostics {
   gpuFailureReason?: string;
   webgpuProbe?: WebGpuProbeResult;
   gpuTimestamps?: GpuTimestampStatus;
+  breathFieldStatus?: BreathFieldStatus;
+  /** Why the field pipelines could not be built (limits, compile error). */
+  breathFieldReason?: string;
 }
 
 /** Last stable adaptive-quality tier persisted across sessions. */
@@ -72,7 +75,21 @@ export interface GovernorPersistedTier {
   resolutionScale: number;
   qualityPreset: 0 | 1;
   overlayEnabled: boolean;
+  particleLevel?: 0 | 1 | 2 | 3;
+  bloomLevels?: number;
+  hdrEnabled?: boolean;
 }
+
+/**
+ * WebGPU breath field: `particles` adds the GPU particle sim on the swap
+ * chain; `hdr` also renders into an rgba16float target with bloom and a
+ * tone-map pass. `off` is the classic scene + overlay, pixel for pixel.
+ */
+export type BreathFieldMode = 'off' | 'particles' | 'hdr';
+export const BREATH_FIELD_MODES: readonly BreathFieldMode[] = ['off', 'particles', 'hdr'];
+
+/** Field pipeline status as last reported by the WebGPU backend. */
+export type BreathFieldStatus = 'off' | 'building' | 'on' | 'unavailable';
 
 export interface RendererDiagnosticsState {
   mode: RendererMode;
@@ -93,6 +110,10 @@ export interface RendererDiagnosticsState {
   choreLastMs: number | null;
   /** Whether GPU pass timing is actually running. */
   gpuTimestamps: GpuTimestampStatus;
+  /** Most recent per-pass GPU time by pass label; null without `timestamp-query`. */
+  gpuPassBreakdown: Readonly<Record<string, number>> | null;
+  /** Active breath-field tier (WebGPU only). */
+  breathField: { status: BreathFieldStatus; particleLevel: number; bloomLevels: number; hdrEnabled: boolean; reason?: string };
   /** Which signal the governor last acted on. */
   governorBound: 'gpu' | 'cpu' | null;
   /** Governor asked gpu-chores to stand down (CPU-bound relief). */
@@ -123,6 +144,8 @@ export interface RendererSettings {
   gpuComputeEnabled: boolean;
   /** Last stable governor tier — next session starts here instead of rediscovering. */
   governorTier?: GovernorPersistedTier;
+  /** WebGPU breath field (particles / HDR bloom). Opt-in while it is new. */
+  breathField: BreathFieldMode;
 }
 
 export const DEFAULT_RENDERER_SETTINGS: RendererSettings = {
@@ -130,6 +153,7 @@ export const DEFAULT_RENDERER_SETTINGS: RendererSettings = {
   reducedMotion: false,
   showDiagnostics: false,
   gpuComputeEnabled: true,
+  breathField: 'off',
 };
 
 export const RENDERER_STORAGE_KEY = 'sacred-breath-renderer';

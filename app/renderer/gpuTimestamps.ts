@@ -3,7 +3,7 @@
  *
  * The CPU governor can only see how long the JS frame took — React commit,
  * `writeBuffer`, video decode and GC all land in the same number. This module
- * reads the GPU's own clock around the scene and overlay passes so the
+ * reads the GPU's own clock around every pass of the frame so the
  * governor can tell "the shader is 18ms deep" from "the instructor video
  * hitched".
  *
@@ -15,8 +15,15 @@
  * - Device loss destroys the query set; a destroyed timer reports nothing.
  */
 
-/** scene begin/end + one auxiliary pass (overlay or compute) begin/end. */
-export const TIMESTAMP_QUERY_SLOTS = 4;
+/**
+ * Begin/end pairs: pair 0 is always the scene pass, later pairs are handed out
+ * per labelled pass (overlay, field sim, particles, each bloom mip, tonemap).
+ * 16 pairs covers the deepest frame (scene + sim + particles + 2×5 bloom +
+ * tonemap + overlay = 15) with one to spare.
+ */
+export const TIMESTAMP_QUERY_SLOTS = 32;
+const MAX_PASS_PAIRS = TIMESTAMP_QUERY_SLOTS / 2;
+export const SCENE_PASS_LABEL = 'scene';
 
 /** Sample one frame in N. Cheap enough to be honest, rare enough to never stall. */
 export const READBACK_INTERVAL_FRAMES = 12;
@@ -39,14 +46,23 @@ export interface GpuFrameTimer {
   beginFrame(): boolean;
   /** `timestampWrites` for the main scene pass, or undefined when not sampling. */
   sceneWrites(): GPURenderPassTimestampWrites | undefined;
-  /** `timestampWrites` for an optional second pass (overlay / compute). */
-  auxWrites(): GPURenderPassTimestampWrites | undefined;
+  /** `timestampWrites` for an optional second pass; same as `passWrites(label)`. */
+  auxWrites(label?: string): GPURenderPassTimestampWrites | undefined;
+  /**
+   * `timestampWrites` for one more labelled pass (render or compute — the two
+   * descriptor shapes are identical). Passes sharing a label are summed, so
+   * every bloom mip can report as `bloom`. Undefined when not sampling or out
+   * of slots.
+   */
+  passWrites(label: string): GPURenderPassTimestampWrites | undefined;
   /** Encode the resolve + staging copy. Safe to call when not sampling (no-op). */
   resolve(encoder: GPUCommandEncoder): void;
   /** Kick the async map. Never awaited by the render loop. */
   readback(): void;
-  /** Most recent GPU pass time in ms (scene + aux), or null before the first readback. */
+  /** Most recent GPU pass time in ms (all sampled passes), or null before the first readback. */
   lastGpuPassMs(): number | null;
+  /** Most recent per-label pass times in ms, or null before the first readback. */
+  lastPassBreakdown(): Readonly<Record<string, number>> | null;
   status(): GpuTimestampStatus;
   destroy(): void;
 }
@@ -99,10 +115,12 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
   let destroyed = false;
   let frameCount = 0;
   let sampling = false;
-  let auxSampled = false;
-  let pendingAux = false;
+  /** Labels for pairs 1.. this frame (pair 0 is the scene). */
+  let pairLabels: string[] = [];
+  let resolvedLabels: string[] = [];
   let inFlight = false;
   let lastMs: number | null = null;
+  let lastBreakdown: Readonly<Record<string, number>> | null = null;
 
   const disable = (reason: string, error?: unknown): void => {
     if (!destroyed) console.warn(`[WebGPU] GPU timestamps disabled: ${reason}`, error ?? '');
@@ -132,8 +150,8 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
       frameCount += 1;
       // One readback at a time — a slow map must never make frames pile up.
       sampling = !inFlight && frameCount % READBACK_INTERVAL_FRAMES === 0;
-      auxSampled = false;
-      pendingAux = false;
+      pairLabels = [];
+      resolvedLabels = [];
       return sampling;
     },
 
@@ -142,10 +160,16 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
       return { querySet, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 };
     },
 
-    auxWrites() {
+    auxWrites(label = 'aux') {
+      return this.passWrites(label);
+    },
+
+    passWrites(label) {
       if (!sampling || !querySet) return undefined;
-      pendingAux = true;
-      return { querySet, beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 };
+      const pair = pairLabels.length + 1;
+      if (pair >= MAX_PASS_PAIRS) return undefined;
+      pairLabels.push(label);
+      return { querySet, beginningOfPassWriteIndex: pair * 2, endOfPassWriteIndex: pair * 2 + 1 };
     },
 
     resolve(encoder) {
@@ -153,7 +177,7 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
       try {
         encoder.resolveQuerySet(querySet, 0, TIMESTAMP_QUERY_SLOTS, resolveBuffer, 0);
         encoder.copyBufferToBuffer(resolveBuffer, 0, staging, 0, RESOLVE_BYTES);
-        auxSampled = pendingAux;
+        resolvedLabels = pairLabels;
       } catch (error) {
         disable('resolveQuerySet failed', error);
       }
@@ -164,7 +188,7 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
       const buffer = staging;
       inFlight = true;
       sampling = false;
-      const sampledAux = auxSampled;
+      const labels = resolvedLabels;
       let mapped: Promise<undefined> | undefined;
       try {
         mapped = buffer.mapAsync(GPUMapMode.READ, 0, RESOLVE_BYTES) as Promise<undefined>;
@@ -177,9 +201,20 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
         .then(() => {
           if (destroyed) return;
           const view = new BigUint64Array(buffer.getMappedRange(0, RESOLVE_BYTES).slice(0));
+          // A bad scene pair discards the whole sample rather than reporting half a frame.
           const scene = readPair(view, 0, 1);
-          const aux = sampledAux ? readPair(view, 2, 3) : null;
-          if (scene != null) lastMs = scene + (aux ?? 0);
+          if (scene == null) return;
+          const breakdown: Record<string, number> = { [SCENE_PASS_LABEL]: scene };
+          let total = scene;
+          labels.forEach((label, index) => {
+            const pair = index + 1;
+            const passMs = readPair(view, pair * 2, pair * 2 + 1);
+            if (passMs == null) return;
+            breakdown[label] = (breakdown[label] ?? 0) + passMs;
+            total += passMs;
+          });
+          lastMs = total;
+          lastBreakdown = breakdown;
         })
         .catch(() => {
           // A lost/destroyed device rejects the map; stop sampling rather than
@@ -194,6 +229,10 @@ export function createGpuFrameTimer(device: GPUDevice): GpuFrameTimer | null {
 
     lastGpuPassMs() {
       return destroyed ? null : lastMs;
+    },
+
+    lastPassBreakdown() {
+      return destroyed ? null : lastBreakdown;
     },
 
     status() {
